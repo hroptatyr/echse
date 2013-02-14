@@ -14,6 +14,7 @@ CLEANFILES = $(BUILT_SOURCES)
 
 
 noinst_PROGRAMS += echse
+echse_SOURCES = echse.c echse.h
 
 
 ## our rule for gengetopt

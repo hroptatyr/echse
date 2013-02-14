@@ -34,58 +34,35 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if defined HAVE_CONFIG_H
-# include "config.h"
-#endif	/* HAVE_CONFIG_H */
+#if !defined INCLUDED_echse_h_
+#define INCLUDED_echse_h_
+
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
-#include <time.h>
 
-#include "echse.h"
+typedef struct echs_instant_s echs_instant_t;
+typedef struct echs_state_s echs_state_t;
+typedef const struct echs_event_s *echs_event_t;
 
-
-/* christmas stream */
-static echs_event_t
-xmas_next(echs_instant_t i)
-{
-	static const char d[] = "XMAS";
-	static struct {
-		struct echs_event_s e;
-		echs_state_t st;
-	} res;
+struct echs_instant_s {
+	uint32_t y:16;
+	uint32_t m:8;
+	uint32_t d:8;
+	uint32_t H:8;
+	uint32_t M:8;
+	uint32_t S:8;
+	uint32_t ms:8;
+};
 
-	if (i.m < 12U || i.d < 25U) {
-		res.e.when = (echs_instant_t){i.y, 12U, 25U},
-		res.e.nwhat = 1U;
-		res.st = (echs_state_t){1, d};
-	} else if (i.d < 26U) {
-		res.e.when = (echs_instant_t){i.y, 12U, 26U};
-		res.e.nwhat = 1U;
-		res.st = (echs_state_t){0, d};
-	} else {
-		res.e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		res.e.nwhat = 1U;
-		res.st = (echs_state_t){1, d};
-	}
-	return &res.e;
-}
+struct echs_state_s {
+	signed char w;
+	const char *d;
+};
 
-
-int
-main(void)
-{
-	echs_instant_t start = {2000, 1, 1};
+struct echs_event_s {
+	echs_instant_t when;
+	size_t nwhat;
+	echs_state_t what[];
+};
 
-	for (size_t i = 0; i < 4; i++) {
-		const struct echs_event_s *nx = xmas_next(start);
-
-		printf("nx %04u-%02u-%02u: %c%s\n",
-		       nx->when.y, nx->when.m, nx->when.d,
-		       nx->what[0].w ? ' ' : '~', nx->what[0].d);
-		start = nx->when;
-	}
-	return 0;
-}
-
-/* echse.c ends here */
+#endif	/* INCLUDED_echse_h_ */
