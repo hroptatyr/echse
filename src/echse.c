@@ -55,26 +55,36 @@
 #endif	/* UNLIKELY */
 
 
+/* helpers */
+static uint64_t
+__inst_u64(echs_instant_t x)
+{
+	return be64toh(x.u);
+}
+
+static echs_instant_t
+__u64_inst(uint64_t x)
+{
+	return (echs_instant_t){.u = htobe64(x)};
+}
+
+
 /* christmas stream */
 static echs_event_t
 xmas_next(echs_instant_t i)
 {
 	DEFSTATE(XMAS);
-	static echs_state_t st[1];
 	struct echs_event_s e;
-
-	e.nwhat = 1U;
-	e.what = st;
 
 	if (i.m < 12U || i.d < 25U) {
 		e.when = (echs_instant_t){i.y, 12U, 25U};
-		st[0] = ON(XMAS);
+		e.what = ON(XMAS);
 	} else if (i.d < 26U) {
 		e.when = (echs_instant_t){i.y, 12U, 26U};
-		st[0] = OFF(XMAS);
+		e.what = OFF(XMAS);
 	} else {
 		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		st[0] = ON(XMAS);
+		e.what = ON(XMAS);
 	}
 	return e;
 }
@@ -102,25 +112,21 @@ static echs_event_t
 easter_next(echs_instant_t i)
 {
 	DEFSTATE(EASTER);
-	static echs_state_t st[1];
 	struct echs_event_s e;
-
-	e.nwhat = 1U;
-	e.what = st;
 
 	if (i.m >= 5U) {
 	next_year:
 		/* compute next years easter sunday right away */
 		e.when = __easter(i.y + 1);
-		st[0] = ON(EASTER);
+		e.what = ON(EASTER);
 	} else {
 		echs_instant_t easter = __easter(i.y);
 
-		if (i.m < easter.m || i.d < easter.d) {
-			e.when = easter;
-			st[0] = ON(EASTER);
-		} else if (i.m > easter.m || i.d > easter.d) {
+		if (i.m > easter.m || i.d > easter.d) {
 			goto next_year;
+		} else if (i.m < easter.m || i.d < easter.d) {
+			e.when = easter;
+			e.what = ON(EASTER);
 		} else {
 			/* compute end of easter */
 			if (++easter.d > 31U) {
@@ -128,25 +134,13 @@ easter_next(echs_instant_t i)
 				easter.m = 4U;
 			}
 			e.when = easter;
-			st[0] = OFF(EASTER);
+			e.what = OFF(EASTER);
 		}
 	}
 	return e;
 }
 
 
-static uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
-
 /* myself as stream */
 echs_event_t
 echs_stream(echs_instant_t inst)
@@ -154,46 +148,33 @@ echs_stream(echs_instant_t inst)
 /* this is main() implemented as coroutine with echs_stream_f's signature */
 	static echs_stream_f src[] = {xmas_next, easter_next};
 	static uint64_t uinsts[countof(src)];
-	static struct {
-		size_t nwhat;
-		const echs_state_t *what;
-	} states[countof(src)];
+	static echs_state_t states[countof(src)];
+	uint64_t uinst = __inst_u64(inst);
+	size_t best = 0;
 	echs_event_t e;
 
-	switch (uinsts[0]) {
-	case 0:
-		/* singleton, fill caches */
-		for (size_t i = 0; i < countof(src); i++) {
+	/* try and find the very next event out of all instants */
+	for (size_t i = 0; i < countof(uinsts); i++) {
+		if (uinsts[i] < uinst) {
+			/* refill */
 			e = src[i](inst);
-
 			uinsts[i] = __inst_u64(e.when);
-			states[i].nwhat = e.nwhat;
-			states[i].what = e.what;
+			states[i] = e.what;
 		}
-		/*@fallthrough@*/
-	default:;
-		size_t best = 0;
-
-		/* try and find the very next event out of all instants */
-		for (size_t i = 1; i < countof(uinsts); i++) {
-			if (uinsts[i] < uinsts[best]) {
-				best = i;
-			}
+		if (uinsts[i] < uinsts[best]) {
+			best = i;
 		}
+	}
 
-		/* BEST has the guy, remember for return value */
-		e.when = __u64_inst(uinsts[best]);
-		e.nwhat = states[best].nwhat;
-		e.what = states[best].what;
+	/* BEST has the guy, remember for return value */
+	e.when = __u64_inst(uinsts[best]);
+	e.what = states[best];
 
-		/* refill that cache */
-		{
-			echs_event_t ne = src[best](e.when);
-			uinsts[best] = __inst_u64(ne.when);
-			states[best].nwhat = ne.nwhat;
-			states[best].what = ne.what;
-		}
-		break;
+	{
+		/* refill that cache now that we still know who's best */
+		echs_event_t ne = src[best](e.when);
+		uinsts[best] = __inst_u64(ne.when);
+		states[best] = ne.what;
 	}
 	return e;
 }
@@ -214,17 +195,14 @@ main(void)
 {
 	echs_instant_t next = {2000, 1, 1};
 
-	for (size_t j = 0; j < 20U; j++) {
+	for (size_t j = 0; j < 40U; j++) {
 		echs_event_t e = echs_stream(next);
 
 		/* BEST has the guy */
 		next = e.when;
 		pr_when(next);
 		fputc('\t', stdout);
-		for (size_t i = 0; i < e.nwhat; i++) {
-			fputs(e.what[i], stdout);
-			fputc(' ', stdout);
-		}
+		fputs(e.what, stdout);
 		fputc('\n', stdout);
 	}
 	return 0;
