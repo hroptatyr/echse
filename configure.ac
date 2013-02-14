@@ -39,6 +39,9 @@ SXE_CHECK_CC([c11 c1x c99 gnu99])
 SXE_CHECK_CFLAGS
 AC_C_BIGENDIAN
 
+SXE_CHECK_LIBTOOL
+SXE_CHECK_LIBLTDL
+
 dnl -------------------------------------------------------------------------
 dnl final output
 dnl -------------------------------------------------------------------------
