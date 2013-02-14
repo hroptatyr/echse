@@ -73,15 +73,72 @@ xmas_next(echs_instant_t i)
 }
 
 
+/* easter stream */
+static echs_instant_t
+__easter(unsigned int y)
+{
+	/* compute gregorian easter date first */
+	unsigned int a = y % 19U;
+	unsigned int b = y / 4U;
+	unsigned int c = b / 25U + 1;
+	unsigned int d = 3U * c / 4U;
+	unsigned int e;
+
+	e = 19U * a + -((8U * c + 5) / 25U) + d + 15U;
+	e %= 30U;
+	e += (29578U - a - 32U * e) / 1024U;
+	e = e - ((y % 7U) + b - d + e + 2) % 7U;
+	return (echs_instant_t){y, e <= 31 ? 3U : 4U, e <= 31U ? e : e - 31U};
+}
+
+static echs_event_t
+easter_next(echs_instant_t i)
+{
+	static const struct echs_state_s on = {1, "EASTER"};
+	static const struct echs_state_s off = {0, "EASTER"};
+	static struct {
+		struct echs_event_s e;
+		echs_state_t st;
+	} res;
+
+	if (i.m >= 5U) {
+	next_year:
+		/* compute next years easter sunday right away */
+		res.e.when = __easter(i.y + 1);
+		res.e.nwhat = 1U;
+		res.st.s = &on;
+	} else {
+		echs_instant_t easter = __easter(i.y);
+
+		if (i.m < easter.m || i.d < easter.d) {
+			res.e.when = easter;
+			res.e.nwhat = 1U;
+			res.st.s = &on;
+		} else if (i.m > easter.m || i.d > easter.d) {
+			goto next_year;
+		} else {
+			/* compute end of easter */
+			if (++easter.d > 31U) {
+				easter.d = 1U;
+				easter.m = 4U;
+			}
+			res.e.when = easter;
+			res.e.nwhat = 1U;
+			res.st.s = &off;
+		}
+	}
+	return &res.e;
+}
+
+
 int
 main(void)
 {
 	echs_instant_t start = {2000, 1, 1};
 
 	for (size_t i = 0; i < 4; i++) {
-		const struct echs_event_s *nx = xmas_next(start);
+		const struct echs_event_s *nx = easter_next(start);
 
-		printf("nx %p\n", nx);
 		printf("nx %04u-%02u-%02u: %c%s\n",
 		       nx->when.y, nx->when.m, nx->when.d,
 		       nx->what[0].s->w ? ' ' : '~', nx->what[0].s->d);
