@@ -212,50 +212,20 @@ pr_when(echs_instant_t i)
 int
 main(void)
 {
-	echs_instant_t start = {2000, 1, 1};
-	echs_stream_f src[] = {xmas_next, easter_next};
-	uint64_t uinsts[countof(src)];
-	struct {
-		size_t nwhat;
-		const echs_state_t *what;
-	} states[countof(src)];
+	echs_instant_t next = {2000, 1, 1};
 
-	/* fill caches */
-	for (size_t i = 0; i < countof(src); i++) {
-		echs_event_t e = src[i](start);
-
-		uinsts[i] = __inst_u64(e.when);
-		states[i].nwhat = e.nwhat;
-		states[i].what = e.what;
-	}
 	for (size_t j = 0; j < 20U; j++) {
-		size_t best = 0;
-		echs_instant_t next;
-
-		/* try and find the very next event out of all instants */
-		for (size_t i = 1; i < countof(uinsts); i++) {
-			if (uinsts[i] < uinsts[best]) {
-				best = i;
-			}
-		}
+		echs_event_t e = echs_stream(next);
 
 		/* BEST has the guy */
-		next = __u64_inst(uinsts[best]);
+		next = e.when;
 		pr_when(next);
 		fputc('\t', stdout);
-		for (size_t i = 0; i < states[best].nwhat; i++) {
-			fputs(states[best].what[i], stdout);
+		for (size_t i = 0; i < e.nwhat; i++) {
+			fputs(e.what[i], stdout);
 			fputc(' ', stdout);
 		}
 		fputc('\n', stdout);
-
-		/* refill that cache */
-		{
-			echs_event_t e = src[best](next);
-			uinsts[best] = __inst_u64(e.when);
-			states[best].nwhat = e.nwhat;
-			states[best].what = e.what;
-		}
 	}
 	return 0;
 }
