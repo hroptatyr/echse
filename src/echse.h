@@ -50,8 +50,8 @@ struct echs_instant_s {
 	uint32_t d:8;
 	uint32_t H:8;
 	uint32_t M:8;
-	uint32_t S:8;
-	uint32_t ms:8;
+	uint32_t S:6;
+	uint32_t ms:10;
 };
 
 union echs_state_u {
