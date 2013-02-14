@@ -124,32 +124,32 @@ AC_DEFUN([SXE_DEBUGFLAGS], [dnl
 	## final evaluation
 	debugflags=""
 	## gdb
-	if test "$sxe_cv_c_flags__ggdb3" = "yes"; then
+	if test "$sxe_cv_c_flag__ggdb3" = "yes"; then
 		debugflags="$debugflags -ggdb3"
-	elif test "$sxe_cv_c_flags__ggdb" = "yes"; then
+	elif test "$sxe_cv_c_flag__ggdb" = "yes"; then
 		debugflags="$debugflags -ggdb"
 	fi
 	## stabs
-	if test "$sxe_cv_c_flags__gstabs3" = "yes"; then
+	if test "$sxe_cv_c_flag__gstabs3" = "yes"; then
 		debugflags="$debugflags -gstabs3"
-	elif test "$sxe_cv_c_flags__gstabs" = "yes"; then
+	elif test "$sxe_cv_c_flag__gstabs" = "yes"; then
 		debugflags="$debugflags -gstabs"
 	fi
 	## coff
-	if test "$sxe_cv_c_flags__gcoff3" = "yes"; then
+	if test "$sxe_cv_c_flag__gcoff3" = "yes"; then
 		debugflags="$debugflags -gcoff3"
-	elif test "$sxe_cv_c_flags__gcoff" = "yes"; then
+	elif test "$sxe_cv_c_flag__gcoff" = "yes"; then
 		debugflags="$debugflags -gcoff"
 	fi
 	## xcoff
-	if test "$sxe_cv_c_flags__gxcoff3" = "yes"; then
+	if test "$sxe_cv_c_flag__gxcoff3" = "yes"; then
 		debugflags="$debugflags -gxcoff3"
-	elif test "$sxe_cv_c_flags__gxcoff" = "yes"; then
+	elif test "$sxe_cv_c_flag__gxcoff" = "yes"; then
 		debugflags="$debugflags -gxcoff"
 	fi
 
 	if test -z "debugflags" -a \
-		"$sxe_cv_c_flags__g" = "yes"; then
+		"$sxe_cv_c_flag__g" = "yes"; then
 		debugflags="$debugflags -g"
 	fi
 
@@ -158,8 +158,8 @@ AC_DEFUN([SXE_DEBUGFLAGS], [dnl
 	SXE_CHECK_COMPILER_FLAG([-fvar-tracking])
 	SXE_CHECK_COMPILER_FLAG([-save-temps])
 
-	#if test "$sxe_cv_c_flags__ggdb3" = "yes" -a \
-	#	"$sxe_cv_c_flags__fvar_tracking" = "yes"; then
+	#if test "$sxe_cv_c_flag__ggdb3" = "yes" -a \
+	#	"$sxe_cv_c_flag__fvar_tracking" = "yes"; then
 	#	debugflags="$debugflags -fvar-tracking"
 	#fi
 
