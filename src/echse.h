@@ -64,8 +64,7 @@ union echs_instant_u {
 
 struct echs_event_s {
 	echs_instant_t when;
-	size_t nwhat;
-	const echs_state_t *what;
+	echs_state_t what;
 };
 
 

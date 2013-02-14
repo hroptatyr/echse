@@ -60,21 +60,17 @@ static echs_event_t
 xmas_next(echs_instant_t i)
 {
 	DEFSTATE(XMAS);
-	static echs_state_t st[1];
 	struct echs_event_s e;
-
-	e.nwhat = 1U;
-	e.what = st;
 
 	if (i.m < 12U || i.d < 25U) {
 		e.when = (echs_instant_t){i.y, 12U, 25U};
-		st[0] = ON(XMAS);
+		e.what = ON(XMAS);
 	} else if (i.d < 26U) {
 		e.when = (echs_instant_t){i.y, 12U, 26U};
-		st[0] = OFF(XMAS);
+		e.what = OFF(XMAS);
 	} else {
 		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		st[0] = ON(XMAS);
+		e.what = ON(XMAS);
 	}
 	return e;
 }
@@ -102,23 +98,19 @@ static echs_event_t
 easter_next(echs_instant_t i)
 {
 	DEFSTATE(EASTER);
-	static echs_state_t st[1];
 	struct echs_event_s e;
-
-	e.nwhat = 1U;
-	e.what = st;
 
 	if (i.m >= 5U) {
 	next_year:
 		/* compute next years easter sunday right away */
 		e.when = __easter(i.y + 1);
-		st[0] = ON(EASTER);
+		e.what = ON(EASTER);
 	} else {
 		echs_instant_t easter = __easter(i.y);
 
 		if (i.m < easter.m || i.d < easter.d) {
 			e.when = easter;
-			st[0] = ON(EASTER);
+			e.what = ON(EASTER);
 		} else if (i.m > easter.m || i.d > easter.d) {
 			goto next_year;
 		} else {
@@ -128,7 +120,7 @@ easter_next(echs_instant_t i)
 				easter.m = 4U;
 			}
 			e.when = easter;
-			st[0] = OFF(EASTER);
+			e.what = OFF(EASTER);
 		}
 	}
 	return e;
@@ -154,10 +146,7 @@ echs_stream(echs_instant_t inst)
 /* this is main() implemented as coroutine with echs_stream_f's signature */
 	static echs_stream_f src[] = {xmas_next, easter_next};
 	static uint64_t uinsts[countof(src)];
-	static struct {
-		size_t nwhat;
-		const echs_state_t *what;
-	} states[countof(src)];
+	static echs_state_t states[countof(src)];
 	echs_event_t e;
 
 	switch (uinsts[0]) {
@@ -167,8 +156,7 @@ echs_stream(echs_instant_t inst)
 			e = src[i](inst);
 
 			uinsts[i] = __inst_u64(e.when);
-			states[i].nwhat = e.nwhat;
-			states[i].what = e.what;
+			states[i] = e.what;
 		}
 		/*@fallthrough@*/
 	default:;
@@ -183,15 +171,13 @@ echs_stream(echs_instant_t inst)
 
 		/* BEST has the guy, remember for return value */
 		e.when = __u64_inst(uinsts[best]);
-		e.nwhat = states[best].nwhat;
-		e.what = states[best].what;
+		e.what = states[best];
 
-		/* refill that cache */
 		{
+			/* refill that cache now that we still know best */
 			echs_event_t ne = src[best](e.when);
 			uinsts[best] = __inst_u64(ne.when);
-			states[best].nwhat = ne.nwhat;
-			states[best].what = ne.what;
+			states[best] = ne.what;
 		}
 		break;
 	}
@@ -221,10 +207,7 @@ main(void)
 		next = e.when;
 		pr_when(next);
 		fputc('\t', stdout);
-		for (size_t i = 0; i < e.nwhat; i++) {
-			fputs(e.what[i], stdout);
-			fputc(' ', stdout);
-		}
+		fputs(e.what, stdout);
 		fputc('\n', stdout);
 	}
 	return 0;
