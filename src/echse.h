@@ -40,34 +40,37 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-typedef struct echs_instant_s echs_instant_t;
-typedef union echs_state_u echs_state_t;
-typedef const struct echs_event_s *echs_event_t;
+#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
+#define ON(x)		(state__ ## x + 1U)
+#define OFF(x)		(state__ ## x + 0U)
 
-struct echs_instant_s {
-	uint32_t y:16;
-	uint32_t m:8;
-	uint32_t d:8;
-	uint32_t H:8;
-	uint32_t M:8;
-	uint32_t S:6;
-	uint32_t ms:10;
-};
 
-union echs_state_u {
-	const char *u;
-	const struct echs_state_s *s;
+typedef union echs_instant_u echs_instant_t;
+typedef const char *echs_state_t;
+typedef struct echs_event_s echs_event_t;
+
+union echs_instant_u {
+	struct {
+		uint32_t y:16;
+		uint32_t m:8;
+		uint32_t d:8;
+		uint32_t H:8;
+		uint32_t M:8;
+		uint32_t S:6;
+		uint32_t ms:10;
+	};
+	uint64_t u;
 } __attribute__((transparent_union));
-
-struct echs_state_s {
-	signed char w;
-	char d[];
-};
 
 struct echs_event_s {
 	echs_instant_t when;
 	size_t nwhat;
-	echs_state_t what[];
+	const echs_state_t *what;
 };
+
+
+/* type and prototype for streams */
+typedef echs_event_t(*echs_stream_f)(echs_instant_t);
+extern echs_event_t echs_stream(echs_instant_t);
 
 #endif	/* INCLUDED_echse_h_ */

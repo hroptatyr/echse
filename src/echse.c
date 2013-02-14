@@ -44,32 +44,31 @@
 
 #include "echse.h"
 
+
+
 
 /* christmas stream */
 static echs_event_t
 xmas_next(echs_instant_t i)
 {
-	static const struct echs_state_s on = {1, "XMAS"};
-	static const struct echs_state_s off = {0, "XMAS"};
-	static struct {
-		struct echs_event_s e;
-		echs_state_t st;
-	} res;
+	DEFSTATE(XMAS);
+	static echs_state_t st[1];
+	struct echs_event_s e;
+
+	e.nwhat = 1U;
+	e.what = st;
 
 	if (i.m < 12U || i.d < 25U) {
-		res.e.when = (echs_instant_t){i.y, 12U, 25U},
-		res.e.nwhat = 1U;
-		res.st.s = &on;
+		e.when = (echs_instant_t){i.y, 12U, 25U};
+		st[0] = ON(XMAS);
 	} else if (i.d < 26U) {
-		res.e.when = (echs_instant_t){i.y, 12U, 26U};
-		res.e.nwhat = 1U;
-		res.st.s = &off;
+		e.when = (echs_instant_t){i.y, 12U, 26U};
+		st[0] = OFF(XMAS);
 	} else {
-		res.e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		res.e.nwhat = 1U;
-		res.st.s = &on;
+		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
+		st[0] = ON(XMAS);
 	}
-	return &res.e;
+	return e;
 }
 
 
@@ -94,26 +93,24 @@ __easter(unsigned int y)
 static echs_event_t
 easter_next(echs_instant_t i)
 {
-	static const struct echs_state_s on = {1, "EASTER"};
-	static const struct echs_state_s off = {0, "EASTER"};
-	static struct {
-		struct echs_event_s e;
-		echs_state_t st;
-	} res;
+	DEFSTATE(EASTER);
+	static echs_state_t st[1];
+	struct echs_event_s e;
+
+	e.nwhat = 1U;
+	e.what = st;
 
 	if (i.m >= 5U) {
 	next_year:
 		/* compute next years easter sunday right away */
-		res.e.when = __easter(i.y + 1);
-		res.e.nwhat = 1U;
-		res.st.s = &on;
+		e.when = __easter(i.y + 1);
+		st[0] = ON(EASTER);
 	} else {
 		echs_instant_t easter = __easter(i.y);
 
 		if (i.m < easter.m || i.d < easter.d) {
-			res.e.when = easter;
-			res.e.nwhat = 1U;
-			res.st.s = &on;
+			e.when = easter;
+			st[0] = ON(EASTER);
 		} else if (i.m > easter.m || i.d > easter.d) {
 			goto next_year;
 		} else {
@@ -122,27 +119,63 @@ easter_next(echs_instant_t i)
 				easter.d = 1U;
 				easter.m = 4U;
 			}
-			res.e.when = easter;
-			res.e.nwhat = 1U;
-			res.st.s = &off;
+			e.when = easter;
+			st[0] = OFF(EASTER);
 		}
 	}
-	return &res.e;
+	return e;
 }
 
 
+static void
+pr_when(echs_instant_t i)
+{
+	fprintf(stdout, "%04u-%02u-%02u",
+		(unsigned int)i.y,
+		(unsigned int)i.m,
+		(unsigned int)i.d);
+	return;
+}
+
 int
 main(void)
 {
 	echs_instant_t start = {2000, 1, 1};
 
-	for (size_t i = 0; i < 4; i++) {
-		const struct echs_event_s *nx = easter_next(start);
+	for (size_t j = 0; j < 8U; j++) {
+		const echs_event_t nx = xmas_next(start);
+		const echs_event_t ne = easter_next(start);
 
-		printf("nx %04u-%02u-%02u: %c%s\n",
-		       nx->when.y, nx->when.m, nx->when.d,
-		       nx->what[0].s->w ? ' ' : '~', nx->what[0].s->d);
-		start = nx->when;
+		if (nx.when.u == ne.when.u) {
+			pr_when(nx.when);
+			fputc('\t', stdout);
+			for (size_t i = 0; i < nx.nwhat; i++) {
+				fputs(nx.what[i], stdout);
+				fputc(' ', stdout);
+			}
+			for (size_t i = 0; i < ne.nwhat; i++) {
+				fputs(ne.what[i], stdout);
+				fputc(' ', stdout);
+			}
+			start = nx.when;
+		} else if (nx.when.u < ne.when.u) {
+			pr_when(nx.when);
+			fputc('\t', stdout);
+			for (size_t i = 0; i < nx.nwhat; i++) {
+				fputs(nx.what[i], stdout);
+				fputc(' ', stdout);
+			}
+			start = nx.when;
+		} else if (nx.when.u > ne.when.u) {
+			pr_when(ne.when);
+			fputc('\t', stdout);
+			for (size_t i = 0; i < ne.nwhat; i++) {
+				fputs(ne.what[i], stdout);
+				fputc(' ', stdout);
+			}
+			start = ne.when;
+		}
+		fputc('\n', stdout);
 	}
 	return 0;
 }
