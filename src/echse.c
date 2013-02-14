@@ -43,8 +43,9 @@
 #include <time.h>
 
 #include "echse.h"
+#include "boobs.h"
 
-
+#define countof(x)		(sizeof(x) / sizeof(*x))
 
 
 /* christmas stream */
@@ -127,6 +128,18 @@ easter_next(echs_instant_t i)
 }
 
 
+static uint64_t
+__inst_u64(echs_instant_t x)
+{
+	return be64toh(x.u);
+}
+
+static echs_instant_t
+__u64_inst(uint64_t x)
+{
+	return (echs_instant_t){.u = htobe64(x)};
+}
+
 static void
 pr_when(echs_instant_t i)
 {
@@ -141,41 +154,49 @@ int
 main(void)
 {
 	echs_instant_t start = {2000, 1, 1};
+	echs_stream_f src[] = {xmas_next, easter_next};
+	uint64_t uinsts[countof(src)];
+	struct {
+		size_t nwhat;
+		const echs_state_t *what;
+	} states[countof(src)];
 
-	for (size_t j = 0; j < 8U; j++) {
-		const echs_event_t nx = xmas_next(start);
-		const echs_event_t ne = easter_next(start);
+	/* fill caches */
+	for (size_t i = 0; i < countof(src); i++) {
+		echs_event_t e = src[i](start);
 
-		if (nx.when.u == ne.when.u) {
-			pr_when(nx.when);
-			fputc('\t', stdout);
-			for (size_t i = 0; i < nx.nwhat; i++) {
-				fputs(nx.what[i], stdout);
-				fputc(' ', stdout);
+		uinsts[i] = __inst_u64(e.when);
+		states[i].nwhat = e.nwhat;
+		states[i].what = e.what;
+	}
+	for (size_t j = 0; j < 20U; j++) {
+		size_t best = 0;
+		echs_instant_t next;
+
+		/* try and find the very next event out of all instants */
+		for (size_t i = 1; i < countof(uinsts); i++) {
+			if (uinsts[i] < uinsts[best]) {
+				best = i;
 			}
-			for (size_t i = 0; i < ne.nwhat; i++) {
-				fputs(ne.what[i], stdout);
-				fputc(' ', stdout);
-			}
-			start = nx.when;
-		} else if (nx.when.u < ne.when.u) {
-			pr_when(nx.when);
-			fputc('\t', stdout);
-			for (size_t i = 0; i < nx.nwhat; i++) {
-				fputs(nx.what[i], stdout);
-				fputc(' ', stdout);
-			}
-			start = nx.when;
-		} else if (nx.when.u > ne.when.u) {
-			pr_when(ne.when);
-			fputc('\t', stdout);
-			for (size_t i = 0; i < ne.nwhat; i++) {
-				fputs(ne.what[i], stdout);
-				fputc(' ', stdout);
-			}
-			start = ne.when;
+		}
+
+		/* BEST has the guy */
+		next = __u64_inst(uinsts[best]);
+		pr_when(next);
+		fputc('\t', stdout);
+		for (size_t i = 0; i < states[best].nwhat; i++) {
+			fputs(states[best].what[i], stdout);
+			fputc(' ', stdout);
 		}
 		fputc('\n', stdout);
+
+		/* refill that cache */
+		{
+			echs_event_t e = src[best](next);
+			uinsts[best] = __inst_u64(e.when);
+			states[best].nwhat = e.nwhat;
+			states[best].what = e.what;
+		}
 	}
 	return 0;
 }
