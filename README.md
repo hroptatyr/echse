@@ -1,5 +1,7 @@
-stackable stamped states
-========================
+Echse
+=====
+
+Event state stream tools.
 
 Vapourware.
 

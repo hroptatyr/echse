@@ -1,4 +1,4 @@
-/*** echse.c -- testing echse concept
+/*** easter.c -- gregorian easter stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,63 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if defined HAVE_CONFIG_H
-# include "config.h"
-#endif	/* HAVE_CONFIG_H */
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <time.h>
-
 #include "echse.h"
-#include "boobs.h"
 
-#define countof(x)		(sizeof(x) / sizeof(*x))
-
-#if !defined LIKELY
-# define LIKELY(_x)	__builtin_expect((_x), 1)
-#endif	/* !LIKELY */
-#if !defined UNLIKELY
-# define UNLIKELY(_x)	__builtin_expect((_x), 0)
-#endif	/* UNLIKELY */
-
-
-/* helpers */
-static uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
-
-
 /* christmas stream */
-static echs_event_t
-xmas_next(echs_instant_t i)
-{
-	DEFSTATE(XMAS);
-	struct echs_event_s e;
-
-	if (i.m < 12U || i.d < 25U) {
-		e.when = (echs_instant_t){i.y, 12U, 25U};
-		e.what = ON(XMAS);
-	} else if (i.d < 26U) {
-		e.when = (echs_instant_t){i.y, 12U, 26U};
-		e.what = OFF(XMAS);
-	} else {
-		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		e.what = ON(XMAS);
-	}
-	return e;
-}
-
-
-/* easter stream */
 static echs_instant_t
 __easter(unsigned int y)
 {
@@ -108,8 +54,8 @@ __easter(unsigned int y)
 	return (echs_instant_t){y, e <= 31 ? 3U : 4U, e <= 31U ? e : e - 31U};
 }
 
-static echs_event_t
-easter_next(echs_instant_t i)
+echs_event_t
+echs_stream(echs_instant_t i)
 {
 	DEFSTATE(EASTER);
 	struct echs_event_s e;
@@ -140,72 +86,4 @@ easter_next(echs_instant_t i)
 	return e;
 }
 
-
-/* myself as stream */
-echs_event_t
-echs_stream(echs_instant_t inst)
-{
-/* this is main() implemented as coroutine with echs_stream_f's signature */
-	static echs_stream_f src[] = {xmas_next, easter_next};
-	static uint64_t uinsts[countof(src)];
-	static echs_state_t states[countof(src)];
-	uint64_t uinst = __inst_u64(inst);
-	size_t best = 0;
-	echs_event_t e;
-
-	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < countof(uinsts); i++) {
-		if (uinsts[i] < uinst) {
-			/* refill */
-			e = src[i](inst);
-			uinsts[i] = __inst_u64(e.when);
-			states[i] = e.what;
-		}
-		if (uinsts[i] < uinsts[best]) {
-			best = i;
-		}
-	}
-
-	/* BEST has the guy, remember for return value */
-	e.when = __u64_inst(uinsts[best]);
-	e.what = states[best];
-
-	{
-		/* refill that cache now that we still know who's best */
-		echs_event_t ne = src[best](e.when);
-		uinsts[best] = __inst_u64(ne.when);
-		states[best] = ne.what;
-	}
-	return e;
-}
-
-
-static void
-pr_when(echs_instant_t i)
-{
-	fprintf(stdout, "%04u-%02u-%02u",
-		(unsigned int)i.y,
-		(unsigned int)i.m,
-		(unsigned int)i.d);
-	return;
-}
-
-int
-main(void)
-{
-	echs_instant_t next = {2000, 1, 1};
-
-	for (size_t j = 0; j < 40U; j++) {
-		echs_event_t e = echs_stream(next);
-
-		/* BEST has the guy */
-		next = e.when;
-		pr_when(next);
-		fputc('\t', stdout);
-		fputs(e.what, stdout);
-		fputc('\n', stdout);
-	}
-	return 0;
-}
-
-/* echse.c ends here */
+/* easter.c ends here */

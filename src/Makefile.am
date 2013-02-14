@@ -2,18 +2,29 @@
 
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200112L -D_XOPEN_SOURCE=600 -D_BSD_SOURCE
 AM_LDFLAGS =
+MOD_LDFLAGS = -shared -avoid-version -module
 
 bin_PROGRAMS =
 noinst_PROGRAMS =
 lib_LTLIBRARIES =
 noinst_LTLIBRARIES =
+pkglib_LTLIBRARIES =
 noinst_HEADERS =
 BUILT_SOURCES =
 EXTRA_DIST =
 CLEANFILES = $(BUILT_SOURCES)
 
 
+pkglib_LTLIBRARIES += xmas.la
+xmas_la_LDFLAGS = $(MOD_LDFLAGS)
+
+pkglib_LTLIBRARIES += easter.la
+easter_la_LDFLAGS = $(MOD_LDFLAGS)
+
+
 noinst_PROGRAMS += echse
+echse_SOURCES = echse.c echse.h
+echse_SOURCES += boobs.h
 
 
 ## our rule for gengetopt
