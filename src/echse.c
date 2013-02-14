@@ -55,6 +55,20 @@
 #endif	/* UNLIKELY */
 
 
+/* helpers */
+static uint64_t
+__inst_u64(echs_instant_t x)
+{
+	return be64toh(x.u);
+}
+
+static echs_instant_t
+__u64_inst(uint64_t x)
+{
+	return (echs_instant_t){.u = htobe64(x)};
+}
+
+
 /* christmas stream */
 static echs_event_t
 xmas_next(echs_instant_t i)
@@ -127,18 +141,6 @@ easter_next(echs_instant_t i)
 }
 
 
-static uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
-
 /* myself as stream */
 echs_event_t
 echs_stream(echs_instant_t inst)
@@ -147,39 +149,32 @@ echs_stream(echs_instant_t inst)
 	static echs_stream_f src[] = {xmas_next, easter_next};
 	static uint64_t uinsts[countof(src)];
 	static echs_state_t states[countof(src)];
+	uint64_t uinst = __inst_u64(inst);
+	size_t best = 0;
 	echs_event_t e;
 
-	switch (uinsts[0]) {
-	case 0:
-		/* singleton, fill caches */
-		for (size_t i = 0; i < countof(src); i++) {
+	/* try and find the very next event out of all instants */
+	for (size_t i = 0; i < countof(uinsts); i++) {
+		if (uinsts[i] < uinst) {
+			/* refill */
 			e = src[i](inst);
-
 			uinsts[i] = __inst_u64(e.when);
 			states[i] = e.what;
 		}
-		/*@fallthrough@*/
-	default:;
-		size_t best = 0;
-
-		/* try and find the very next event out of all instants */
-		for (size_t i = 1; i < countof(uinsts); i++) {
-			if (uinsts[i] < uinsts[best]) {
-				best = i;
-			}
+		if (uinsts[i] < uinsts[best]) {
+			best = i;
 		}
+	}
 
-		/* BEST has the guy, remember for return value */
-		e.when = __u64_inst(uinsts[best]);
-		e.what = states[best];
+	/* BEST has the guy, remember for return value */
+	e.when = __u64_inst(uinsts[best]);
+	e.what = states[best];
 
-		{
-			/* refill that cache now that we still know best */
-			echs_event_t ne = src[best](e.when);
-			uinsts[best] = __inst_u64(ne.when);
-			states[best] = ne.what;
-		}
-		break;
+	{
+		/* refill that cache now that we still know who's best */
+		echs_event_t ne = src[best](e.when);
+		uinsts[best] = __inst_u64(ne.when);
+		states[best] = ne.what;
 	}
 	return e;
 }
@@ -200,7 +195,7 @@ main(void)
 {
 	echs_instant_t next = {2000, 1, 1};
 
-	for (size_t j = 0; j < 20U; j++) {
+	for (size_t j = 0; j < 40U; j++) {
 		echs_event_t e = echs_stream(next);
 
 		/* BEST has the guy */
