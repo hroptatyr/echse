@@ -122,11 +122,11 @@ easter_next(echs_instant_t i)
 	} else {
 		echs_instant_t easter = __easter(i.y);
 
-		if (i.m < easter.m || i.d < easter.d) {
+		if (i.m > easter.m || i.d > easter.d) {
+			goto next_year;
+		} else if (i.m < easter.m || i.d < easter.d) {
 			e.when = easter;
 			e.what = ON(EASTER);
-		} else if (i.m > easter.m || i.d > easter.d) {
-			goto next_year;
 		} else {
 			/* compute end of easter */
 			if (++easter.d > 31U) {
