@@ -49,7 +49,8 @@
 static echs_event_t
 xmas_next(echs_instant_t i)
 {
-	static const char d[] = "XMAS";
+	static const struct echs_state_s on = {1, "XMAS"};
+	static const struct echs_state_s off = {0, "XMAS"};
 	static struct {
 		struct echs_event_s e;
 		echs_state_t st;
@@ -58,15 +59,15 @@ xmas_next(echs_instant_t i)
 	if (i.m < 12U || i.d < 25U) {
 		res.e.when = (echs_instant_t){i.y, 12U, 25U},
 		res.e.nwhat = 1U;
-		res.st = (echs_state_t){1, d};
+		res.st.s = &on;
 	} else if (i.d < 26U) {
 		res.e.when = (echs_instant_t){i.y, 12U, 26U};
 		res.e.nwhat = 1U;
-		res.st = (echs_state_t){0, d};
+		res.st.s = &off;
 	} else {
 		res.e.when = (echs_instant_t){i.y + 1, 12U, 25U};
 		res.e.nwhat = 1U;
-		res.st = (echs_state_t){1, d};
+		res.st.s = &on;
 	}
 	return &res.e;
 }
@@ -80,9 +81,10 @@ main(void)
 	for (size_t i = 0; i < 4; i++) {
 		const struct echs_event_s *nx = xmas_next(start);
 
+		printf("nx %p\n", nx);
 		printf("nx %04u-%02u-%02u: %c%s\n",
 		       nx->when.y, nx->when.m, nx->when.d,
-		       nx->what[0].w ? ' ' : '~', nx->what[0].d);
+		       nx->what[0].s->w ? ' ' : '~', nx->what[0].s->d);
 		start = nx->when;
 	}
 	return 0;

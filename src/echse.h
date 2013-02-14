@@ -41,7 +41,7 @@
 #include <stdint.h>
 
 typedef struct echs_instant_s echs_instant_t;
-typedef struct echs_state_s echs_state_t;
+typedef union echs_state_u echs_state_t;
 typedef const struct echs_event_s *echs_event_t;
 
 struct echs_instant_s {
@@ -54,9 +54,14 @@ struct echs_instant_s {
 	uint32_t ms:8;
 };
 
+union echs_state_u {
+	const char *u;
+	const struct echs_state_s *s;
+} __attribute__((transparent_union));
+
 struct echs_state_s {
 	signed char w;
-	const char *d;
+	char d[];
 };
 
 struct echs_event_s {
