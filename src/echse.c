@@ -214,8 +214,8 @@ main(int argc, char *argv[])
 
 	/* the iterator */
 	next = from;
-	for (size_t j = 0; j < 40U; j++) {
-		echs_event_t e = echs_stream(next);
+	for (echs_event_t e;
+	     (e = echs_stream(next)).when.u && __inst_le_p(e.when, till);) {
 		static char buf[256];
 		char *bp = buf;
 
