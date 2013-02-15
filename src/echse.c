@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include "echse.h"
@@ -129,20 +130,32 @@ easter_next(echs_instant_t i)
 
 
 /* myself as stream */
-echs_event_t
-echs_stream(echs_instant_t inst)
+static echs_event_t
+__stream(echs_stream_f f[], size_t nf, echs_instant_t inst)
 {
-/* this is main() implemented as coroutine with echs_stream_f's signature */
-	static echs_stream_f src[] = {xmas_next, easter_next};
-	static echs_event_t evs[countof(src)];
+	static echs_stream_f *evf;
+	static echs_event_t *evs;
+	static size_t nevs;
 	size_t best = 0;
 	echs_event_t e;
 
+	if (UNLIKELY(evs == NULL)) {
+		size_t evfz = nf * sizeof(*evf);
+
+		/* so that F and NF don't have to be passed on every call */
+		evf = malloc(evfz);
+		memcpy(evf, f, evfz);
+
+		/* and also the event cache */
+		evs = calloc(nf, sizeof(*evs));
+		nevs = nf;
+	}
+
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < countof(evs); i++) {
+	for (size_t i = 0; i < nevs; i++) {
 		if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
-			evs[i] = src[i](inst);
+			evs[i] = evf[i](inst);
 		}
 		if (__inst_lt_p(evs[i].when, evs[best].when)) {
 			best = i;
@@ -153,8 +166,15 @@ echs_stream(echs_instant_t inst)
 	e = evs[best];
 
 	/* refill that cache now that we still know who's best */
-	evs[best] = src[best](e.when);
+	evs[best] = evf[best](e.when);
 	return e;
+}
+
+echs_event_t
+echs_stream(echs_instant_t inst)
+{
+	static echs_stream_f src[] = {xmas_next, easter_next};
+	return __stream(src, countof(src), inst);
 }
 
 
