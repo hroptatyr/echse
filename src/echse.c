@@ -134,35 +134,26 @@ echs_stream(echs_instant_t inst)
 {
 /* this is main() implemented as coroutine with echs_stream_f's signature */
 	static echs_stream_f src[] = {xmas_next, easter_next};
-	static uint64_t uinsts[countof(src)];
-	static echs_state_t states[countof(src)];
-	uint64_t uinst = __inst_u64(inst);
+	static echs_event_t evs[countof(src)];
 	size_t best = 0;
 	echs_event_t e;
 
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < countof(uinsts); i++) {
-		if (uinsts[i] < uinst) {
+	for (size_t i = 0; i < countof(evs); i++) {
+		if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
-			e = src[i](inst);
-			uinsts[i] = __inst_u64(e.when);
-			states[i] = e.what;
+			evs[i] = src[i](inst);
 		}
-		if (uinsts[i] < uinsts[best]) {
+		if (__inst_lt_p(evs[i].when, evs[best].when)) {
 			best = i;
 		}
 	}
 
 	/* BEST has the guy, remember for return value */
-	e.when = __u64_inst(uinsts[best]);
-	e.what = states[best];
+	e = evs[best];
 
-	{
-		/* refill that cache now that we still know who's best */
-		echs_event_t ne = src[best](e.when);
-		uinsts[best] = __inst_u64(ne.when);
-		states[best] = ne.what;
-	}
+	/* refill that cache now that we still know who's best */
+	evs[best] = src[best](e.when);
 	return e;
 }
 
