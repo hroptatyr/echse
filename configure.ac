@@ -39,6 +39,12 @@ SXE_CHECK_CC([c11 c1x c99 gnu99])
 SXE_CHECK_CFLAGS
 AC_C_BIGENDIAN
 
+AC_PATH_PROG([GENGETOPT], [gengetopt])
+if test -z "${GENGETOPT}"; then
+	GENGETOPT="gengetopt"
+fi
+AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
+
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
 
