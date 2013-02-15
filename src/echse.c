@@ -43,7 +43,7 @@
 #include <time.h>
 
 #include "echse.h"
-#include "boobs.h"
+#include "instant.h"
 #include "dt-strpf.h"
 
 #define countof(x)		(sizeof(x) / sizeof(*x))
@@ -54,20 +54,6 @@
 #if !defined UNLIKELY
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
-
-
-/* helpers */
-static uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
 
 
 /* christmas stream */
