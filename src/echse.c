@@ -181,11 +181,53 @@ echs_stream(echs_instant_t inst)
 }
 
 
-int
-main(void)
-{
-	echs_instant_t next = {2000, 1, 1};
+#if defined __INTEL_COMPILER
+# pragma warning (disable:593)
+# pragma warning (disable:181)
+#elif defined __GNUC__
+# pragma GCC diagnostic ignored "-Wswitch"
+# pragma GCC diagnostic ignored "-Wswitch-enum"
+#endif /* __INTEL_COMPILER */
+#include "echse-clo.h"
+#include "echse-clo.c"
+#if defined __INTEL_COMPILER
+# pragma warning (default:593)
+# pragma warning (default:181)
+#elif defined __GNUC__
+# pragma GCC diagnostic warning "-Wswitch"
+# pragma GCC diagnostic warning "-Wswitch-enum"
+#endif	/* __INTEL_COMPILER */
 
+int
+main(int argc, char *argv[])
+{
+	/* command line options */
+	struct echs_args_info argi[1];
+	/* date range to scan through */
+	echs_instant_t from;
+	echs_instant_t till;
+	echs_instant_t next;
+	int res = 0;
+
+	if (echs_parser(argc, argv, argi)) {
+		res = 1;
+		goto out;
+	}
+
+	if (argi->from_given) {
+		from = dt_strp(argi->from_arg);
+	} else {
+		from = (echs_instant_t){2000, 1, 1};
+	}
+
+	if (argi->till_given) {
+		till = dt_strp(argi->till_arg);
+	} else {
+		till = (echs_instant_t){2037, 12, 31};
+	}
+
+	/* the iterator */
+	next = from;
 	for (size_t j = 0; j < 40U; j++) {
 		echs_event_t e = echs_stream(next);
 		static char buf[256];
@@ -206,7 +248,10 @@ main(void)
 			break;
 		}
 	}
-	return 0;
+
+out:
+	echs_parser_free(argi);
+	return res;
 }
 
 /* echse.c ends here */
