@@ -1,4 +1,4 @@
-/*** echse.c -- testing echse concept
+/*** echse.h -- testing echse concept
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
