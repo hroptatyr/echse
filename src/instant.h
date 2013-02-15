@@ -39,42 +39,37 @@
 
 #include <stdbool.h>
 #include "echse.h"
-#include "boobs.h"
-
-static inline __attribute__((pure)) uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static inline __attribute__((pure)) echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
 
 static inline __attribute__((pure)) bool
 __inst_lt_p(echs_instant_t x, echs_instant_t y)
 {
-	uint64_t x64 = __inst_u64(x);
-	uint64_t y64 = __inst_u64(y);
-	return x64 < y64;
+	return (x.y < y.y || x.y == y.y &&
+		(x.m < y.m || x.m == y.m &&
+		 (x.d < y.d || x.d == y.m &&
+		  (x.H < y.H || x.H == y.H &&
+		   (x.M < y.M || x.M == y.M &&
+		    (x.S < y.S || x.S == y.S &&
+		     (x.ms < y.ms)))))));
 }
 
 static inline __attribute__((pure)) bool
 __inst_le_p(echs_instant_t x, echs_instant_t y)
 {
-	uint64_t x64 = __inst_u64(x);
-	uint64_t y64 = __inst_u64(y);
-	return x64 <= y64;
+	return !(x.y > y.y || x.y == y.y &&
+		 (x.m > y.m || x.m == y.m &&
+		  (x.d > y.d || x.d == y.m &&
+		   (x.H > y.H || x.H == y.H &&
+		    (x.M > y.M || x.M == y.M &&
+		     (x.S > y.S || x.S == y.S &&
+		      (x.ms > y.ms)))))));
 }
 
 static inline __attribute__((pure)) bool
 __inst_eq_p(echs_instant_t x, echs_instant_t y)
 {
-	uint64_t x64 = __inst_u64(x);
-	uint64_t y64 = __inst_u64(y);
-	return x64 == y64;
+	return x.y == y.y && x.m == y.m && x.d == y.d &&
+		x.H == y.H && x.M == y.M && x.S == y.S &&
+		x.ms == y.ms;
 }
 
 #endif	/* INCLUDED_instant_h_ */
