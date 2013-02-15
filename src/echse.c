@@ -246,7 +246,6 @@ main(int argc, char *argv[])
 		}
 	}
 
-	fsync(STDOUT_FILENO);
 out:
 	echs_parser_free(argi);
 	return res;
