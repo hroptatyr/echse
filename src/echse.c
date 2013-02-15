@@ -38,12 +38,13 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdlib.h>
-#include <stdio.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <time.h>
 
 #include "echse.h"
 #include "boobs.h"
+#include "dt-strpf.h"
 
 #define countof(x)		(sizeof(x) / sizeof(*x))
 
@@ -180,16 +181,6 @@ echs_stream(echs_instant_t inst)
 }
 
 
-static void
-pr_when(echs_instant_t i)
-{
-	fprintf(stdout, "%04u-%02u-%02u",
-		(unsigned int)i.y,
-		(unsigned int)i.m,
-		(unsigned int)i.d);
-	return;
-}
-
 int
 main(void)
 {
@@ -197,13 +188,23 @@ main(void)
 
 	for (size_t j = 0; j < 40U; j++) {
 		echs_event_t e = echs_stream(next);
+		static char buf[256];
+		char *bp = buf;
 
 		/* BEST has the guy */
 		next = e.when;
-		pr_when(next);
-		fputc('\t', stdout);
-		fputs(e.what, stdout);
-		fputc('\n', stdout);
+		bp += dt_strf(buf, sizeof(buf), next);
+		*bp++ = '\t';
+		{
+			size_t e_whaz = strlen(e.what);
+			memcpy(bp, e.what, e_whaz);
+			bp += e_whaz;
+		}
+		*bp++ = '\n';
+		*bp = '\0';
+		if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+			break;
+		}
 	}
 	return 0;
 }
