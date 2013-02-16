@@ -62,14 +62,25 @@ static echs_event_t
 xmas_next(echs_instant_t i)
 {
 	DEFSTATE(XMAS);
+	DEFSTATE(BOXD);
 	struct echs_event_s e;
 
 	if (i.m < 12U || i.d < 25U) {
 		e.when = (echs_instant_t){i.y, 12U, 25U};
 		e.what = ON(XMAS);
-	} else if (i.d < 26U) {
-		e.when = (echs_instant_t){i.y, 12U, 26U};
-		e.what = OFF(XMAS);
+	} else if (i.d <= 26U) {
+		static const echs_state_t s[] = {OFF(XMAS), ON(BOXD)};
+		static const echs_state_t *sp = s;
+
+		if (sp < s + countof(s)) {
+			e.when = (echs_instant_t){i.y, 12U, 26U};
+			e.what = *sp++;
+		} else {
+			/* reset state counter */
+			sp = s;
+			e.when = (echs_instant_t){i.y, 12U, 27U};
+			e.what = OFF(BOXD);
+		}
 	} else {
 		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
 		e.what = ON(XMAS);
