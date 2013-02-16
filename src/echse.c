@@ -130,29 +130,54 @@ easter_next(echs_instant_t i)
 
 
 /* myself as stream */
-static echs_event_t
-__stream(echs_stream_f f[], size_t nf, echs_instant_t inst)
+static echs_stream_f *evf;
+static echs_event_t *evs;
+static size_t nevf;
+
+static void
+free_stream(void)
 {
-	static echs_stream_f *evf;
-	static echs_event_t *evs;
-	static size_t nevs;
+	if (LIKELY(evf != NULL)) {
+		free(evf);
+		free(evs);
+	}
+	nevf = 0UL;
+	evf = NULL;
+	evs = NULL;
+	return;
+}
+
+static void
+init_stream(echs_stream_f f[], size_t nf)
+{
+	if (UNLIKELY(evf != NULL)) {
+		free_stream();
+	}
+	{
+		size_t evfz;
+		evfz = (nevf = nf) * sizeof(*evf);
+		evf = malloc(evfz);
+		memcpy(evf, f, evfz);
+	}
+	/* also initialise the event cache */
+	evs = calloc(nf, sizeof(*evs));
+	return;
+}
+
+echs_event_t
+echs_stream(echs_instant_t inst)
+{
 	size_t best = 0;
 	echs_event_t e;
 
 	if (UNLIKELY(evs == NULL)) {
-		size_t evfz = nf * sizeof(*evf);
-
-		/* so that F and NF don't have to be passed on every call */
-		evf = malloc(evfz);
-		memcpy(evf, f, evfz);
-
-		/* and also the event cache */
-		evs = calloc(nf, sizeof(*evs));
-		nevs = nf;
+		e.when = (echs_instant_t){0};
+		e.what = NULL;
+		return e;
 	}
 
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < nevs; i++) {
+	for (size_t i = 0; i < nevf; i++) {
 		if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
 			evs[i] = evf[i](inst);
@@ -168,13 +193,6 @@ __stream(echs_stream_f f[], size_t nf, echs_instant_t inst)
 	/* refill that cache now that we still know who's best */
 	evs[best] = evf[best](e.when);
 	return e;
-}
-
-echs_event_t
-echs_stream(echs_instant_t inst)
-{
-	static echs_stream_f src[] = {xmas_next, easter_next};
-	return __stream(src, countof(src), inst);
 }
 
 
@@ -223,6 +241,9 @@ main(int argc, char *argv[])
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
+	/* sample stream */
+	init_stream((echs_stream_f[]){xmas_next, easter_next}, 2);
+
 	/* the iterator */
 	next = from;
 	for (echs_event_t e;
@@ -246,6 +267,7 @@ main(int argc, char *argv[])
 		}
 	}
 
+	free_stream();
 out:
 	echs_parser_free(argi);
 	return res;
