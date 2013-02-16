@@ -1,4 +1,4 @@
-/*** echse.h -- testing echse concept
+/*** instant.h -- some echs_instant_t functionality
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,42 +34,42 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
+#if !defined INCLUDED_instant_h_
+#define INCLUDED_instant_h_
 
-#include <stdlib.h>
-#include <stdint.h>
+#include <stdbool.h>
+#include "echse.h"
 
-#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
-#define ON(x)		(state__ ## x + 1U)
-#define OFF(x)		(state__ ## x + 0U)
+static inline __attribute__((pure)) bool
+__inst_lt_p(echs_instant_t x, echs_instant_t y)
+{
+	return (x.y < y.y || x.y == y.y &&
+		(x.m < y.m || x.m == y.m &&
+		 (x.d < y.d || x.d == y.m &&
+		  (x.H < y.H || x.H == y.H &&
+		   (x.M < y.M || x.M == y.M &&
+		    (x.S < y.S || x.S == y.S &&
+		     (x.ms < y.ms)))))));
+}
 
+static inline __attribute__((pure)) bool
+__inst_le_p(echs_instant_t x, echs_instant_t y)
+{
+	return !(x.y > y.y || x.y == y.y &&
+		 (x.m > y.m || x.m == y.m &&
+		  (x.d > y.d || x.d == y.m &&
+		   (x.H > y.H || x.H == y.H &&
+		    (x.M > y.M || x.M == y.M &&
+		     (x.S > y.S || x.S == y.S &&
+		      (x.ms > y.ms)))))));
+}
 
-typedef union echs_instant_u echs_instant_t;
-typedef const char *echs_state_t;
-typedef struct echs_event_s echs_event_t;
+static inline __attribute__((pure)) bool
+__inst_eq_p(echs_instant_t x, echs_instant_t y)
+{
+	return x.y == y.y && x.m == y.m && x.d == y.d &&
+		x.H == y.H && x.M == y.M && x.S == y.S &&
+		x.ms == y.ms;
+}
 
-union echs_instant_u {
-	struct {
-		uint32_t y:16;
-		uint32_t m:8;
-		uint32_t d:8;
-		uint32_t H:8;
-		uint32_t M:8;
-		uint32_t S:6;
-		uint32_t ms:10;
-	};
-	uint64_t u;
-} __attribute__((transparent_union));
-
-struct echs_event_s {
-	echs_instant_t when;
-	echs_state_t what;
-};
-
-
-/* type and prototype for streams */
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
-extern echs_event_t echs_stream(echs_instant_t);
-
-#endif	/* INCLUDED_echse_h_ */
+#endif	/* INCLUDED_instant_h_ */

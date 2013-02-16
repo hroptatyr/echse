@@ -38,12 +38,14 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdlib.h>
-#include <stdio.h>
+#include <unistd.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include "echse.h"
-#include "boobs.h"
+#include "instant.h"
+#include "dt-strpf.h"
 
 #define countof(x)		(sizeof(x) / sizeof(*x))
 
@@ -55,33 +57,30 @@
 #endif	/* UNLIKELY */
 
 
-/* helpers */
-static uint64_t
-__inst_u64(echs_instant_t x)
-{
-	return be64toh(x.u);
-}
-
-static echs_instant_t
-__u64_inst(uint64_t x)
-{
-	return (echs_instant_t){.u = htobe64(x)};
-}
-
-
 /* christmas stream */
 static echs_event_t
 xmas_next(echs_instant_t i)
 {
 	DEFSTATE(XMAS);
+	DEFSTATE(BOXD);
 	struct echs_event_s e;
 
 	if (i.m < 12U || i.d < 25U) {
 		e.when = (echs_instant_t){i.y, 12U, 25U};
 		e.what = ON(XMAS);
-	} else if (i.d < 26U) {
-		e.when = (echs_instant_t){i.y, 12U, 26U};
-		e.what = OFF(XMAS);
+	} else if (i.d <= 26U) {
+		static const echs_state_t s[] = {OFF(XMAS), ON(BOXD)};
+		static const echs_state_t *sp = s;
+
+		if (sp < s + countof(s)) {
+			e.when = (echs_instant_t){i.y, 12U, 26U};
+			e.what = *sp++;
+		} else {
+			/* reset state counter */
+			sp = s;
+			e.when = (echs_instant_t){i.y, 12U, 27U};
+			e.what = OFF(BOXD);
+		}
 	} else {
 		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
 		e.what = ON(XMAS);
@@ -142,70 +141,147 @@ easter_next(echs_instant_t i)
 
 
 /* myself as stream */
+static echs_stream_f *evf;
+static echs_event_t *evs;
+static size_t nevf;
+
+static void
+free_stream(void)
+{
+	if (LIKELY(evf != NULL)) {
+		free(evf);
+		free(evs);
+	}
+	nevf = 0UL;
+	evf = NULL;
+	evs = NULL;
+	return;
+}
+
+static void
+init_stream(echs_stream_f f[], size_t nf)
+{
+	if (UNLIKELY(evf != NULL)) {
+		free_stream();
+	}
+	{
+		size_t evfz;
+		evfz = (nevf = nf) * sizeof(*evf);
+		evf = malloc(evfz);
+		memcpy(evf, f, evfz);
+	}
+	/* also initialise the event cache */
+	evs = calloc(nf, sizeof(*evs));
+	return;
+}
+
 echs_event_t
 echs_stream(echs_instant_t inst)
 {
-/* this is main() implemented as coroutine with echs_stream_f's signature */
-	static echs_stream_f src[] = {xmas_next, easter_next};
-	static uint64_t uinsts[countof(src)];
-	static echs_state_t states[countof(src)];
-	uint64_t uinst = __inst_u64(inst);
 	size_t best = 0;
 	echs_event_t e;
 
+	if (UNLIKELY(evs == NULL)) {
+		e.when = (echs_instant_t){0};
+		e.what = NULL;
+		return e;
+	}
+
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < countof(uinsts); i++) {
-		if (uinsts[i] < uinst) {
+	for (size_t i = 0; i < nevf; i++) {
+		if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
-			e = src[i](inst);
-			uinsts[i] = __inst_u64(e.when);
-			states[i] = e.what;
+			evs[i] = evf[i](inst);
 		}
-		if (uinsts[i] < uinsts[best]) {
+		if (__inst_lt_p(evs[i].when, evs[best].when)) {
 			best = i;
 		}
 	}
 
 	/* BEST has the guy, remember for return value */
-	e.when = __u64_inst(uinsts[best]);
-	e.what = states[best];
+	e = evs[best];
 
-	{
-		/* refill that cache now that we still know who's best */
-		echs_event_t ne = src[best](e.when);
-		uinsts[best] = __inst_u64(ne.when);
-		states[best] = ne.what;
-	}
+	/* refill that cache now that we still know who's best */
+	evs[best] = evf[best](e.when);
 	return e;
 }
 
 
-static void
-pr_when(echs_instant_t i)
-{
-	fprintf(stdout, "%04u-%02u-%02u",
-		(unsigned int)i.y,
-		(unsigned int)i.m,
-		(unsigned int)i.d);
-	return;
-}
+#if defined __INTEL_COMPILER
+# pragma warning (disable:593)
+# pragma warning (disable:181)
+#elif defined __GNUC__
+# pragma GCC diagnostic ignored "-Wswitch"
+# pragma GCC diagnostic ignored "-Wswitch-enum"
+#endif /* __INTEL_COMPILER */
+#include "echse-clo.h"
+#include "echse-clo.c"
+#if defined __INTEL_COMPILER
+# pragma warning (default:593)
+# pragma warning (default:181)
+#elif defined __GNUC__
+# pragma GCC diagnostic warning "-Wswitch"
+# pragma GCC diagnostic warning "-Wswitch-enum"
+#endif	/* __INTEL_COMPILER */
 
 int
-main(void)
+main(int argc, char *argv[])
 {
-	echs_instant_t next = {2000, 1, 1};
+	/* command line options */
+	struct echs_args_info argi[1];
+	/* date range to scan through */
+	echs_instant_t from;
+	echs_instant_t till;
+	echs_instant_t next;
+	int res = 0;
 
-	for (size_t j = 0; j < 40U; j++) {
-		echs_event_t e = echs_stream(next);
+	if (echs_parser(argc, argv, argi)) {
+		res = 1;
+		goto out;
+	}
+
+	if (argi->from_given) {
+		from = dt_strp(argi->from_arg);
+	} else {
+		from = (echs_instant_t){2000, 1, 1};
+	}
+
+	if (argi->till_given) {
+		till = dt_strp(argi->till_arg);
+	} else {
+		till = (echs_instant_t){2037, 12, 31};
+	}
+
+	/* sample stream */
+	init_stream((echs_stream_f[]){xmas_next, easter_next}, 2);
+
+	/* the iterator */
+	next = from;
+	for (echs_event_t e;
+	     (e = echs_stream(next)).when.u && __inst_le_p(e.when, till);) {
+		static char buf[256];
+		char *bp = buf;
 
 		/* BEST has the guy */
 		next = e.when;
-		pr_when(next);
-		fputc('\t', stdout);
-		fputs(e.what, stdout);
-		fputc('\n', stdout);
+		bp += dt_strf(buf, sizeof(buf), next);
+		*bp++ = '\t';
+		{
+			size_t e_whaz = strlen(e.what);
+			memcpy(bp, e.what, e_whaz);
+			bp += e_whaz;
+		}
+		*bp++ = '\n';
+		*bp = '\0';
+		if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+			break;
+		}
 	}
-	return 0;
+
+	free_stream();
+out:
+	echs_parser_free(argi);
+	return res;
 }
 
 /* echse.c ends here */

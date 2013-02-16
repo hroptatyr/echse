@@ -24,7 +24,11 @@ easter_la_LDFLAGS = $(MOD_LDFLAGS)
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
+echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
+echse_SOURCES += instant.h
+echse_SOURCES += dt-strpf.c dt-strpf.h
+BUILT_SOURCES += echse-clo.c echse-clo.h
 
 
 ## our rule for gengetopt
