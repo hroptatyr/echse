@@ -215,17 +215,40 @@ echs_stream(echs_instant_t inst)
 /* dso handling */
 #define logger(what, how, args...)	fprintf(stderr, how "\n", args)
 
+static echs_mod_t
+open_aux(const char *strm)
+{
+	echs_mod_t m;
+	echs_mod_f inif;
+	echs_mod_f strf;
+
+	if ((m = echs_mod_open(strm)) == NULL) {
+		logger(LOG_ERR, "cannot open dso %s", strm);
+		return NULL;
+	} else if ((strf = echs_mod_sym(m, "echs_stream")) == NULL) {
+		logger(LOG_ERR, "cannot find stream in %s", strm);
+	} else if ((inif = echs_mod_sym(m, "init_stream")) != NULL &&
+		   ((int(*)(void))inif)() < 0) {
+		logger(LOG_ERR, "cannot init dso %s", strm);
+	} else {
+		/* everything in order, even the initter */
+		return m;
+	}
+	echs_mod_close(m);
+	return NULL;
+}
+
 static int
 close_aux(echs_mod_t m)
 {
 	echs_mod_f finf;
 	int res = -1;
 
-	if ((finf = echs_mod_sym(m, "fini_stream")) == NULL) {
+	if ((finf = echs_mod_sym(m, "fini_stream")) != NULL &&
+	    (res = ((int(*)(void))finf)()) < 0) {
 		logger(LOG_ERR, "cannot fini dso %p", m);
-	} else {
-		res = ((int(*)(void))finf)();
 	}
+	echs_mod_close(m);
 	return res;
 }
 
@@ -281,29 +304,22 @@ main(int argc, char *argv[])
 	for (unsigned int i = 0; i < argi->inputs_num; i++) {
 		const char *strm = argi->inputs[i];
 		echs_mod_t m;
-		echs_mod_f inif;
 		echs_mod_f strf;
 
-		if ((m = echs_mod_open(strm)) == NULL) {
-			logger(LOG_ERR, "cannot open dso %s", strm);
-		} else if ((inif = echs_mod_sym(m, "init_stream")) == NULL) {
-			logger(LOG_ERR, "cannot init dso %s", strm);
-		} else if ((strf = echs_mod_sym(m, "echs_stream")) == NULL) {
-			logger(LOG_ERR, "cannot find stream in %s", strm);
-		} else if (((int(*)(void))inif)() < 0) {
-			logger(LOG_ERR, "init'ing dso %s failed", strm);
-		} else {
-			/* everything in order, call the initter */
-			res = ((int(*)(void))inif)();
-
-			if (nems % 64U) {
-				ems = realloc(ems, (nems + 64) * sizeof(*ems));
-			}
-			ems[nems] = m;
-
-			/* add the stream function */
-			add_stream((echs_stream_f)strf);
+		if ((m = open_aux(strm)) == NULL ||
+		    (strf = echs_mod_sym(m, "echs_stream")) == NULL) {
+			logger(LOG_ERR, "cannot use stream DSO %s", strm);
+			continue;
 		}
+
+		if ((nems % 64U) == 0U) {
+			/* resize */
+			ems = realloc(ems, (nems + 64U) * sizeof(*ems));
+		}
+		ems[nems] = m;
+
+		/* add the stream function */
+		add_stream((echs_stream_f)strf);
 	}
 
 	/* the iterator */
