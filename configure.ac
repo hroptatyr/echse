@@ -48,6 +48,14 @@ AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
 
+## mimic automake on this one
+pkglibdir="${libdir}/${PACKAGE}"
+pkgincludedir="${includedir}/${PACKAGE}"
+AC_SUBST([pkglibdir])
+AC_SUBST([pkgincludedir])
+AC_DEFINE_UNQUOTED([PKGLIBDIR], ["${pkglibdir}"], [where modules reside])
+AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside])
+
 dnl -------------------------------------------------------------------------
 dnl final output
 dnl -------------------------------------------------------------------------

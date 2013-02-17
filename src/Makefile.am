@@ -28,6 +28,11 @@ echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
 echse_SOURCES += instant.h
 echse_SOURCES += dt-strpf.c dt-strpf.h
+echse_SOURCES += module.c module.h
+echse_CPPFLAGS = $(AM_CPPFLAGS)
+echse_CPPFLAGS += $(INCLTDL)
+echse_LDFLAGS = $(AM_LDFLAGS)
+echse_LDFLAGS += $(LIBLTDL)
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
 
