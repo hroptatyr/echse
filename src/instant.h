@@ -46,6 +46,12 @@ extern echs_instant_t echs_instant_fixup(echs_instant_t);
 
 
 static inline __attribute__((pure)) bool
+__inst_0_p(echs_instant_t x)
+{
+	return x.u == 0U;
+}
+
+static inline __attribute__((pure)) bool
 __inst_lt_p(echs_instant_t x, echs_instant_t y)
 {
 	return (x.y < y.y || x.y == y.y &&
