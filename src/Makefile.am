@@ -27,6 +27,10 @@ new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += weekend.la
 weekend_la_LDFLAGS = $(MOD_LDFLAGS)
 
+## DSOs for internal use
+pkglib_LTLIBRARIES += echs-file.la
+echs_file_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
@@ -34,6 +38,7 @@ echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
 echse_SOURCES += instant.c instant.h
 echse_SOURCES += dt-strpf.c dt-strpf.h
+echse_SOURCES += stream.c stream.h
 echse_SOURCES += module.c module.h
 echse_CPPFLAGS = $(AM_CPPFLAGS)
 echse_CPPFLAGS += $(INCLTDL)

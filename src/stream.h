@@ -1,11 +1,11 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** stream.h -- stream modules, files, sockets, etc.
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
  * This file is part of echse.
- *
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -34,53 +34,16 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
+#if !defined INCLUDED_stream_h_
+#define INCLUDED_stream_h_
 
-#include <stdbool.h>
 #include "echse.h"
 
-/**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+typedef const struct echs_strdef_s *echs_strdef_t;
 
-
-static inline __attribute__((pure)) bool
-__inst_0_p(echs_instant_t x)
-{
-	return x.u == 0U;
-}
+extern echs_strdef_t echs_open(const char *strdef);
+extern void echs_close(echs_strdef_t);
 
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
-{
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
-}
+extern echs_event_t echs_stream_next(echs_strdef_t, echs_instant_t);
 
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
-{
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
-}
-
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-#endif	/* INCLUDED_instant_h_ */
+#endif	/* INCLUDED_stream_h_ */

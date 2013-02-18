@@ -47,7 +47,7 @@
 #include "echse.h"
 #include "instant.h"
 #include "dt-strpf.h"
-#include "module.h"
+#include "stream.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -55,43 +55,49 @@
 #if !defined UNLIKELY
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
 
 
 /* myself as stream */
-static echs_stream_f *evf;
+static echs_strdef_t *esds;
 static echs_event_t *evs;
-static size_t nevf;
+static size_t nesds;
 
 int
-fini_stream(void)
+fini_stream(void *UNUSED(clo))
 {
-	if (LIKELY(evf != NULL)) {
-		free(evf);
+	if (LIKELY(esds != NULL)) {
+		for (size_t i = 0; i < nesds; i++) {
+			echs_close(esds[i]);
+		}
+		free(esds);
 		free(evs);
 	}
-	nevf = 0UL;
-	evf = NULL;
+	nesds = 0UL;
+	esds = NULL;
 	evs = NULL;
 	return 0;
 }
 
-int
+void*
 init_stream(void)
 {
-	return 0;
+	return NULL;
 }
 
 static void
-add_stream(echs_stream_f f)
+add_strdef(echs_strdef_t sd)
 {
-	if (UNLIKELY((nevf % 64U) == 0U)) {
-		evf = realloc(evf, (nevf + 64U) * sizeof(*evf));
+	if (UNLIKELY((nesds % 64U) == 0U)) {
+		esds = realloc(esds, (nesds + 64U) * sizeof(*esds));
 		/* also realloc the event cache */
-		evs = realloc(evs, (nevf + 64U) * sizeof(*evs));
-		memset(evs + nevf, 0, 64 * sizeof(evs));
+		evs = realloc(evs, (nesds + 64U) * sizeof(*evs));
+		memset(evs + nesds, 0, 64 * sizeof(evs));
 	}
 	/* bang f */
-	evf[nevf++] = f;
+	esds[nesds++] = sd;
 	return;
 }
 
@@ -108,12 +114,20 @@ echs_stream(echs_instant_t inst)
 	}
 
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < nevf; i++) {
-		if (__inst_lt_p(evs[i].when, inst)) {
+	for (size_t i = 0; i < nesds; i++) {
+		if (esds[i] == NULL) {
+			continue;
+		} else if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
-			evs[i] = evf[i](inst);
+			evs[i] = echs_stream_next(esds[i], inst);
+			if (__inst_0_p(evs[i].when)) {
+				echs_close(esds[i]);
+				esds[i] = NULL;
+				continue;
+			}
 		}
-		if (__inst_lt_p(evs[i].when, evs[best].when)) {
+		if (__inst_lt_p(evs[i].when, evs[best].when) ||
+		    __inst_0_p(evs[best].when)) {
 			best = i;
 		}
 	}
@@ -122,49 +136,12 @@ echs_stream(echs_instant_t inst)
 	e = evs[best];
 
 	/* refill that cache now that we still know who's best */
-	evs[best] = evf[best](e.when);
+	evs[best] = echs_stream_next(esds[best], e.when);
+	if (__inst_0_p(evs[best].when)) {
+		echs_close(esds[best]);
+		esds[best] = NULL;
+	}
 	return e;
-}
-
-
-/* dso handling */
-#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
-
-static echs_mod_t
-open_aux(const char *strm)
-{
-	echs_mod_t m;
-	echs_mod_f inif;
-	echs_mod_f strf;
-
-	if ((m = echs_mod_open(strm)) == NULL) {
-		logger(LOG_ERR, "cannot open dso %s", strm);
-		return NULL;
-	} else if ((strf = echs_mod_sym(m, "echs_stream")) == NULL) {
-		logger(LOG_ERR, "cannot find stream in %s", strm);
-	} else if ((inif = echs_mod_sym(m, "init_stream")) != NULL &&
-		   ((int(*)(void))inif)() < 0) {
-		logger(LOG_ERR, "cannot init dso %s", strm);
-	} else {
-		/* everything in order, even the initter */
-		return m;
-	}
-	echs_mod_close(m);
-	return NULL;
-}
-
-static int
-close_aux(echs_mod_t m)
-{
-	echs_mod_f finf;
-	int res = -1;
-
-	if ((finf = echs_mod_sym(m, "fini_stream")) != NULL &&
-	    (res = ((int(*)(void))finf)()) < 0) {
-		logger(LOG_ERR, "cannot fini dso %p", m);
-	}
-	echs_mod_close(m);
-	return res;
 }
 
 
@@ -185,12 +162,11 @@ close_aux(echs_mod_t m)
 # pragma GCC diagnostic warning "-Wswitch-enum"
 #endif	/* __INTEL_COMPILER */
 
+#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
+
 int
 main(int argc, char *argv[])
 {
-	/* dso list */
-	static echs_mod_t *ems;
-	static size_t nems;
 	/* command line options */
 	struct echs_args_info argi[1];
 	/* date range to scan through */
@@ -218,23 +194,15 @@ main(int argc, char *argv[])
 
 	for (unsigned int i = 0; i < argi->inputs_num; i++) {
 		const char *strm = argi->inputs[i];
-		echs_mod_t m;
-		echs_mod_f strf;
+		echs_strdef_t m;
 
-		if ((m = open_aux(strm)) == NULL ||
-		    (strf = echs_mod_sym(m, "echs_stream")) == NULL) {
+		if ((m = echs_open(strm)) == NULL) {
 			logger(LOG_ERR, "cannot use stream DSO %s", strm);
 			continue;
 		}
 
-		if ((nems % 64U) == 0U) {
-			/* resize */
-			ems = realloc(ems, (nems + 64U) * sizeof(*ems));
-		}
-		ems[nems] = m;
-
 		/* add the stream function */
-		add_stream((echs_stream_f)strf);
+		add_strdef(m);
 	}
 
 	/* the iterator */
@@ -261,12 +229,7 @@ main(int argc, char *argv[])
 	}
 
 	/* get all of them streams in here finished */
-	fini_stream();
-
-	for (size_t i = 0; i < nems; i++) {
-		close_aux(ems[i]);
-	}
-	free(ems);
+	fini_stream(NULL);
 
 out:
 	echs_parser_free(argi);

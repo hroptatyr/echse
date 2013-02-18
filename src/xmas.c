@@ -39,11 +39,14 @@
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
 #endif	/* !countof */
+#if !defined UNUSED
+# define UNUSED(x)		__attribute__((unused)) x
+#endif	/* UNUSED */
 
 
 /* christmas stream */
 echs_event_t
-echs_stream(echs_instant_t i)
+echs_stream(echs_instant_t i, void *UNUSED(clo))
 {
 	DEFSTATE(XMAS);
 	DEFSTATE(BOXD);

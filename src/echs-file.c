@@ -1,4 +1,4 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** echs-file.c -- echs file stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,53 +34,51 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
-
-#include <stdbool.h>
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include <stdio.h>
 #include "echse.h"
+#include "instant.h"
 
-/**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+#if defined __INTEL_COMPILER
+# pragma warning (disable:1419)
+#endif	/* __INTEL_COMPILER */
+
+extern void *init_file(const char*);
 
 
-static inline __attribute__((pure)) bool
-__inst_0_p(echs_instant_t x)
+void*
+init_file(const char *fn)
 {
-	return x.u == 0U;
+	FILE *f;
+
+	if ((f = fopen(fn, "r")) == NULL) {
+		return ECHS_FAILED;
+	}
+	printf("got %p\n", f);
+	return f;
 }
 
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
+echs_event_t
+echs_stream(echs_instant_t i, void *clo)
 {
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
+	echs_event_t e;
+
+	printf("clo %p\n", clo);
+	e.when = (echs_instant_t){0};
+	e.what = NULL;
+	return e;
 }
 
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
+int
+fini_stream(void *clo)
 {
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
+	printf("fini %p\n", clo);
+	if (clo != NULL) {
+		fclose(clo);
+	}
+	return 0;
 }
 
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-#endif	/* INCLUDED_instant_h_ */
+/* echs-file.c ends here */
