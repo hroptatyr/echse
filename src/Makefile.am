@@ -27,6 +27,10 @@ new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += weekend.la
 weekend_la_LDFLAGS = $(MOD_LDFLAGS)
 
+## DSOs for internal use
+pkglib_LTLIBRARIES += echs-file.la
+echs_file_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
