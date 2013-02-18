@@ -32,7 +32,7 @@ echse_SOURCES += module.c module.h
 echse_CPPFLAGS = $(AM_CPPFLAGS)
 echse_CPPFLAGS += $(INCLTDL)
 echse_LDFLAGS = $(AM_LDFLAGS)
-echse_LDFLAGS += $(LIBLTDL)
+echse_LDFLAGS += $(LIBLTDL) -export-dynamic
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
 
