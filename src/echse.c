@@ -47,7 +47,7 @@
 #include "echse.h"
 #include "instant.h"
 #include "dt-strpf.h"
-#include "module.h"
+#include "stream.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -127,47 +127,6 @@ echs_stream(echs_instant_t inst)
 }
 
 
-/* dso handling */
-#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
-
-static echs_mod_t
-open_aux(const char *strm)
-{
-	echs_mod_t m;
-	echs_mod_f inif;
-	echs_mod_f strf;
-
-	if ((m = echs_mod_open(strm)) == NULL) {
-		logger(LOG_ERR, "cannot open dso %s", strm);
-		return NULL;
-	} else if ((strf = echs_mod_sym(m, "echs_stream")) == NULL) {
-		logger(LOG_ERR, "cannot find stream in %s", strm);
-	} else if ((inif = echs_mod_sym(m, "init_stream")) != NULL &&
-		   ((int(*)(void))inif)() < 0) {
-		logger(LOG_ERR, "cannot init dso %s", strm);
-	} else {
-		/* everything in order, even the initter */
-		return m;
-	}
-	echs_mod_close(m);
-	return NULL;
-}
-
-static int
-close_aux(echs_mod_t m)
-{
-	echs_mod_f finf;
-	int res = -1;
-
-	if ((finf = echs_mod_sym(m, "fini_stream")) != NULL &&
-	    (res = ((int(*)(void))finf)()) < 0) {
-		logger(LOG_ERR, "cannot fini dso %p", m);
-	}
-	echs_mod_close(m);
-	return res;
-}
-
-
 #if defined __INTEL_COMPILER
 # pragma warning (disable:593)
 # pragma warning (disable:181)
@@ -185,11 +144,13 @@ close_aux(echs_mod_t m)
 # pragma GCC diagnostic warning "-Wswitch-enum"
 #endif	/* __INTEL_COMPILER */
 
+#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
+
 int
 main(int argc, char *argv[])
 {
 	/* dso list */
-	static echs_mod_t *ems;
+	static echs_strdef_t *ems;
 	static size_t nems;
 	/* command line options */
 	struct echs_args_info argi[1];
@@ -218,11 +179,9 @@ main(int argc, char *argv[])
 
 	for (unsigned int i = 0; i < argi->inputs_num; i++) {
 		const char *strm = argi->inputs[i];
-		echs_mod_t m;
-		echs_mod_f strf;
+		echs_strdef_t m;
 
-		if ((m = open_aux(strm)) == NULL ||
-		    (strf = echs_mod_sym(m, "echs_stream")) == NULL) {
+		if ((m = echs_open(strm)) == NULL) {
 			logger(LOG_ERR, "cannot use stream DSO %s", strm);
 			continue;
 		}
@@ -234,7 +193,7 @@ main(int argc, char *argv[])
 		ems[nems] = m;
 
 		/* add the stream function */
-		add_stream((echs_stream_f)strf);
+		add_stream(echs_get_stream(m));
 	}
 
 	/* the iterator */
@@ -264,7 +223,7 @@ main(int argc, char *argv[])
 	fini_stream();
 
 	for (size_t i = 0; i < nems; i++) {
-		close_aux(ems[i]);
+		echs_close(ems[i]);
 	}
 	free(ems);
 
