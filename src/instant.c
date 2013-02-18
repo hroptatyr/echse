@@ -1,4 +1,4 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** instant.c -- some echs_instant_t functionality
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,47 +34,76 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 
-#include <stdbool.h>
-#include "echse.h"
+#include "instant.h"
 
-/**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 
 
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
+echs_instant_t
+echs_instant_fixup(echs_instant_t e)
 {
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
+/* this is basically __ymd_fixup_d of dateutils
+ * we only care about additive cockups though because instants are
+ * chronologically ascending */
+	static const unsigned int mdays[] = {
+		0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
+	};
+	unsigned int md;
+
+	if (UNLIKELY(e.ms >= 1000U)) {
+		unsigned int dS = e.ms / 1000U;
+		unsigned int ms = e.ms % 1000U;
+
+		e.ms = ms;
+		e.S += dS;
+	}
+	if (UNLIKELY(e.S >= 60U)) {
+		/* leap seconds? */
+		unsigned int dM = e.S / 60U;
+		unsigned int S = e.S % 60U;
+
+		e.S = S;
+		e.M += dM;
+	}
+	if (UNLIKELY(e.M >= 60U)) {
+		unsigned int dH = e.M / 60U;
+		unsigned int M = e.M % 60U;
+
+		e.M = M;
+		e.H += dH;
+	}
+	if (UNLIKELY(e.H >= 24U)) {
+		unsigned int dd = e.H / 24U;
+		unsigned int H = e.H % 24U;
+
+		e.H = H;
+		e.d += dd;
+	}
+
+refix_ym:
+	if (UNLIKELY(e.m > 12U)) {
+		unsigned int dy = (e.m - 1) / 12U;
+		unsigned int m = (e.m - 1) % 12U + 1U;
+
+		e.m = m;
+		e.y += dy;
+	}
+
+	if (UNLIKELY(e.d > (md = mdays[e.m]))) {
+		e.d -= md;
+		e.m++;
+		goto refix_ym;
+	}
+	return e;
 }
 
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
-{
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
-}
-
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-#endif	/* INCLUDED_instant_h_ */
+/* instant.c ends here */
