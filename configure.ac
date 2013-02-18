@@ -39,8 +39,22 @@ SXE_CHECK_CC([c11 c1x c99 gnu99])
 SXE_CHECK_CFLAGS
 AC_C_BIGENDIAN
 
+AC_PATH_PROG([GENGETOPT], [gengetopt])
+if test -z "${GENGETOPT}"; then
+	GENGETOPT="gengetopt"
+fi
+AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
+
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
+
+## mimic automake on this one
+pkglibdir="${libdir}/${PACKAGE}"
+pkgincludedir="${includedir}/${PACKAGE}"
+AC_SUBST([pkglibdir])
+AC_SUBST([pkgincludedir])
+AC_DEFINE_UNQUOTED([PKGLIBDIR], ["${pkglibdir}"], [where modules reside])
+AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside])
 
 dnl -------------------------------------------------------------------------
 dnl final output

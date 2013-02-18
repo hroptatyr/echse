@@ -1,4 +1,4 @@
-/*** echse.h -- testing echse concept
+/*** weekend.c -- sat+sun stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,51 +34,71 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
+#include "echse.h"
+#include "instant.h"
 
-#include <stdlib.h>
-#include <stdint.h>
+#if !defined countof
+# define countof(x)		(sizeof(x) / sizeof(*x))
+#endif	/* !countof */
 
-#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
-#define ON(x)		(state__ ## x + 1U)
-#define OFF(x)		(state__ ## x + 0U)
+static unsigned int
+__get_wday(echs_instant_t i)
+{
+/* sakamoto method, stolen from dateutils */
+	static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+	int year = i.y;
+	int res;
 
-
-typedef union echs_instant_u echs_instant_t;
-typedef const char *echs_state_t;
-typedef struct echs_event_s echs_event_t;
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
-
-union echs_instant_u {
-	struct {
-		uint32_t y:16;
-		uint32_t m:8;
-		uint32_t d:8;
-		uint32_t H:8;
-		uint32_t M:8;
-		uint32_t S:6;
-		uint32_t ms:10;
-	};
-	uint64_t u;
-} __attribute__((transparent_union));
-
-struct echs_event_s {
-	echs_instant_t when;
-	echs_state_t what;
-};
+	year -= i.m < 3;
+	res = year + year / 4U - year / 100U + year / 400U;
+	res += t[i.m - 1U] + i.d;
+	return (unsigned int)res % 7U;
+}
 
 
-/**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t);
+/* new-year stream */
+echs_event_t
+echs_stream(echs_instant_t i)
+{
+	DEFSTATE(SAT);
+	DEFSTATE(SUN);
+	struct echs_event_s e;
+	unsigned int wd;
 
-/**
- * Initialiser for DSOs.*/
-extern int init_stream(void);
+	switch ((wd = __get_wday(i))) {
+		static const echs_state_t s[] = {
+			ON(SAT), OFF(SAT), ON(SUN), OFF(SUN)
+		};
+		static const echs_state_t *sp;
+	case 0/*S*/:
+		if (sp == s + 1) {
+			e.when = i;
+			e.what = *(sp = s + 2);
+			break;
+		}
+	case 1/*M*/:
+		if (sp == s + 2) {
+			e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
+			e.what = *(sp = s + 3);
+			break;
+		}
+	case 2/*T*/:
+	case 3/*W*/:
+	case 4/*R*/:
+	case 5/*F*/:
+		/* point to next sat */
+		e.when = (echs_instant_t){i.y, i.m, i.d + (6U - wd)};
+		e.what = *(sp = s);
+		break;
+	case 6/*A*/:
+		e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
+		e.what = *(sp = s + 1);
+		break;
+	default:
+		abort();
+	}
+	e.when = echs_instant_fixup(e.when);
+	return e;
+}
 
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void);
-
-#endif	/* INCLUDED_echse_h_ */
+/* weekend.c ends here */

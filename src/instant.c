@@ -1,4 +1,4 @@
-/*** echse.h -- testing echse concept
+/*** instant.c -- some echs_instant_t functionality
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,51 +34,76 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 
-#include <stdlib.h>
-#include <stdint.h>
+#include "instant.h"
 
-#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
-#define ON(x)		(state__ ## x + 1U)
-#define OFF(x)		(state__ ## x + 0U)
-
-
-typedef union echs_instant_u echs_instant_t;
-typedef const char *echs_state_t;
-typedef struct echs_event_s echs_event_t;
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
-
-union echs_instant_u {
-	struct {
-		uint32_t y:16;
-		uint32_t m:8;
-		uint32_t d:8;
-		uint32_t H:8;
-		uint32_t M:8;
-		uint32_t S:6;
-		uint32_t ms:10;
-	};
-	uint64_t u;
-} __attribute__((transparent_union));
-
-struct echs_event_s {
-	echs_instant_t when;
-	echs_state_t what;
-};
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 
 
-/**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t);
+echs_instant_t
+echs_instant_fixup(echs_instant_t e)
+{
+/* this is basically __ymd_fixup_d of dateutils
+ * we only care about additive cockups though because instants are
+ * chronologically ascending */
+	static const unsigned int mdays[] = {
+		0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
+	};
+	unsigned int md;
 
-/**
- * Initialiser for DSOs.*/
-extern int init_stream(void);
+	if (UNLIKELY(e.ms >= 1000U)) {
+		unsigned int dS = e.ms / 1000U;
+		unsigned int ms = e.ms % 1000U;
 
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void);
+		e.ms = ms;
+		e.S += dS;
+	}
+	if (UNLIKELY(e.S >= 60U)) {
+		/* leap seconds? */
+		unsigned int dM = e.S / 60U;
+		unsigned int S = e.S % 60U;
 
-#endif	/* INCLUDED_echse_h_ */
+		e.S = S;
+		e.M += dM;
+	}
+	if (UNLIKELY(e.M >= 60U)) {
+		unsigned int dH = e.M / 60U;
+		unsigned int M = e.M % 60U;
+
+		e.M = M;
+		e.H += dH;
+	}
+	if (UNLIKELY(e.H >= 24U)) {
+		unsigned int dd = e.H / 24U;
+		unsigned int H = e.H % 24U;
+
+		e.H = H;
+		e.d += dd;
+	}
+
+refix_ym:
+	if (UNLIKELY(e.m > 12U)) {
+		unsigned int dy = (e.m - 1) / 12U;
+		unsigned int m = (e.m - 1) % 12U + 1U;
+
+		e.m = m;
+		e.y += dy;
+	}
+
+	if (UNLIKELY(e.d > (md = mdays[e.m]))) {
+		e.d -= md;
+		e.m++;
+		goto refix_ym;
+	}
+	return e;
+}
+
+/* instant.c ends here */

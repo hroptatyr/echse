@@ -1,6 +1,6 @@
-/*** echse.h -- testing echse concept
+/*** dt-strpf.h -- parser and formatter funs for echse
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2011-2013 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,52 +33,23 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
+ **/
+#if !defined INCLUDED_dt_strpf_h_
+#define INCLUDED_dt_strpf_h_
 
-#include <stdlib.h>
-#include <stdint.h>
+#include "echse.h"
 
-#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
-#define ON(x)		(state__ ## x + 1U)
-#define OFF(x)		(state__ ## x + 0U)
+/**
+ * Parse STR with the standard parser. */
+extern echs_instant_t dt_strp(const char *str);
 
-
-typedef union echs_instant_u echs_instant_t;
-typedef const char *echs_state_t;
-typedef struct echs_event_s echs_event_t;
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
-
-union echs_instant_u {
-	struct {
-		uint32_t y:16;
-		uint32_t m:8;
-		uint32_t d:8;
-		uint32_t H:8;
-		uint32_t M:8;
-		uint32_t S:6;
-		uint32_t ms:10;
-	};
-	uint64_t u;
-} __attribute__((transparent_union));
-
-struct echs_event_s {
-	echs_instant_t when;
-	echs_state_t what;
-};
+/**
+ * Print INST into BUF (of size BSZ) and return its length. */
+extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
 
 
-/**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t);
+#if defined INCLUDE_DT_STRPF_IMPL
+# include "dt-strpf.c"
+#endif	/* INCLUDE_DT_STRPF_IMPL */
 
-/**
- * Initialiser for DSOs.*/
-extern int init_stream(void);
-
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void);
-
-#endif	/* INCLUDED_echse_h_ */
+#endif	/* INCLUDED_dt_strpf_h_ */

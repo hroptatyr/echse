@@ -1,4 +1,4 @@
-/*** echse.h -- testing echse concept
+/*** new-year.c -- new-year's stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,51 +34,24 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
-
-#include <stdlib.h>
-#include <stdint.h>
-
-#define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
-#define ON(x)		(state__ ## x + 1U)
-#define OFF(x)		(state__ ## x + 0U)
-
-
-typedef union echs_instant_u echs_instant_t;
-typedef const char *echs_state_t;
-typedef struct echs_event_s echs_event_t;
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
-
-union echs_instant_u {
-	struct {
-		uint32_t y:16;
-		uint32_t m:8;
-		uint32_t d:8;
-		uint32_t H:8;
-		uint32_t M:8;
-		uint32_t S:6;
-		uint32_t ms:10;
-	};
-	uint64_t u;
-} __attribute__((transparent_union));
-
-struct echs_event_s {
-	echs_instant_t when;
-	echs_state_t what;
-};
+#include "echse.h"
 
 
-/**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t);
+/* new-year stream */
+echs_event_t
+echs_stream(echs_instant_t i)
+{
+	DEFSTATE(NEWYEAR);
+	struct echs_event_s e;
 
-/**
- * Initialiser for DSOs.*/
-extern int init_stream(void);
+	if (i.m > 1U || i.d > 1U) {
+		e.when = (echs_instant_t){i.y + 1, 1U, 1U};
+		e.what = ON(NEWYEAR);
+	} else {
+		e.when = (echs_instant_t){i.y, 1U, 2U};
+		e.what = OFF(NEWYEAR);
+	}
+	return e;
+}
 
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void);
-
-#endif	/* INCLUDED_echse_h_ */
+/* new-year.c ends here */

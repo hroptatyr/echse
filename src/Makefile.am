@@ -1,8 +1,8 @@
 ### Makefile.am
 
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200112L -D_XOPEN_SOURCE=600 -D_BSD_SOURCE
-AM_LDFLAGS =
-MOD_LDFLAGS = -shared -avoid-version -module
+AM_LDFLAGS = $(XCCLDFLAGS)
+MOD_LDFLAGS = $(XCCLDFLAGS) -shared -avoid-version -module
 
 bin_PROGRAMS =
 noinst_PROGRAMS =
@@ -21,10 +21,25 @@ xmas_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += easter.la
 easter_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += new-year.la
+new_year_la_LDFLAGS = $(MOD_LDFLAGS)
+
+pkglib_LTLIBRARIES += weekend.la
+weekend_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
+echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
+echse_SOURCES += instant.c instant.h
+echse_SOURCES += dt-strpf.c dt-strpf.h
+echse_SOURCES += module.c module.h
+echse_CPPFLAGS = $(AM_CPPFLAGS)
+echse_CPPFLAGS += $(INCLTDL)
+echse_LDFLAGS = $(AM_LDFLAGS)
+echse_LDFLAGS += $(LIBLTDL) -export-dynamic
+BUILT_SOURCES += echse-clo.c echse-clo.h
 
 
 ## our rule for gengetopt
