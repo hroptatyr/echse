@@ -36,10 +36,14 @@
  ***/
 #include "echse.h"
 
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
+
 
 /* new-year stream */
 echs_event_t
-echs_stream(echs_instant_t i)
+echs_stream(echs_instant_t i, void *UNUSED(clo))
 {
 	DEFSTATE(NEWYEAR);
 	struct echs_event_s e;

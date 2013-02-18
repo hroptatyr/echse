@@ -40,6 +40,9 @@
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
 #endif	/* !countof */
+#if !defined UNUSED
+# define UNUSED(x)		__attribute__((unused)) x
+#endif	/* UNUSED */
 
 static unsigned int
 __get_wday(echs_instant_t i)
@@ -58,7 +61,7 @@ __get_wday(echs_instant_t i)
 
 /* new-year stream */
 echs_event_t
-echs_stream(echs_instant_t i)
+echs_stream(echs_instant_t i, void *UNUSED(clo))
 {
 	DEFSTATE(SAT);
 	DEFSTATE(SUN);
