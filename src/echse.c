@@ -109,11 +109,17 @@ echs_stream(echs_instant_t inst)
 
 	/* try and find the very next event out of all instants */
 	for (size_t i = 0; i < nevf; i++) {
-		if (__inst_lt_p(evs[i].when, inst)) {
+		if (evf[i] == NULL) {
+			continue;
+		} else if (__inst_lt_p(evs[i].when, inst)) {
 			/* refill */
-			evs[i] = evf[i](inst);
+			if (__inst_0_p((evs[i] = evf[i](inst)).when)) {
+				evf[i] = NULL;
+				continue;
+			}
 		}
-		if (__inst_lt_p(evs[i].when, evs[best].when)) {
+		if (__inst_lt_p(evs[i].when, evs[best].when) ||
+		    __inst_0_p(evs[best].when)) {
 			best = i;
 		}
 	}
@@ -122,7 +128,9 @@ echs_stream(echs_instant_t inst)
 	e = evs[best];
 
 	/* refill that cache now that we still know who's best */
-	evs[best] = evf[best](e.when);
+	if (__inst_0_p((evs[best] = evf[best](e.when)).when)) {
+		evf[best] = NULL;
+	}
 	return e;
 }
 
