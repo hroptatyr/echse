@@ -49,97 +49,12 @@
 #include "dt-strpf.h"
 #include "module.h"
 
-#define countof(x)		(sizeof(x) / sizeof(*x))
-
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
 #endif	/* !LIKELY */
 #if !defined UNLIKELY
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
-
-
-/* christmas stream */
-static echs_event_t
-xmas_next(echs_instant_t i)
-{
-	DEFSTATE(XMAS);
-	DEFSTATE(BOXD);
-	struct echs_event_s e;
-
-	if (i.m < 12U || i.d < 25U) {
-		e.when = (echs_instant_t){i.y, 12U, 25U};
-		e.what = ON(XMAS);
-	} else if (i.d <= 26U) {
-		static const echs_state_t s[] = {OFF(XMAS), ON(BOXD)};
-		static const echs_state_t *sp = s;
-
-		if (sp < s + countof(s)) {
-			e.when = (echs_instant_t){i.y, 12U, 26U};
-			e.what = *sp++;
-		} else {
-			/* reset state counter */
-			sp = s;
-			e.when = (echs_instant_t){i.y, 12U, 27U};
-			e.what = OFF(BOXD);
-		}
-	} else {
-		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		e.what = ON(XMAS);
-	}
-	return e;
-}
-
-
-/* easter stream */
-static echs_instant_t
-__easter(unsigned int y)
-{
-	/* compute gregorian easter date first */
-	unsigned int a = y % 19U;
-	unsigned int b = y / 4U;
-	unsigned int c = b / 25U + 1;
-	unsigned int d = 3U * c / 4U;
-	unsigned int e;
-
-	e = 19U * a + -((8U * c + 5) / 25U) + d + 15U;
-	e %= 30U;
-	e += (29578U - a - 32U * e) / 1024U;
-	e = e - ((y % 7U) + b - d + e + 2) % 7U;
-	return (echs_instant_t){y, e <= 31 ? 3U : 4U, e <= 31U ? e : e - 31U};
-}
-
-static echs_event_t
-easter_next(echs_instant_t i)
-{
-	DEFSTATE(EASTER);
-	struct echs_event_s e;
-
-	if (i.m >= 5U) {
-	next_year:
-		/* compute next years easter sunday right away */
-		e.when = __easter(i.y + 1);
-		e.what = ON(EASTER);
-	} else {
-		echs_instant_t easter = __easter(i.y);
-
-		if (i.m > easter.m || i.d > easter.d) {
-			goto next_year;
-		} else if (i.m < easter.m || i.d < easter.d) {
-			e.when = easter;
-			e.what = ON(EASTER);
-		} else {
-			/* compute end of easter */
-			if (++easter.d > 31U) {
-				easter.d = 1U;
-				easter.m = 4U;
-			}
-			e.when = easter;
-			e.what = OFF(EASTER);
-		}
-	}
-	return e;
-}
 
 
 /* myself as stream */
