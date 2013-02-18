@@ -24,6 +24,9 @@ easter_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += new-year.la
 new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += weekend.la
+weekend_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
