@@ -37,8 +37,9 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
-
 #include <string.h>
+#include <sys/stat.h>
+
 #include "echse.h"
 #include "stream.h"
 #include "module.h"
@@ -92,6 +93,7 @@ echs_strdef_t
 echs_open(const char *strdef)
 {
 	struct echs_strdef_s res;
+	struct stat st;
 
 	/* try the module thing first */
 	if ((res.m = echs_mod_open(strdef)) != NULL) {
@@ -112,6 +114,27 @@ echs_open(const char *strdef)
 			__close(&res);
 			return NULL;
 		}
+	} else if (stat(strdef, &st) >= 0 &&
+		   S_ISREG(st.st_mode) &&
+		   !(st.st_mode & S_IXUSR) &&
+		   (res.m = echs_mod_open("echs-file")) != NULL) {
+		/* could be a genuine echs file, we use the echs-file DSO
+		 * so we don't have to worry about closures and shit */
+		echs_mod_f f;
+
+		if ((f = echs_mod_sym(res.m, "init_file")) != NULL &&
+		    ((int(*)(const char*))f)(strdef) ||
+		    (f = echs_mod_sym(res.m, "echs_stream")) == NULL) {
+			/* grrrrr */
+			__close(&res);
+			return NULL;
+		}
+
+		/* otherwise keep a not about this guy */
+		res.f = (echs_stream_f)f;
+	} else {
+		/* super fuckup */
+		return NULL;
 	}
 	return __strdef_dup(&res);
 }
