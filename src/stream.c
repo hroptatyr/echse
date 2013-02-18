@@ -51,9 +51,12 @@
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
 
+typedef echs_event_t(*echs_stream_f)(echs_instant_t, void*);
+
 struct echs_strdef_s {
 	echs_mod_t m;
 	echs_stream_f f;
+	void *clo;
 };
 
 static echs_strdef_t
@@ -72,7 +75,7 @@ __close(const struct echs_strdef_s sd[static 1])
 
 		if ((f = echs_mod_sym(sd->m, "fini_stream")) != NULL) {
 			/* call the finaliser */
-			((int(*)(void))f)();
+			((int(*)(void*))f)(sd->clo);
 		}
 
 		/* and (or otherwise) close the module */
@@ -98,6 +101,7 @@ echs_open(const char *strdef)
 	/* try the module thing first */
 	if ((res.m = echs_mod_open(strdef)) != NULL) {
 		echs_mod_f f;
+		void *clo = NULL;
 
 		if ((f = echs_mod_sym(res.m, "echs_stream")) == NULL) {
 			/* nope, unsuitable */
@@ -109,11 +113,12 @@ echs_open(const char *strdef)
 
 		/* try and find the initialiser */
 		if ((f = echs_mod_sym(res.m, "init_stream")) != NULL &&
-		    ((int(*)(void))f)() < 0) {
+		    (clo = ((void*(*)(void))f)()) == ECHS_FAILED) {
 			/* nope, fuck it */
 			__close(&res);
 			return NULL;
 		}
+		res.clo = clo;
 	} else if (stat(strdef, &st) >= 0 &&
 		   S_ISREG(st.st_mode) &&
 		   !(st.st_mode & S_IXUSR) &&
@@ -121,9 +126,10 @@ echs_open(const char *strdef)
 		/* could be a genuine echs file, we use the echs-file DSO
 		 * so we don't have to worry about closures and shit */
 		echs_mod_f f;
+		void *clo = NULL;
 
 		if ((f = echs_mod_sym(res.m, "init_file")) != NULL &&
-		    ((int(*)(const char*))f)(strdef) ||
+		    (clo = ((void*(*)(const char*))f)(strdef)) == ECHS_FAILED ||
 		    (f = echs_mod_sym(res.m, "echs_stream")) == NULL) {
 			/* grrrrr */
 			__close(&res);
@@ -132,6 +138,7 @@ echs_open(const char *strdef)
 
 		/* otherwise keep a not about this guy */
 		res.f = (echs_stream_f)f;
+		res.clo = clo;
 	} else {
 		/* super fuckup */
 		return NULL;
@@ -150,10 +157,10 @@ echs_close(echs_strdef_t sd)
 	return;
 }
 
-echs_stream_f
-echs_get_stream(echs_strdef_t sd)
+echs_event_t
+echs_stream_next(echs_strdef_t sd, echs_instant_t inst)
 {
-	return sd->f;
+	return sd->f(inst, sd->clo);
 }
 
 /* stream.c ends here */

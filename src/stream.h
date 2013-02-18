@@ -44,6 +44,6 @@ typedef const struct echs_strdef_s *echs_strdef_t;
 extern echs_strdef_t echs_open(const char *strdef);
 extern void echs_close(echs_strdef_t);
 
-extern echs_stream_f echs_get_stream(echs_strdef_t);
+extern echs_event_t echs_stream_next(echs_strdef_t, echs_instant_t);
 
 #endif	/* INCLUDED_stream_h_ */

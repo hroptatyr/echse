@@ -45,36 +45,39 @@
 # pragma warning (disable:1419)
 #endif	/* __INTEL_COMPILER */
 
-extern int init_file(const char*);
-static FILE *f;
+extern void *init_file(const char*);
 
 
-int
+void*
 init_file(const char *fn)
 {
+	FILE *f;
+
 	if ((f = fopen(fn, "r")) == NULL) {
-		return -1;
+		return ECHS_FAILED;
 	}
-	return 0;
+	printf("got %p\n", f);
+	return f;
 }
 
 echs_event_t
-echs_stream(echs_instant_t i)
+echs_stream(echs_instant_t i, void *clo)
 {
 	echs_event_t e;
 
+	printf("clo %p\n", clo);
 	e.when = (echs_instant_t){0};
 	e.what = NULL;
 	return e;
 }
 
 int
-fini_stream(void)
+fini_stream(void *clo)
 {
-	if (f != NULL) {
-		fclose(f);
+	printf("fini %p\n", clo);
+	if (clo != NULL) {
+		fclose(clo);
 	}
-	f = NULL;
 	return 0;
 }
 
