@@ -1,4 +1,4 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** weekend.c -- sat+sun stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,47 +34,71 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
-
-#include <stdbool.h>
 #include "echse.h"
+#include "instant.h"
 
-/**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+#if !defined countof
+# define countof(x)		(sizeof(x) / sizeof(*x))
+#endif	/* !countof */
+
+static unsigned int
+__get_wday(echs_instant_t i)
+{
+/* sakamoto method, stolen from dateutils */
+	static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+	int year = i.y;
+	int res;
+
+	year -= i.m < 3;
+	res = year + year / 4U - year / 100U + year / 400U;
+	res += t[i.m - 1U] + i.d;
+	return (unsigned int)res % 7U;
+}
 
 
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
+/* new-year stream */
+echs_event_t
+echs_stream(echs_instant_t i)
 {
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
+	DEFSTATE(SAT);
+	DEFSTATE(SUN);
+	struct echs_event_s e;
+	unsigned int wd;
+
+	switch ((wd = __get_wday(i))) {
+		static const echs_state_t s[] = {
+			ON(SAT), OFF(SAT), ON(SUN), OFF(SUN)
+		};
+		static const echs_state_t *sp;
+	case 0/*S*/:
+		if (sp == s + 1) {
+			e.when = i;
+			e.what = *(sp = s + 2);
+			break;
+		}
+	case 1/*M*/:
+		if (sp == s + 2) {
+			e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
+			e.what = *(sp = s + 3);
+			break;
+		}
+	case 2/*T*/:
+	case 3/*W*/:
+	case 4/*R*/:
+	case 5/*F*/:
+		/* point to next sat */
+		e.when = (echs_instant_t){i.y, i.m, i.d + (6U - wd)};
+		e.what = *(sp = s);
+		break;
+	case 6/*A*/:
+		e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
+		e.what = *(sp = s + 1);
+		break;
+	default:
+		abort();
+	}
+	e.when = echs_instant_fixup(e.when);
+	return e;
 }
 
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
-{
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
-}
-
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-#endif	/* INCLUDED_instant_h_ */
+/* weekend.c ends here */

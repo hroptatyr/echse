@@ -24,12 +24,15 @@ easter_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += new-year.la
 new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += weekend.la
+weekend_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
 echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
-echse_SOURCES += instant.h
+echse_SOURCES += instant.c instant.h
 echse_SOURCES += dt-strpf.c dt-strpf.h
 echse_SOURCES += module.c module.h
 echse_CPPFLAGS = $(AM_CPPFLAGS)
