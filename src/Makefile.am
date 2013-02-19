@@ -46,6 +46,16 @@ echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
+noinst_LTLIBRARIES += echse.la
+echse_la_SOURCES = echse.c
+echse_la_SOURCES += boobs.h
+echse_la_SOURCES += instant.c instant.h
+echse_la_SOURCES += dt-strpf.c dt-strpf.h
+echse_la_SOURCES += strdef.c strdef.h
+echse_la_SOURCES += module.c module.h
+echse_la_LDFLAGS = $(MOD_LDFLAGS)
+echse_la_LDFLAGS += -rpath /none
+
 noinst_PROGRAMS += echse-collect
 echse_collect_SOURCES = echse-collect.c
 echse_collect_SOURCES += echse-collect-clo.ggo
