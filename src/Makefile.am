@@ -59,9 +59,13 @@ echse_la_LDFLAGS += -rpath /none
 noinst_PROGRAMS += echse-collect
 echse_collect_SOURCES = echse-collect.c
 echse_collect_SOURCES += echse-collect-clo.ggo
+echse_collect_SOURCES += dt-strpf.c dt-strpf.h
+echse_collect_SOURCES += module.c module.h
+echse_collect_SOURCES += gq.c gq.h
 echse_collect_CPPFLAGS = $(AM_CPPFLAGS)
 echse_collect_CPPFLAGS += $(INCLTDL)
 echse_collect_LDFLAGS = $(AM_LDFLAGS)
+echse_collect_LDFLAGS += $(LIBLTDL) -export-dynamic
 BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
 
 

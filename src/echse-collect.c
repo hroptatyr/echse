@@ -47,6 +47,9 @@
 #include <time.h>
 
 #include "echse.h"
+#include "instant.h"
+#include "dt-strpf.h"
+#include "module.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -81,12 +84,82 @@ main(int argc, char *argv[])
 {
 	/* command line options */
 	struct echs_args_info argi[1];
+	echs_instant_t from;
+	echs_instant_t till;
+	echs_mod_t ex;
+	echs_stream_t s;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {
 		res = 1;
 		goto out;
 	}
+
+	if (argi->from_given) {
+		from = dt_strp(argi->from_arg);
+	} else {
+		from = (echs_instant_t){2000, 1, 1};
+	}
+
+	if (argi->till_given) {
+		till = dt_strp(argi->till_arg);
+	} else {
+		till = (echs_instant_t){2037, 12, 31};
+	}
+
+	{
+		typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
+		echs_mod_f f;
+		const char *const *in = argi->inputs;
+		size_t nin = argi->inputs_num;
+
+		if ((ex = echs_mod_open("echse")) == NULL) {
+			printf("NOPE\n");
+			goto out;
+		} else if ((f = echs_mod_sym(ex, "make_echs_stream")) == NULL) {
+			printf("no m_e_s()\n");
+			goto clos_out;
+		} else if ((s = ((make_stream_f)f)(from, in, nin)).f == NULL) {
+			printf("no stream\n");
+			goto clos_out;
+		}
+	}
+
+	/* the iterator */
+	for (echs_event_t e;
+	     (e = echs_stream_next(s),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		static char buf[256];
+		char *bp = buf;
+
+		/* BEST has the guy */
+		bp += dt_strf(buf, sizeof(buf), e.when);
+		*bp++ = '\t';
+		{
+			size_t e_whaz = strlen(e.what);
+			memcpy(bp, e.what, e_whaz);
+			bp += e_whaz;
+		}
+		*bp++ = '\n';
+		*bp = '\0';
+		if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+			break;
+		}
+	}
+
+	{
+		typedef void(*free_stream_f)(echs_stream_t);
+		echs_mod_f f;
+
+		if ((f = echs_mod_sym(ex, "free_echs_stream")) == NULL) {
+			printf("no f_e_s()\n");
+			goto clos_out;
+		}
+		((free_stream_f)f)(s);
+	}
+
+clos_out:
+	echs_mod_close(ex);
 
 out:
 	echs_parser_free(argi);

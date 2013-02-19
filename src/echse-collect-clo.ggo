@@ -3,3 +3,10 @@ package "echse-collect"
 usage "echse-collect [OPTION]... SOURCE..."
 description "tba."
 
+option "from" -
+	"Start event states at DT."
+	string typestr="DT" optional
+
+option "till" -
+	"Finish event streams by DT."
+	string typestr="DT" optional
