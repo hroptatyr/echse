@@ -45,34 +45,66 @@
 
 
 /* christmas stream */
-echs_event_t
-echs_stream(echs_instant_t i, void *UNUSED(clo))
+static enum {
+	BEFORE_XMAS,
+	ON_XMAS,
+	BEFORE_BOXD,
+	ON_BOXD,
+} state;
+static unsigned int y;
+
+static echs_event_t
+__xmas(void *UNUSED(clo))
 {
 	DEFSTATE(XMAS);
 	DEFSTATE(BOXD);
-	struct echs_event_s e;
+	echs_event_t e;
 
-	if (i.m < 12U || i.d < 25U) {
-		e.when = (echs_instant_t){i.y, 12U, 25U};
+	switch (state) {
+	case BEFORE_XMAS:
+		e.when = (echs_instant_t){y, 12U, 25U};
 		e.what = ON(XMAS);
-	} else if (i.d <= 26U) {
-		static const echs_state_t s[] = {OFF(XMAS), ON(BOXD)};
-		static const echs_state_t *sp = s;
-
-		if (sp < s + countof(s)) {
-			e.when = (echs_instant_t){i.y, 12U, 26U};
-			e.what = *sp++;
-		} else {
-			/* reset state counter */
-			sp = s;
-			e.when = (echs_instant_t){i.y, 12U, 27U};
-			e.what = OFF(BOXD);
-		}
-	} else {
-		e.when = (echs_instant_t){i.y + 1, 12U, 25U};
-		e.what = ON(XMAS);
+		state = ON_XMAS;
+		break;
+	case ON_XMAS:
+		e.when = (echs_instant_t){y, 12U, 26U};
+		e.what = OFF(XMAS);
+		state = BEFORE_BOXD;
+		break;
+	case BEFORE_BOXD:
+		e.when = (echs_instant_t){y, 12U, 26U};
+		e.what = ON(BOXD);
+		state = ON_BOXD;
+		break;
+	case ON_BOXD:
+		e.when = (echs_instant_t){y, 12U, 27U};
+		e.what = OFF(BOXD);
+		state = BEFORE_XMAS;
+		y++;
+		break;
+	default:
+		abort();
 	}
 	return e;
+}
+
+echs_stream_t
+make_echs_stream(echs_instant_t i, ...)
+{
+	if (i.m < 12U || i.d <= 25U) {
+		y = i.y;
+		state = BEFORE_XMAS;
+	} else if (i.d <= 26U) {
+		y = i.y;
+		state = ON_XMAS;
+	} else if (i.d <= 27U) {
+		y = i.y;
+		state = ON_BOXD;
+	} else {
+		y = i.y + 1;
+		state = BEFORE_XMAS;
+	}
+	return (echs_stream_t){__xmas, NULL};
 }
 
 /* xmas.c ends here */

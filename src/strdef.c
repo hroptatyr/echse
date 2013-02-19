@@ -1,4 +1,4 @@
-/*** stream.c -- stream modules, files, sockets, etc.
+/*** strdef.c -- stream modules, files, sockets, etc.
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -41,7 +41,7 @@
 #include <sys/stat.h>
 
 #include "echse.h"
-#include "stream.h"
+#include "strdef.h"
 #include "module.h"
 
 #if !defined LIKELY
@@ -51,74 +51,27 @@
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
 
-typedef echs_event_t(*echs_stream_f)(echs_instant_t, void*);
-
-struct echs_strdef_s {
-	echs_mod_t m;
-	echs_stream_f f;
-	void *clo;
-};
-
-static echs_strdef_t
-__strdef_dup(echs_strdef_t x)
-{
-	struct echs_strdef_s *res = malloc(sizeof(*x));
-	*res = *x;
-	return res;
-}
-
-static struct echs_strdef_s*
-__close(const struct echs_strdef_s sd[static 1])
-{
-	if (sd->m != NULL) {
-		echs_mod_f f;
-
-		if ((f = echs_mod_sym(sd->m, "fini_stream")) != NULL) {
-			/* call the finaliser */
-			((int(*)(void*))f)(sd->clo);
-		}
-
-		/* and (or otherwise) close the module */
-		echs_mod_close(sd->m);
-	}
-	/* de-const */
-	{
-		union {
-			const void *c;
-			void *p;
-		} x = {sd};
-		return x.p;
-	}
-}
-
 
 echs_strdef_t
-echs_open(const char *strdef)
+echs_open(echs_instant_t i, const char *strdef)
 {
+	typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
 	struct echs_strdef_s res;
 	struct stat st;
 
 	/* try the module thing first */
 	if ((res.m = echs_mod_open(strdef)) != NULL) {
 		echs_mod_f f;
-		void *clo = NULL;
 
-		if ((f = echs_mod_sym(res.m, "echs_stream")) == NULL) {
+		if ((f = echs_mod_sym(res.m, "make_echs_stream")) == NULL) {
 			/* nope, unsuitable */
 			echs_mod_close(res.m);
-			return NULL;
+			goto fuckup;
+		} else if ((res.s = ((make_stream_f)f)(i)).f == NULL) {
+			/* no stream returned */
+			echs_close(res);
+			goto fuckup;
 		}
-		/* otherwise keep a not about this guy */
-		res.f = (echs_stream_f)f;
-
-		/* try and find the initialiser */
-		if ((f = echs_mod_sym(res.m, "init_stream")) != NULL &&
-		    (clo = ((void*(*)(void))f)()) == ECHS_FAILED) {
-			/* nope, fuck it */
-			__close(&res);
-			return NULL;
-		}
-		res.clo = clo;
 	} else if (stat(strdef, &st) >= 0 &&
 		   S_ISREG(st.st_mode) &&
 		   !(st.st_mode & S_IXUSR) &&
@@ -126,41 +79,41 @@ echs_open(const char *strdef)
 		/* could be a genuine echs file, we use the echs-file DSO
 		 * so we don't have to worry about closures and shit */
 		echs_mod_f f;
-		void *clo = NULL;
 
-		if ((f = echs_mod_sym(res.m, "init_file")) != NULL &&
-		    (clo = ((void*(*)(const char*))f)(strdef)) == ECHS_FAILED ||
-		    (f = echs_mod_sym(res.m, "echs_stream")) == NULL) {
-			/* grrrrr */
-			__close(&res);
-			return NULL;
+		if ((f = echs_mod_sym(res.m, "make_echs_stream")) == NULL) {
+			/* nope, unsuitable */
+			echs_mod_close(res.m);
+			goto fuckup;
+		} else if ((res.s = ((make_stream_f)f)(i, strdef)).f == NULL) {
+			/* no stream returned */
+			echs_close(res);
+			goto fuckup;
 		}
-
-		/* otherwise keep a not about this guy */
-		res.f = (echs_stream_f)f;
-		res.clo = clo;
 	} else {
+	fuckup:
 		/* super fuckup */
-		return NULL;
+		return (echs_strdef_t){.m = NULL};
 	}
-	return __strdef_dup(&res);
+	return res;
 }
 
 void
 echs_close(echs_strdef_t sd)
 {
-	if (LIKELY(sd != NULL)) {
-		struct echs_strdef_s *tmp = __close(sd);
-		memset(tmp, 0, sizeof(*tmp));
-		free(tmp);
+	typedef void(*free_stream_f)(echs_stream_t);
+
+	if (sd.m != NULL) {
+		echs_mod_f f;
+
+		if ((f = echs_mod_sym(sd.m, "free_echs_stream")) != NULL) {
+			/* call the finaliser */
+			((free_stream_f)f)(sd.s);
+		}
+
+		/* and (or otherwise) close the module */
+		echs_mod_close(sd.m);
 	}
 	return;
 }
 
-echs_event_t
-echs_stream_next(echs_strdef_t sd, echs_instant_t inst)
-{
-	return sd->f(inst, sd->clo);
-}
-
-/* stream.c ends here */
+/* strdef.c ends here */
