@@ -202,6 +202,7 @@ free_echs_stream(echs_stream_t s)
 }
 
 
+#if defined STANDALONE
 #if defined __INTEL_COMPILER
 # pragma warning (disable:593)
 # pragma warning (disable:181)
@@ -278,5 +279,6 @@ out:
 	echs_parser_free(argi);
 	return res;
 }
+#endif	/* STANDALONE */
 
 /* echse.c ends here */
