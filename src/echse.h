@@ -82,19 +82,6 @@ extern echs_stream_t make_echs_stream(echs_instant_t, ...);
  * Stream dtor. */
 extern void free_echs_stream(echs_stream_t);
 
-/* old system */
-/**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t, void*);
-
-/**
- * Initialiser for DSOs.*/
-extern void *init_stream(void);
-
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void*);
-
 
 static inline echs_event_t
 echs_stream_next(echs_stream_t s)
