@@ -83,4 +83,24 @@ __inst_eq_p(echs_instant_t x, echs_instant_t y)
 		x.ms == y.ms;
 }
 
+
+/* convenience */
+static inline bool
+__event_0_p(echs_event_t e)
+{
+	return __inst_0_p(e.when);
+}
+
+static inline bool
+__event_lt_p(echs_event_t e, echs_instant_t i)
+{
+	return __inst_lt_p(e.when, i);
+}
+
+static inline bool
+__event_le_p(echs_event_t e, echs_instant_t i)
+{
+	return __inst_le_p(e.when, i);
+}
+
 #endif	/* INCLUDED_instant_h_ */
