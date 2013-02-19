@@ -121,6 +121,8 @@ __stream(void *clo)
 	}
 
 	/* BEST has the guy */
+	x->rfll = bestindx;
+	x->last = bestinst;
 	return x->strms[bestindx].ev;
 }
 
@@ -161,6 +163,8 @@ make_echs_stream(echs_instant_t inst, ...)
 		/* inc */
 		x.nstrms++;
 	}
+	/* set refill slot */
+	x.rfll = -1UL;
 	return (echs_stream_t){__stream, &x};
 }
 
