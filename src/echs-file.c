@@ -37,17 +37,12 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
-#include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include "echse.h"
 #include "instant.h"
 #include "dt-strpf.h"
-
-#if defined __INTEL_COMPILER
-# pragma warning (disable:1419)
-#endif	/* __INTEL_COMPILER */
-
-extern void *init_file(const char*);
 
 struct clo_s {
 	FILE *f;
@@ -55,61 +50,70 @@ struct clo_s {
 	size_t llen;
 };
 
-
-void*
-init_file(const char *fn)
-{
-	static struct clo_s clo[1];
-
-	if ((clo->f = fopen(fn, "r")) == NULL) {
-		return ECHS_FAILED;
-	}
-	return clo;
-}
-
-echs_event_t
-echs_stream(echs_instant_t inst, void *clo)
+static echs_event_t
+echs_file_stream(void *clo)
 {
 	struct clo_s *x = clo;
 	ssize_t nrd;
+	const char *p;
+	char *eol;
+	echs_instant_t i;
 
-	while ((nrd = getline(&x->line, &x->llen, x->f)) > 0) {
-		/* read the line */
-		const char *p;
-		char *eol;
-		echs_instant_t i;
-
-		if ((p = strchr(x->line, '\t')) == NULL) {
-			continue;
-		} else if ((eol = strchr(x->line, '\n')) == NULL) {
-			continue;
-		} else if (__inst_0_p(i = dt_strp(x->line))) {
-			continue;
-		} else if (__inst_lt_p(i, inst)) {
-			continue;
-		}
-		/* otherwise it's a match */
-		*eol = '\0';
-		return (echs_event_t){.when = i, .what = p + 1};
+	if ((nrd = getline(&x->line, &x->llen, x->f)) <= 0) {
+		goto nul;
+	} else if ((p = strchr(x->line, '\t')) == NULL) {
+		goto nul;
+	} else if ((eol = strchr(p, '\n')) == NULL) {
+		goto nul;
+	} else if (__inst_0_p(i = dt_strp(x->line))) {
+		goto nul;
 	}
+	/* otherwise it's a match */
+	*eol = '\0';
+	return (echs_event_t){.when = i, .what = p + 1};
+nul:
 	return (echs_event_t){0};
 }
 
-int
-fini_stream(void *clo)
+
+echs_stream_t
+make_echs_stream(echs_instant_t i, ...)
 {
-	struct clo_s *x = clo;
+/* wants a const char *fn */
+	va_list ap;
+	const char *fn;
+	FILE *f;
+	struct clo_s *clo;
 
-	if (x->f != NULL) {
-		fclose(x->f);
+	va_start(ap, i);
+	fn = va_arg(ap, const char*);
+	va_end(ap);
+
+	if ((f = fopen(fn, "r")) == NULL) {
+		return (echs_stream_t){NULL};
 	}
-	if (x->line != NULL) {
-		free(x->line);
+	/* otherwise set up the closure */
+	clo = calloc(1, sizeof(*clo));
+	clo->f = f;
+	return (echs_stream_t){echs_file_stream, clo};
+}
+
+void
+free_echs_stream(echs_stream_t x)
+{
+	struct clo_s *clo = x.clo;
+
+	if (clo->f != NULL) {
+		fclose(clo->f);
 	}
-	x->f = NULL;
-	x->line = NULL;
-	x->llen = 0UL;
-	return 0;
+	if (clo->line != NULL) {
+		free(clo->line);
+	}
+	clo->f = NULL;
+	clo->line = NULL;
+	clo->llen = 0UL;
+	free(clo);
+	return;
 }
 
 /* echs-file.c ends here */

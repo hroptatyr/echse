@@ -1,4 +1,4 @@
-/*** stream.h -- stream modules, files, sockets, etc.
+/*** strdef.h -- stream modules, files, sockets, etc.
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,16 +34,21 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_stream_h_
-#define INCLUDED_stream_h_
+#if !defined INCLUDED_strdef_h_
+#define INCLUDED_strdef_h_
 
 #include "echse.h"
 
-typedef const struct echs_strdef_s *echs_strdef_t;
+typedef struct echs_strdef_s echs_strdef_t;
+typedef void *echs_strhdl_t;
 
-extern echs_strdef_t echs_open(const char *strdef);
+struct echs_strdef_s {
+	echs_stream_t s;
+	echs_strhdl_t m;
+};
+
+
+extern echs_strdef_t echs_open(echs_instant_t i, const char *strdef);
 extern void echs_close(echs_strdef_t);
 
-extern echs_event_t echs_stream_next(echs_strdef_t, echs_instant_t);
-
-#endif	/* INCLUDED_stream_h_ */
+#endif	/* INCLUDED_strdef_h_ */

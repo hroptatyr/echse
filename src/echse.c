@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -47,7 +48,7 @@
 #include "echse.h"
 #include "instant.h"
 #include "dt-strpf.h"
-#include "stream.h"
+#include "strdef.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -59,82 +60,123 @@
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
+#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
+
 
 /* myself as stream */
-static echs_strdef_t *esds;
-static echs_event_t *evs;
-static size_t nesds;
+struct echse_clo_s {
+	size_t nstrms;
+	struct {
+		echs_strdef_t sd;
+		echs_event_t ev;
+	} *strms;
+	/* index to refill */
+	size_t rfll;
+	/* last instant served */
+	echs_instant_t last;
+};
 
-int
-fini_stream(void *UNUSED(clo))
+static echs_event_t
+__stream(void *clo)
 {
-	if (LIKELY(esds != NULL)) {
-		for (size_t i = 0; i < nesds; i++) {
-			echs_close(esds[i]);
-		}
-		free(esds);
-		free(evs);
-	}
-	nesds = 0UL;
-	esds = NULL;
-	evs = NULL;
-	return 0;
-}
+	struct echse_clo_s *x = clo;
+	echs_instant_t bestinst;
+	size_t bestindx = 0;
 
-void*
-init_stream(void)
-{
-	return NULL;
-}
-
-static void
-add_strdef(echs_strdef_t sd)
-{
-	if (UNLIKELY((nesds % 64U) == 0U)) {
-		esds = realloc(esds, (nesds + 64U) * sizeof(*esds));
-		/* also realloc the event cache */
-		evs = realloc(evs, (nesds + 64U) * sizeof(*evs));
-		memset(evs + nesds, 0, 64 * sizeof(evs));
-	}
-	/* bang f */
-	esds[nesds++] = sd;
-	return;
-}
-
-echs_event_t
-echs_stream(echs_instant_t inst, void *UNUSED(clo))
-{
-	size_t best = 0;
-
-	if (UNLIKELY(evs == NULL)) {
-		return (echs_event_t){0};
-	}
+	/* start out with the best, non-0 index */
+	bestinst = x->strms[bestindx].ev.when;
 
 	/* try and find the very next event out of all instants */
-	for (size_t i = 0; i < nesds; i++) {
-		if (esds[i] == NULL) {
+	for (size_t i = 0; i < x->nstrms; i++) {
+		echs_instant_t inst = x->strms[i].ev.when;
+
+		if (x->strms[i].sd.s.f == NULL) {
 			continue;
-		} else if (__inst_le_p(evs[i].when, inst)) {
+		} else if (i == x->rfll || __inst_lt_p(inst, x->last)) {
+			echs_stream_t s = x->strms[i].sd.s;
+			echs_event_t e;
+
 			/* refill */
 			do {
-				evs[i] = echs_stream_next(esds[i], inst);
-			} while (!__inst_0_p(evs[i].when) &&
-				 __inst_le_p(evs[i].when, inst));
+				e = echs_stream_next(s);
+			} while (!__inst_0_p(e.when) &&
+				 __inst_lt_p(e.when, x->last));
 
-			if (__inst_0_p(evs[i].when)) {
-				echs_close(esds[i]);
-				esds[i] = NULL;
+			if (__inst_0_p(e.when)) {
+				echs_close(x->strms[i].sd);
+				memset(x->strms + i, 0, sizeof(*x->strms));
 				continue;
 			}
+
+			/* otherwise cache E */
+			x->strms[i].ev = e;
+			inst = e.when;
 		}
-		if (__inst_lt_p(evs[i].when, evs[best].when) ||
-		    __inst_0_p(evs[best].when)) {
-			best = i;
+
+		/* do the actual check */
+		if (__inst_lt_p(inst, bestinst) || __inst_0_p(bestinst)) {
+			bestindx = i;
+			bestinst = x->strms[bestindx].ev.when;
 		}
 	}
 
 	/* BEST has the guy */
-	return evs[best];
+	return x->strms[bestindx].ev;
+}
+
+echs_stream_t
+make_echs_stream(echs_instant_t inst, ...)
+{
+	static struct echse_clo_s x;
+	va_list ap;
+	const char *const *fn;
+	size_t nfn;
+
+	va_start(ap, inst);
+	fn = va_arg(ap, const char *const*);
+	nfn = va_arg(ap, size_t);
+	va_end(ap);
+
+	for (size_t i = 0; i < nfn; i++) {
+		const char *strm = fn[i];
+		echs_strdef_t sd;
+
+		if ((sd = echs_open(i, strm)).m == NULL) {
+			logger(LOG_ERR, "cannot use stream DSO %s", strm);
+			continue;
+		}
+
+		if (UNLIKELY((x.nstrms % 64U) == 0U)) {
+			/* realloc the streams array */
+			size_t ol_sz = (x.nstrms + 0U) * sizeof(*x.strms);
+			size_t nu_sz = (x.nstrms + 64U) * sizeof(*x.strms);
+
+			x.strms = realloc(x.strms, nu_sz);
+			memset(x.strms + x.nstrms, 0, nu_sz - ol_sz);
+		}
+		/* bang strdef */
+		x.strms[x.nstrms].sd = sd;
+		/* cache the next event */
+		x.strms[x.nstrms].ev = echs_stream_next(sd.s);
+		/* inc */
+		x.nstrms++;
+	}
+	return (echs_stream_t){__stream, &x};
+}
+
+void
+free_echs_stream(echs_stream_t s)
+{
+	struct echse_clo_s *x = s.clo;
+
+	if (LIKELY(x->strms != NULL)) {
+		for (size_t i = 0; i < x->nstrms; i++) {
+			echs_close(x->strms[i].sd);
+		}
+		free(x->strms);
+	}
+	memset(x, 0, sizeof(*x));
+	return;
 }
 
 
@@ -155,8 +197,6 @@ echs_stream(echs_instant_t inst, void *UNUSED(clo))
 # pragma GCC diagnostic warning "-Wswitch-enum"
 #endif	/* __INTEL_COMPILER */
 
-#define logger(what, how, args...)	fprintf(stderr, how "\n", args)
-
 int
 main(int argc, char *argv[])
 {
@@ -165,7 +205,7 @@ main(int argc, char *argv[])
 	/* date range to scan through */
 	echs_instant_t from;
 	echs_instant_t till;
-	echs_instant_t next;
+	echs_stream_t this;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {
@@ -185,30 +225,17 @@ main(int argc, char *argv[])
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
-	for (unsigned int i = 0; i < argi->inputs_num; i++) {
-		const char *strm = argi->inputs[i];
-		echs_strdef_t m;
-
-		if ((m = echs_open(strm)) == NULL) {
-			logger(LOG_ERR, "cannot use stream DSO %s", strm);
-			continue;
-		}
-
-		/* add the stream function */
-		add_strdef(m);
-	}
+	this = make_echs_stream(from, argi->inputs, argi->inputs_num);
 
 	/* the iterator */
-	next = from;
 	for (echs_event_t e;
-	     (e = echs_stream(next, NULL)).when.u &&
-		     __inst_le_p(e.when, till);) {
+	     (e = echs_stream_next(this),
+	      !__inst_0_p(e.when) && __inst_le_p(e.when, till));) {
 		static char buf[256];
 		char *bp = buf;
 
 		/* BEST has the guy */
-		next = e.when;
-		bp += dt_strf(buf, sizeof(buf), next);
+		bp += dt_strf(buf, sizeof(buf), e.when);
 		*bp++ = '\t';
 		{
 			size_t e_whaz = strlen(e.what);
@@ -223,7 +250,7 @@ main(int argc, char *argv[])
 	}
 
 	/* get all of them streams in here finished */
-	fini_stream(NULL);
+	free_echs_stream(this);
 
 out:
 	echs_parser_free(argi);
