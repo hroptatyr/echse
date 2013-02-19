@@ -41,6 +41,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -62,6 +63,24 @@
 
 #define logger(what, how, args...)	fprintf(stderr, how "\n", args)
 
+static inline bool
+__event_0_p(echs_event_t e)
+{
+	return __inst_0_p(e.when);
+}
+
+static inline bool
+__event_lt_p(echs_event_t e, echs_instant_t i)
+{
+	return __inst_lt_p(e.when, i);
+}
+
+static inline bool
+__event_le_p(echs_event_t e, echs_instant_t i)
+{
+	return __inst_le_p(e.when, i);
+}
+
 
 /* myself as stream */
 struct echse_clo_s {
@@ -82,10 +101,10 @@ __refill(echs_stream_t s, echs_instant_t last)
 	echs_event_t e;
 
 	do {
-		if (__inst_0_p((e = echs_stream_next(s)).when)) {
+		if (__event_0_p(e = echs_stream_next(s))) {
 			break;
 		}
-	} while (__inst_lt_p(e.when, last));
+	} while (__event_lt_p(e, last));
 	return e;
 }
 
@@ -118,7 +137,7 @@ __stream(void *clo)
 			echs_stream_t s = x->strms[i].sd.s;
 			echs_event_t e;
 
-			if (__inst_0_p((e = __refill(s, x->last)).when)) {
+			if (__event_0_p(e = __refill(s, x->last))) {
 				goto clos_0;
 			}
 
@@ -252,7 +271,7 @@ main(int argc, char *argv[])
 	/* the iterator */
 	for (echs_event_t e;
 	     (e = echs_stream_next(this),
-	      !__inst_0_p(e.when) && __inst_le_p(e.when, till));) {
+	      !__event_0_p(e) && __event_le_p(e, till));) {
 		static char buf[256];
 		char *bp = buf;
 
