@@ -87,8 +87,8 @@ __stream(void *clo)
 		return (echs_event_t){0};
 	}
 	/* start out with the best, non-0 index */
-	bestindx = 0;
-	bestinst = x->strms[bestindx].ev.when;
+	bestindx = -1UL;
+	bestinst = (echs_instant_t){.u = (uint64_t)-1};
 
 	/* try and find the very next event out of all instants */
 	for (size_t i = 0; i < x->nstrms; i++) {
@@ -125,8 +125,12 @@ __stream(void *clo)
 	}
 
 	/* BEST has the guy */
-	x->rfll = bestindx;
-	x->last = bestinst;
+	if (UNLIKELY((x->rfll = bestindx) == -1UL ||
+		     __inst_0_p(x->last = bestinst))) {
+		/* big fucking fuck */
+		return (echs_event_t){0};
+	}
+	/* otherwise just use the cache */
 	return x->strms[bestindx].ev;
 }
 
