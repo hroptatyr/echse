@@ -102,7 +102,7 @@ add_strdef(echs_strdef_t sd)
 }
 
 echs_event_t
-echs_stream(echs_instant_t inst)
+echs_stream(echs_instant_t inst, void *UNUSED(clo))
 {
 	size_t best = 0;
 	echs_event_t e;
@@ -208,7 +208,8 @@ main(int argc, char *argv[])
 	/* the iterator */
 	next = from;
 	for (echs_event_t e;
-	     (e = echs_stream(next)).when.u && __inst_le_p(e.when, till);) {
+	     (e = echs_stream(next, NULL)).when.u &&
+		     __inst_le_p(e.when, till);) {
 		static char buf[256];
 		char *bp = buf;
 
