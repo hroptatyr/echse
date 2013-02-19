@@ -55,7 +55,7 @@
 echs_strdef_t
 echs_open(echs_instant_t i, const char *strdef)
 {
-	typedef echs_stream_t(*make_stream_f)();
+	typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
 	struct echs_strdef_s res;
 	struct stat st;
 
@@ -100,7 +100,7 @@ echs_open(echs_instant_t i, const char *strdef)
 void
 echs_close(echs_strdef_t sd)
 {
-	typedef void(*free_stream_f)();
+	typedef void(*free_stream_f)(echs_stream_t);
 
 	if (sd.m != NULL) {
 		echs_mod_f f;
