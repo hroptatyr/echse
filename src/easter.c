@@ -109,7 +109,7 @@ make_echs_stream(echs_instant_t i, ...)
 
 		if (i.m > easter.m || i.d > easter.d) {
 			goto next_year;
-		} else if (i.m < easter.m || i.d < easter.d) {
+		} else if (i.m < easter.m || i.d <= easter.d) {
 			y = i.y;
 			state = BEFORE_EASTER;
 		} else {

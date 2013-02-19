@@ -91,7 +91,7 @@ __xmas(void *UNUSED(clo))
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
-	if (i.m < 12U || i.d < 25U) {
+	if (i.m < 12U || i.d <= 25U) {
 		y = i.y;
 		state = BEFORE_XMAS;
 	} else if (i.d <= 26U) {
