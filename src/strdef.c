@@ -107,7 +107,7 @@ echs_close(echs_strdef_t sd)
 
 		if ((f = echs_mod_sym(sd.m, "free_echs_stream")) != NULL) {
 			/* call the finaliser */
-			((free_stream_f)f)(sd.s.clo);
+			((free_stream_f)f)(sd.s);
 		}
 
 		/* and (or otherwise) close the module */
