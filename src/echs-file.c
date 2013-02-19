@@ -77,15 +77,16 @@ nul:
 
 
 echs_stream_t
-make_echs_stream(echs_instant_t i, ...)
+make_echs_stream(echs_instant_t inst, ...)
 {
 /* wants a const char *fn */
 	va_list ap;
 	const char *fn;
 	FILE *f;
 	struct clo_s *clo;
+	ssize_t nrd;
 
-	va_start(ap, i);
+	va_start(ap, inst);
 	fn = va_arg(ap, const char*);
 	va_end(ap);
 
@@ -95,7 +96,21 @@ make_echs_stream(echs_instant_t i, ...)
 	/* otherwise set up the closure */
 	clo = calloc(1, sizeof(*clo));
 	clo->f = f;
+
+	while ((nrd = getline(&clo->line, &clo->llen, f)) > 0) {
+		echs_instant_t i;
+
+		if (__inst_0_p(i = dt_strp(clo->line))) {
+			goto nul;
+		} else if (__inst_lt_p(inst, i)) {
+			/* ungetline() */
+			fseek(f, -nrd, SEEK_CUR);
+			break;
+		}
+	}
 	return (echs_stream_t){echs_file_stream, clo};
+nul:
+	return (echs_stream_t){NULL};
 }
 
 void
