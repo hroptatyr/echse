@@ -141,7 +141,7 @@ make_echs_stream(echs_instant_t inst, ...)
 		const char *strm = fn[i];
 		echs_strdef_t sd;
 
-		if ((sd = echs_open(i, strm)).m == NULL) {
+		if ((sd = echs_open(inst, strm)).m == NULL) {
 			logger(LOG_ERR, "cannot use stream DSO %s", strm);
 			continue;
 		}
