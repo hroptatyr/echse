@@ -81,9 +81,13 @@ __stream(void *clo)
 {
 	struct echse_clo_s *x = clo;
 	echs_instant_t bestinst;
-	size_t bestindx = 0;
+	size_t bestindx;
 
+	if (UNLIKELY(x->strms == NULL)) {
+		return (echs_event_t){0};
+	}
 	/* start out with the best, non-0 index */
+	bestindx = 0;
 	bestinst = x->strms[bestindx].ev.when;
 
 	/* try and find the very next event out of all instants */
