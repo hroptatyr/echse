@@ -45,6 +45,12 @@ if test -z "${GENGETOPT}"; then
 fi
 AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
 
+AC_PATH_PROG([GPERF], [gperf])
+if test -z "${GPERF}"; then
+	GPERF="gperf"
+fi
+AC_ARG_VAR([GPERF], [full path to the gperf tool])
+
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
 
