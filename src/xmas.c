@@ -97,6 +97,9 @@ make_echs_stream(echs_instant_t i, ...)
 	} else if (i.d <= 26U) {
 		y = i.y;
 		state = ON_XMAS;
+	} else if (i.d <= 27U) {
+		y = i.y;
+		state = ON_BOXD;
 	} else {
 		y = i.y + 1;
 		state = BEFORE_XMAS;
