@@ -46,6 +46,14 @@ echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
+noinst_PROGRAMS += echse-collect
+echse_collect_SOURCES = echse-collect.c
+echse_collect_SOURCES += echse-collect-clo.ggo
+echse_collect_CPPFLAGS = $(AM_CPPFLAGS)
+echse_collect_CPPFLAGS += $(INCLTDL)
+echse_collect_LDFLAGS = $(AM_LDFLAGS)
+BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
+
 
 ## our rule for gengetopt
 %.c %.h: %.ggo

@@ -1,0 +1,5 @@
+args "--unamed-opts --no-handle-error --long-help -a echs_args_info -f echs_parser"
+package "echse-collect"
+usage "echse-collect [OPTION]... SOURCE..."
+description "tba."
+
