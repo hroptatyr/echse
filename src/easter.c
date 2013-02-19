@@ -58,36 +58,66 @@ __easter(unsigned int y)
 	return (echs_instant_t){y, e <= 31 ? 3U : 4U, e <= 31U ? e : e - 31U};
 }
 
-echs_event_t
-echs_stream(echs_instant_t i, void *UNUSED(clo))
+static enum {
+	BEFORE_EASTER,
+	ON_EASTER,
+} state;
+static unsigned int y;
+static echs_instant_t easter;
+
+static echs_event_t
+__stream(void *UNUSED(clo))
 {
 	DEFSTATE(EASTER);
 	struct echs_event_s e;
 
+	switch (state) {
+	case BEFORE_EASTER:
+		if (easter.y != y) {
+			e.when = easter = __easter(y);
+		} else {
+			e.when = easter;
+		}
+		e.what = ON(EASTER);
+		state = ON_EASTER;
+		break;
+	case ON_EASTER:
+		if (++easter.d > 31U) {
+			easter.d = 1U;
+			easter.m = 4U;
+		}
+		e.when = easter;
+		e.what = OFF(EASTER);
+		state = BEFORE_EASTER;
+		y++;
+		break;
+	default:
+		abort();
+	}
+	return e;
+}
+
+echs_stream_t
+make_echs_stream(echs_instant_t i, ...)
+{
 	if (i.m >= 5U) {
 	next_year:
-		/* compute next years easter sunday right away */
-		e.when = __easter(i.y + 1);
-		e.what = ON(EASTER);
+		y = i.y + 1;
+		state = BEFORE_EASTER;
 	} else {
-		echs_instant_t easter = __easter(i.y);
+		easter = __easter(i.y);
 
 		if (i.m > easter.m || i.d > easter.d) {
 			goto next_year;
 		} else if (i.m < easter.m || i.d < easter.d) {
-			e.when = easter;
-			e.what = ON(EASTER);
+			y = i.y;
+			state = BEFORE_EASTER;
 		} else {
-			/* compute end of easter */
-			if (++easter.d > 31U) {
-				easter.d = 1U;
-				easter.m = 4U;
-			}
-			e.when = easter;
-			e.what = OFF(EASTER);
+			y = i.y;
+			state = ON_EASTER;
 		}
 	}
-	return e;
+	return (echs_stream_t){__stream, NULL};
 }
 
 /* easter.c ends here */
