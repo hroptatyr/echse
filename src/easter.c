@@ -61,11 +61,16 @@ __easter(unsigned int y)
 
 static enum {
 	BEFORE_GOODFRI,
+	START_OVER = BEFORE_GOODFRI,
 	ON_GOODFRI,
 	BEFORE_EASTER,
 	ON_EASTER,
 	BEFORE_EASTERMON,
 	ON_EASTERMON,
+	BEFORE_ASCENSION,
+	ON_ASCENSION,
+	BEFORE_PENTECOST,
+	ON_PENTECOST,
 } state;
 static echs_instant_t easter;
 
@@ -75,6 +80,8 @@ __stream(void *UNUSED(clo))
 	DEFSTATE(GOODFRI);
 	DEFSTATE(EASTER);
 	DEFSTATE(EASTERMON);
+	DEFSTATE(ASCENSION);
+	DEFSTATE(PENTECOST);
 	struct echs_event_s e;
 
 	switch (state) {
@@ -114,7 +121,31 @@ __stream(void *UNUSED(clo))
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 2, tmp));
 		e.what = OFF(EASTERMON);
-		state = BEFORE_GOODFRI;
+		state = BEFORE_ASCENSION;
+		break;
+	case BEFORE_ASCENSION:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 40, tmp));
+		e.what = ON(ASCENSION);
+		state = ON_ASCENSION;
+		break;
+	case ON_ASCENSION:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 41, tmp));
+		e.what = OFF(ASCENSION);
+		state = BEFORE_PENTECOST;
+		break;
+	case BEFORE_PENTECOST:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 49, tmp));
+		e.what = ON(PENTECOST);
+		state = ON_PENTECOST;
+		break;
+	case ON_PENTECOST:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 50, tmp));
+		e.what = OFF(PENTECOST);
+		state = START_OVER;
 		easter = __easter(easter.y + 1);
 		break;
 	default:
