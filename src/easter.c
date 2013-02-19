@@ -157,27 +157,26 @@ __stream(void *UNUSED(clo))
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
-	if (i.m >= 5U) {
-	next_year:
-		easter = __easter(i.y + 1);
+	echs_instant_t tmp;
+
+	easter = __easter(i.y);
+	if ((tmp = easter, tmp.d -= 2,
+	     __inst_le_p(i, echs_instant_fixup(tmp)))) {
 		state = BEFORE_GOODFRI;
+	} else if (__inst_le_p(i, easter)) {
+		state = BEFORE_EASTER;
+	} else if ((tmp = easter, tmp.d++,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_EASTERMON;
+	} else if ((tmp = easter, tmp.d += 40,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_ASCENSION;
+	} else if ((tmp = easter, tmp.d += 49,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_PENTECOST;
 	} else {
-		echs_instant_t tmp;
-
-		tmp = easter = __easter(i.y);
-		tmp = echs_instant_fixup((tmp.d -= 2, tmp));
-
-		if (__inst_le_p(i, tmp)) {
-			state = BEFORE_GOODFRI;
-		} else if (__inst_le_p(i, easter)) {
-			state = BEFORE_EASTER;
-		} else if ((tmp = easter,
-			    tmp = echs_instant_fixup((++tmp.d, tmp)),
-			    __inst_le_p(i, tmp))) {
-			state = BEFORE_EASTERMON;
-		} else {
-			goto next_year;
-		}
+		easter = __easter(i.y + 1);
+		state = START_OVER;
 	}
 	return (echs_stream_t){__stream, NULL};
 }
