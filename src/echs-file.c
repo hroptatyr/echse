@@ -38,8 +38,10 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdio.h>
+#include <string.h>
 #include "echse.h"
 #include "instant.h"
+#include "dt-strpf.h"
 
 #if defined __INTEL_COMPILER
 # pragma warning (disable:1419)
@@ -47,37 +49,66 @@
 
 extern void *init_file(const char*);
 
+struct clo_s {
+	FILE *f;
+	char *line;
+	size_t llen;
+};
+
 
 void*
 init_file(const char *fn)
 {
-	FILE *f;
+	static struct clo_s clo[1];
 
-	if ((f = fopen(fn, "r")) == NULL) {
+	if ((clo->f = fopen(fn, "r")) == NULL) {
 		return ECHS_FAILED;
 	}
-	printf("got %p\n", f);
-	return f;
+	return clo;
 }
 
 echs_event_t
-echs_stream(echs_instant_t i, void *clo)
+echs_stream(echs_instant_t inst, void *clo)
 {
-	echs_event_t e;
+	struct clo_s *x = clo;
+	ssize_t nrd;
 
-	printf("clo %p\n", clo);
-	e.when = (echs_instant_t){0};
-	e.what = NULL;
-	return e;
+	while ((nrd = getline(&x->line, &x->llen, x->f)) > 0) {
+		/* read the line */
+		const char *p;
+		char *eol;
+		echs_instant_t i;
+
+		if ((p = strchr(x->line, '\t')) == NULL) {
+			continue;
+		} else if ((eol = strchr(x->line, '\n')) == NULL) {
+			continue;
+		} else if (__inst_0_p(i = dt_strp(x->line))) {
+			continue;
+		} else if (__inst_lt_p(i, inst)) {
+			continue;
+		}
+		/* otherwise it's a match */
+		*eol = '\0';
+		return (echs_event_t){.when = i, .what = p + 1};
+	}
+	return (echs_event_t){0};
 }
 
 int
 fini_stream(void *clo)
 {
-	printf("fini %p\n", clo);
-	if (clo != NULL) {
-		fclose(clo);
+	struct clo_s *x = clo;
+
+	if (x->f != NULL) {
+		fclose(x->f);
 	}
+	if (x->line != NULL) {
+		free(x->line);
+	}
+	x->f = NULL;
+	x->line = NULL;
+	x->llen = 0UL;
 	return 0;
 }
 
