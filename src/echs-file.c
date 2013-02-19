@@ -56,20 +56,17 @@ echs_file_stream(void *clo)
 	struct clo_s *x = clo;
 	ssize_t nrd;
 	const char *p;
-	char *eol;
 	echs_instant_t i;
 
 	if ((nrd = getline(&x->line, &x->llen, x->f)) <= 0) {
 		goto nul;
 	} else if ((p = strchr(x->line, '\t')) == NULL) {
 		goto nul;
-	} else if ((eol = strchr(p, '\n')) == NULL) {
-		goto nul;
 	} else if (__inst_0_p(i = dt_strp(x->line))) {
 		goto nul;
 	}
 	/* otherwise it's a match */
-	*eol = '\0';
+	x->line[--nrd] = '\0';
 	return (echs_event_t){.when = i, .what = p + 1};
 nul:
 	return (echs_event_t){0};
