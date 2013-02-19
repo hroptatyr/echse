@@ -35,6 +35,7 @@
  *
  ***/
 #include "echse.h"
+#include "instant.h"
 
 #if !defined UNUSED
 # define UNUSED(x)	__attribute__((unused)) x
@@ -59,37 +60,62 @@ __easter(unsigned int y)
 }
 
 static enum {
+	BEFORE_GOODFRI,
+	ON_GOODFRI,
 	BEFORE_EASTER,
 	ON_EASTER,
+	BEFORE_EASTERMON,
+	ON_EASTERMON,
 } state;
-static unsigned int y;
 static echs_instant_t easter;
 
 static echs_event_t
 __stream(void *UNUSED(clo))
 {
+	DEFSTATE(GOODFRI);
 	DEFSTATE(EASTER);
+	DEFSTATE(EASTERMON);
 	struct echs_event_s e;
 
 	switch (state) {
+		echs_instant_t tmp;
+	case BEFORE_GOODFRI:
+		/* easter is assumed to point to easter sun */
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d -= 2, tmp));
+		e.what = ON(GOODFRI);
+		state = ON_GOODFRI;
+		break;
+	case ON_GOODFRI:
+		/* easter is assumed to point to easter sun */
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d -= 1, tmp));
+		e.what = OFF(GOODFRI);
+		state = BEFORE_EASTER;
+		break;
 	case BEFORE_EASTER:
-		if (easter.y != y) {
-			e.when = easter = __easter(y);
-		} else {
-			e.when = easter;
-		}
+		e.when = easter;
 		e.what = ON(EASTER);
 		state = ON_EASTER;
 		break;
 	case ON_EASTER:
-		if (++easter.d > 31U) {
-			easter.d = 1U;
-			easter.m = 4U;
-		}
-		e.when = easter;
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 1, tmp));
 		e.what = OFF(EASTER);
-		state = BEFORE_EASTER;
-		y++;
+		state = BEFORE_EASTERMON;
+		break;
+	case BEFORE_EASTERMON:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 1, tmp));
+		e.what = ON(EASTERMON);
+		state = ON_EASTERMON;
+		break;
+	case ON_EASTERMON:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 2, tmp));
+		e.what = OFF(EASTERMON);
+		state = BEFORE_GOODFRI;
+		easter = __easter(easter.y + 1);
 		break;
 	default:
 		abort();
@@ -102,19 +128,24 @@ make_echs_stream(echs_instant_t i, ...)
 {
 	if (i.m >= 5U) {
 	next_year:
-		y = i.y + 1;
-		state = BEFORE_EASTER;
+		easter = __easter(i.y + 1);
+		state = BEFORE_GOODFRI;
 	} else {
-		easter = __easter(i.y);
+		echs_instant_t tmp;
 
-		if (i.m > easter.m || i.d > easter.d) {
-			goto next_year;
-		} else if (i.m < easter.m || i.d <= easter.d) {
-			y = i.y;
+		tmp = easter = __easter(i.y);
+		tmp = echs_instant_fixup((tmp.d -= 2, tmp));
+
+		if (__inst_le_p(i, tmp)) {
+			state = BEFORE_GOODFRI;
+		} else if (__inst_le_p(i, easter)) {
 			state = BEFORE_EASTER;
+		} else if ((tmp = easter,
+			    tmp = echs_instant_fixup((++tmp.d, tmp)),
+			    __inst_le_p(i, tmp))) {
+			state = BEFORE_EASTERMON;
 		} else {
-			y = i.y;
-			state = ON_EASTER;
+			goto next_year;
 		}
 	}
 	return (echs_stream_t){__stream, NULL};
