@@ -69,8 +69,14 @@ static enum {
 	ON_EASTERMON,
 	BEFORE_ASCENSION,
 	ON_ASCENSION,
-	BEFORE_PENTECOST,
-	ON_PENTECOST,
+	BEFORE_WHITSUN,
+	ON_WHITSUN,
+	BEFORE_WHITMON,
+	ON_WHITMON,
+	BEFORE_TRINITY,
+	ON_TRINITY,
+	BEFORE_CORPUSCHR,
+	ON_CORPUSCHR,
 } state;
 static echs_instant_t easter;
 
@@ -81,8 +87,11 @@ __stream(void *UNUSED(clo))
 	DEFSTATE(EASTER);
 	DEFSTATE(EASTERMON);
 	DEFSTATE(ASCENSION);
-	DEFSTATE(PENTECOST);
-	struct echs_event_s e;
+	DEFSTATE(WHITSUN);
+	DEFSTATE(WHITMON);
+	DEFSTATE(TRINITY);
+	DEFSTATE(CORPUSCHR);
+	struct echs_event_s e = {0};
 
 	switch (state) {
 		echs_instant_t tmp;
@@ -91,65 +100,100 @@ __stream(void *UNUSED(clo))
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d -= 2, tmp));
 		e.what = ON(GOODFRI);
-		state = ON_GOODFRI;
+		state++;
 		break;
 	case ON_GOODFRI:
 		/* easter is assumed to point to easter sun */
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d -= 1, tmp));
 		e.what = OFF(GOODFRI);
-		state = BEFORE_EASTER;
+		state++;
 		break;
 	case BEFORE_EASTER:
 		e.when = easter;
 		e.what = ON(EASTER);
-		state = ON_EASTER;
+		state++;
 		break;
 	case ON_EASTER:
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 1, tmp));
 		e.what = OFF(EASTER);
-		state = BEFORE_EASTERMON;
+		state++;
 		break;
 	case BEFORE_EASTERMON:
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 1, tmp));
 		e.what = ON(EASTERMON);
-		state = ON_EASTERMON;
+		state++;
 		break;
 	case ON_EASTERMON:
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 2, tmp));
 		e.what = OFF(EASTERMON);
-		state = BEFORE_ASCENSION;
+		state++;
 		break;
 	case BEFORE_ASCENSION:
 		tmp = easter;
-		e.when = echs_instant_fixup((tmp.d += 40, tmp));
+		e.when = echs_instant_fixup((tmp.d += 39, tmp));
 		e.what = ON(ASCENSION);
-		state = ON_ASCENSION;
+		state++;
 		break;
 	case ON_ASCENSION:
 		tmp = easter;
-		e.when = echs_instant_fixup((tmp.d += 41, tmp));
+		e.when = echs_instant_fixup((tmp.d += 40, tmp));
 		e.what = OFF(ASCENSION);
-		state = BEFORE_PENTECOST;
+		state++;
 		break;
-	case BEFORE_PENTECOST:
+	case BEFORE_WHITSUN:
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 49, tmp));
-		e.what = ON(PENTECOST);
-		state = ON_PENTECOST;
+		e.what = ON(WHITSUN);
+		state++;
 		break;
-	case ON_PENTECOST:
+	case ON_WHITSUN:
 		tmp = easter;
 		e.when = echs_instant_fixup((tmp.d += 50, tmp));
-		e.what = OFF(PENTECOST);
+		e.what = OFF(WHITSUN);
+		state++;
+		break;
+	case BEFORE_WHITMON:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 50, tmp));
+		e.what = ON(WHITMON);
+		state++;
+		break;
+	case ON_WHITMON:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 51, tmp));
+		e.what = OFF(WHITMON);
+		state++;
+		break;
+	case BEFORE_TRINITY:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 56, tmp));
+		e.what = ON(TRINITY);
+		state++;
+		break;
+	case ON_TRINITY:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 57, tmp));
+		e.what = OFF(TRINITY);
+		state++;
+		break;
+	case BEFORE_CORPUSCHR:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 60, tmp));
+		e.what = ON(CORPUSCHR);
+		state++;
+		break;
+	case ON_CORPUSCHR:
+		tmp = easter;
+		e.when = echs_instant_fixup((tmp.d += 61, tmp));
+		e.what = OFF(CORPUSCHR);
+	default:
 		state = START_OVER;
 		easter = __easter(easter.y + 1);
 		break;
-	default:
-		abort();
 	}
 	return e;
 }
@@ -173,7 +217,16 @@ make_echs_stream(echs_instant_t i, ...)
 		state = BEFORE_ASCENSION;
 	} else if ((tmp = easter, tmp.d += 49,
 		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
-		state = BEFORE_PENTECOST;
+		state = BEFORE_WHITSUN;
+	} else if ((tmp = easter, tmp.d += 50,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_WHITMON;
+	} else if ((tmp = easter, tmp.d += 56,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_TRINITY;
+	} else if ((tmp = easter, tmp.d += 60,
+		    __inst_le_p(i, echs_instant_fixup(tmp)))) {
+		state = BEFORE_CORPUSCHR;
 	} else {
 		easter = __easter(i.y + 1);
 		state = START_OVER;
