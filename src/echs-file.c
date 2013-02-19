@@ -1,4 +1,4 @@
-/*** xmas.c -- christmas stream
+/*** echs-file.c -- echs file stream
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,77 +34,98 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include "echse.h"
+#include "instant.h"
+#include "dt-strpf.h"
 
-#if !defined countof
-# define countof(x)		(sizeof(x) / sizeof(*x))
-#endif	/* !countof */
-#if !defined UNUSED
-# define UNUSED(x)		__attribute__((unused)) x
-#endif	/* UNUSED */
-
-
-/* christmas stream */
-static enum {
-	BEFORE_XMAS,
-	ON_XMAS,
-	BEFORE_BOXD,
-	ON_BOXD,
-} state;
-static unsigned int y;
+struct clo_s {
+	FILE *f;
+	char *line;
+	size_t llen;
+};
 
 static echs_event_t
-__xmas(void *UNUSED(clo))
+echs_file_stream(void *clo)
 {
-	DEFSTATE(XMAS);
-	DEFSTATE(BOXD);
-	echs_event_t e;
+	struct clo_s *x = clo;
+	ssize_t nrd;
+	const char *p;
+	echs_instant_t i;
 
-	switch (state) {
-	case BEFORE_XMAS:
-		e.when = (echs_instant_t){y, 12U, 25U};
-		e.what = ON(XMAS);
-		state = ON_XMAS;
-		break;
-	case ON_XMAS:
-		e.when = (echs_instant_t){y, 12U, 26U};
-		e.what = OFF(XMAS);
-		state = BEFORE_BOXD;
-		break;
-	case BEFORE_BOXD:
-		e.when = (echs_instant_t){y, 12U, 26U};
-		e.what = ON(BOXD);
-		state = ON_BOXD;
-		break;
-	case ON_BOXD:
-		e.when = (echs_instant_t){y, 12U, 27U};
-		e.what = OFF(BOXD);
-		state = BEFORE_XMAS;
-		y++;
-		break;
-	default:
-		abort();
+	if ((nrd = getline(&x->line, &x->llen, x->f)) <= 0) {
+		goto nul;
+	} else if ((p = strchr(x->line, '\t')) == NULL) {
+		goto nul;
+	} else if (__inst_0_p(i = dt_strp(x->line))) {
+		goto nul;
 	}
-	return e;
+	/* otherwise it's a match */
+	x->line[--nrd] = '\0';
+	return (echs_event_t){.when = i, .what = p + 1};
+nul:
+	return (echs_event_t){0};
 }
 
+
 echs_stream_t
-make_echs_stream(echs_instant_t i, ...)
+make_echs_stream(echs_instant_t inst, ...)
 {
-	if (i.m < 12U || i.d <= 25U) {
-		y = i.y;
-		state = BEFORE_XMAS;
-	} else if (i.d <= 26U) {
-		y = i.y;
-		state = ON_XMAS;
-	} else if (i.d <= 27U) {
-		y = i.y;
-		state = ON_BOXD;
-	} else {
-		y = i.y + 1;
-		state = BEFORE_XMAS;
+/* wants a const char *fn */
+	va_list ap;
+	const char *fn;
+	FILE *f;
+	struct clo_s *clo;
+	ssize_t nrd;
+
+	va_start(ap, inst);
+	fn = va_arg(ap, const char*);
+	va_end(ap);
+
+	if ((f = fopen(fn, "r")) == NULL) {
+		return (echs_stream_t){NULL};
 	}
-	return (echs_stream_t){__xmas, NULL};
+	/* otherwise set up the closure */
+	clo = calloc(1, sizeof(*clo));
+	clo->f = f;
+
+	while ((nrd = getline(&clo->line, &clo->llen, f)) > 0) {
+		echs_instant_t i;
+
+		if (__inst_0_p(i = dt_strp(clo->line))) {
+			goto nul;
+		} else if (__inst_lt_p(inst, i)) {
+			/* ungetline() */
+			fseek(f, -nrd, SEEK_CUR);
+			break;
+		}
+	}
+	return (echs_stream_t){echs_file_stream, clo};
+nul:
+	return (echs_stream_t){NULL};
 }
 
-/* xmas.c ends here */
+void
+free_echs_stream(echs_stream_t x)
+{
+	struct clo_s *clo = x.clo;
+
+	if (clo->f != NULL) {
+		fclose(clo->f);
+	}
+	if (clo->line != NULL) {
+		free(clo->line);
+	}
+	clo->f = NULL;
+	clo->line = NULL;
+	clo->llen = 0UL;
+	free(clo);
+	return;
+}
+
+/* echs-file.c ends here */

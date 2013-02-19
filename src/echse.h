@@ -48,7 +48,7 @@
 typedef union echs_instant_u echs_instant_t;
 typedef const char *echs_state_t;
 typedef struct echs_event_s echs_event_t;
-typedef echs_event_t(*echs_stream_f)(echs_instant_t);
+typedef struct echs_stream_s echs_stream_t;
 
 union echs_instant_u {
 	struct {
@@ -68,17 +68,25 @@ struct echs_event_s {
 	echs_state_t what;
 };
 
+struct echs_stream_s {
+	echs_event_t(*f)(void*);
+	void *clo;
+};
+
 
 /**
- * Stream prototype, given an instant I, return the next event >= I. */
-extern echs_event_t echs_stream(echs_instant_t);
+ * Stream ctor. */
+extern echs_stream_t make_echs_stream(echs_instant_t, ...);
 
 /**
- * Initialiser for DSOs.*/
-extern int init_stream(void);
+ * Stream dtor. */
+extern void free_echs_stream(echs_stream_t);
 
-/**
- * Finaliser for DSOs.*/
-extern int fini_stream(void);
+
+static inline echs_event_t
+echs_stream_next(echs_stream_t s)
+{
+	return s.f(s.clo);
+}
 
 #endif	/* INCLUDED_echse_h_ */

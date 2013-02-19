@@ -36,22 +36,56 @@
  ***/
 #include "echse.h"
 
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
+
 
 /* new-year stream */
-echs_event_t
-echs_stream(echs_instant_t i)
+static enum {
+	BEFORE_NEWYEAR,
+	ON_NEWYEAR,
+} state;
+static unsigned int y;
+
+static echs_event_t
+__stream(void *UNUSED(clo))
 {
 	DEFSTATE(NEWYEAR);
 	struct echs_event_s e;
 
-	if (i.m > 1U || i.d > 1U) {
-		e.when = (echs_instant_t){i.y + 1, 1U, 1U};
+	switch (state) {
+	case BEFORE_NEWYEAR:
+		e.when = (echs_instant_t){y, 1U, 1U};
 		e.what = ON(NEWYEAR);
-	} else {
-		e.when = (echs_instant_t){i.y, 1U, 2U};
+		state = ON_NEWYEAR;
+		break;
+	case ON_NEWYEAR:
+		e.when = (echs_instant_t){y, 1U, 2U};
 		e.what = OFF(NEWYEAR);
+		state = BEFORE_NEWYEAR;
+		y++;
+		break;
+	default:
+		abort();
 	}
 	return e;
+}
+
+echs_stream_t
+make_echs_stream(echs_instant_t i, ...)
+{
+	if (i.m > 1U || i.d > 2U) {
+		y = i.y + 1;
+		state = BEFORE_NEWYEAR;
+	} else if (i.d < 2U) {
+		y = i.y;
+		state = BEFORE_NEWYEAR;
+	} else {
+		y = i.y;
+		state = ON_NEWYEAR;
+	}
+	return (echs_stream_t){__stream, NULL};
 }
 
 /* new-year.c ends here */

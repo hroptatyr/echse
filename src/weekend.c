@@ -40,6 +40,9 @@
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
 #endif	/* !countof */
+#if !defined UNUSED
+# define UNUSED(x)		__attribute__((unused)) x
+#endif	/* UNUSED */
 
 static unsigned int
 __get_wday(echs_instant_t i)
@@ -57,48 +60,79 @@ __get_wday(echs_instant_t i)
 
 
 /* new-year stream */
-echs_event_t
-echs_stream(echs_instant_t i)
+static enum {
+	BEFORE_SAT,
+	ON_SAT,
+	BEFORE_SUN,
+	ON_SUN,
+} state;
+static echs_instant_t next;
+
+static echs_event_t
+__stream(void *UNUSED(clo))
 {
 	DEFSTATE(SAT);
 	DEFSTATE(SUN);
 	struct echs_event_s e;
-	unsigned int wd;
 
-	switch ((wd = __get_wday(i))) {
-		static const echs_state_t s[] = {
-			ON(SAT), OFF(SAT), ON(SUN), OFF(SUN)
-		};
-		static const echs_state_t *sp;
-	case 0/*S*/:
-		if (sp == s + 1) {
-			e.when = i;
-			e.what = *(sp = s + 2);
-			break;
-		}
-	case 1/*M*/:
-		if (sp == s + 2) {
-			e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
-			e.what = *(sp = s + 3);
-			break;
-		}
-	case 2/*T*/:
-	case 3/*W*/:
-	case 4/*R*/:
-	case 5/*F*/:
-		/* point to next sat */
-		e.when = (echs_instant_t){i.y, i.m, i.d + (6U - wd)};
-		e.what = *(sp = s);
+	switch (state) {
+	case BEFORE_SAT:
+		/* assume next points to the weekend's saturday */
+		e.when = next;
+		e.what = ON(SAT);
+		state = ON_SAT;
 		break;
-	case 6/*A*/:
-		e.when = (echs_instant_t){i.y, i.m, i.d + 1U};
-		e.what = *(sp = s + 1);
+	case ON_SAT:
+		/* assume next points to the weekend's saturday */
+		e.when = next = echs_instant_fixup((++next.d, next));
+		e.what = OFF(SAT);
+		state = BEFORE_SUN;
+		break;
+	case BEFORE_SUN:
+		/* assume next points to the weekend's sunday */
+		e.when = next;
+		e.what = ON(SUN);
+		state = ON_SUN;
+		break;
+	case ON_SUN:
+		/* assume next points to the weekend's sunday */
+		e.when = echs_instant_fixup((++next.d, next));
+		e.what = OFF(SUN);
+		state = BEFORE_SAT;
+		/* make next point to next saturday */
+		next = echs_instant_fixup((next.d += 5, next));
 		break;
 	default:
 		abort();
 	}
-	e.when = echs_instant_fixup(e.when);
 	return e;
+}
+
+echs_stream_t
+make_echs_stream(echs_instant_t i, ...)
+{
+	unsigned int wd;
+
+	switch ((wd = __get_wday(i))) {
+	case 0/*S*/:
+		next = i;
+		state = BEFORE_SUN;
+		break;
+	case 1/*M*/:
+	case 2/*T*/:
+	case 3/*W*/:
+	case 4/*R*/:
+	case 5/*F*/:
+	case 6/*A*/:
+		/* point to next sat */
+		i.d += (6U - wd);
+		next = echs_instant_fixup(i);
+		state = BEFORE_SAT;
+		break;
+	default:
+		abort();
+	}
+	return (echs_stream_t){__stream, NULL};
 }
 
 /* weekend.c ends here */
