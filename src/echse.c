@@ -105,21 +105,22 @@ echs_event_t
 echs_stream(echs_instant_t inst, void *UNUSED(clo))
 {
 	size_t best = 0;
-	echs_event_t e;
 
 	if (UNLIKELY(evs == NULL)) {
-		e.when = (echs_instant_t){0};
-		e.what = NULL;
-		return e;
+		return (echs_event_t){0};
 	}
 
 	/* try and find the very next event out of all instants */
 	for (size_t i = 0; i < nesds; i++) {
 		if (esds[i] == NULL) {
 			continue;
-		} else if (__inst_lt_p(evs[i].when, inst)) {
+		} else if (__inst_le_p(evs[i].when, inst)) {
 			/* refill */
-			evs[i] = echs_stream_next(esds[i], inst);
+			do {
+				evs[i] = echs_stream_next(esds[i], inst);
+			} while (!__inst_0_p(evs[i].when) &&
+				 __inst_le_p(evs[i].when, inst));
+
 			if (__inst_0_p(evs[i].when)) {
 				echs_close(esds[i]);
 				esds[i] = NULL;
@@ -132,16 +133,8 @@ echs_stream(echs_instant_t inst, void *UNUSED(clo))
 		}
 	}
 
-	/* BEST has the guy, remember for return value */
-	e = evs[best];
-
-	/* refill that cache now that we still know who's best */
-	evs[best] = echs_stream_next(esds[best], e.when);
-	if (__inst_0_p(evs[best].when)) {
-		echs_close(esds[best]);
-		esds[best] = NULL;
-	}
-	return e;
+	/* BEST has the guy */
+	return evs[best];
 }
 
 
