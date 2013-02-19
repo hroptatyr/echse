@@ -77,6 +77,19 @@ struct echse_clo_s {
 };
 
 static echs_event_t
+__refill(echs_stream_t s, echs_instant_t last)
+{
+	echs_event_t e;
+
+	do {
+		if (__inst_0_p((e = echs_stream_next(s)).when)) {
+			break;
+		}
+	} while (__inst_lt_p(e.when, last));
+	return e;
+}
+
+static echs_event_t
 __stream(void *clo)
 {
 	struct echse_clo_s *x = clo;
@@ -96,23 +109,20 @@ __stream(void *clo)
 
 		if (x->strms[i].sd.s.f == NULL) {
 			continue;
+		} else if (__inst_0_p(inst)) {
+		clos_0:
+			echs_close(x->strms[i].sd);
+			memset(x->strms + i, 0, sizeof(*x->strms));
+			continue;
 		} else if (i == x->rfll || __inst_lt_p(inst, x->last)) {
 			echs_stream_t s = x->strms[i].sd.s;
 			echs_event_t e;
 
-			/* refill */
-			do {
-				e = echs_stream_next(s);
-			} while (!__inst_0_p(e.when) &&
-				 __inst_lt_p(e.when, x->last));
-
-			if (__inst_0_p(e.when)) {
-				echs_close(x->strms[i].sd);
-				memset(x->strms + i, 0, sizeof(*x->strms));
-				continue;
+			if (__inst_0_p((e = __refill(s, x->last)).when)) {
+				goto clos_0;
 			}
 
-			/* otherwise cache E */
+			/* cache E */
 			x->strms[i].ev = e;
 			inst = e.when;
 		}
