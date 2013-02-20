@@ -44,6 +44,16 @@
 #include "instant.h"
 #include "dt-strpf.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
+
 struct clo_s {
 	FILE *f;
 	char *line;
