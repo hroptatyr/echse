@@ -78,13 +78,13 @@ extern void gq_pop_item(gq_t, gq_ll_t, gq_item_t i);
 static inline void*
 gq_item_ptr(gq_t g, gq_item_t i)
 {
-	return (void*)((char*)g->items + g->itemz * (i - 1U));
+	return i ? (void*)((char*)g->items + g->itemz * (i - 1U)) : NULL;
 }
 
 static inline gq_item_t
 gq_item(gq_t g, void *x)
 {
-	return ((char*)x - (char*)g->items) / g->itemz + 1U;
+	return x ? ((char*)x - (char*)g->items) / g->itemz + 1U : GQ_NULL_ITEM;
 }
 
 #endif	/* INCLUDED_gq_h_ */
