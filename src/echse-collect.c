@@ -78,7 +78,6 @@ typedef enum {
 
 struct item_s {
 	struct gq_item_s i;
-	const char *nick;
 	collref_ll_t collrefs;
 };
 
@@ -118,17 +117,43 @@ echs_event_modifier(echs_event_t e)
 	}
 }
 
-
-static inline __attribute__((pure)) void*
-unconst(const void *x)
+static int
+materialise(echs_event_t e, echs_evmdfr_t m)
 {
-	union {
-		const void *c;
-		void *p;
-	} y = {x};
-	return y.p;
+	static char buf[256];
+	char *bp = buf;
+
+	/* BEST has the guy */
+	bp += dt_strf(buf, sizeof(buf), e.when);
+	*bp++ = '\t';
+	switch (m) {
+	case EVMDFR_END:
+		if (*e.what != '~') {
+			*bp++ = '~';
+		}
+		break;
+	case EVMDFR_BANG:
+		if (*e.what != '!') {
+			*bp++ = '!';
+		}
+		break;
+	default:
+		break;
+	}
+	{
+		size_t e_whaz = strlen(e.what);
+		memcpy(bp, e.what, e_whaz);
+		bp += e_whaz;
+	}
+	*bp++ = '\n';
+	*bp = '\0';
+	if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+		return -1;
+	}
+	return 0;
 }
 
+
 static gq_item_t
 make_gq_item(gq_t x, size_t membz, size_t nbatch)
 {
@@ -156,6 +181,7 @@ static struct {
 
 static struct {
 	struct gq_s q[1];
+	hattrie_t *ht;
 } items;
 
 static struct {
@@ -171,19 +197,19 @@ item_ptr(item_t i)
 static item_t
 make_item(const char *nick)
 {
-	struct item_s *ip;
-	gq_item_t res = make_gq_item(items.q, sizeof(*ip), 64U);
+	gq_item_t res = make_gq_item(items.q, sizeof(struct item_s), 64U);
 
-	ip = item_ptr(res);
-	ip->nick = strdup(nick);
+	/* also bang into hat-trie */
+	{
+		value_t *x = hattrie_get(items.ht, nick, strlen(nick));
+		*x = (value_t)(intptr_t)res;
+	}
 	return res;
 }
 
 static void
 free_item(item_t i)
 {
-	/* nick has been strdup()'d */
-	free(unconst(item_ptr(i)->nick));
 	free_gq_item(items.q, i);
 	return;
 }
@@ -300,28 +326,54 @@ find_item(hattrie_t *ht, const char *token)
 	return item_ptr((intptr_t)*x);
 }
 
+
 static void
-test(echs_stream_t s, echs_instant_t till)
+wipe_coll(struct coll_s *c)
 {
-	static int materialise(echs_event_t, echs_evmdfr_t);
-	item_t xmas = make_item("XMAS");
-	item_t boxd = make_item("BOXD");
-	coll_t xmasc = make_coll("xmas");
-	/* bla */
-	hattrie_t *ht = hattrie_create();
+	if (!__inst_0_p(c->end) && c->lstmdfr) {
+		echs_event_t prev = {c->end, c->nick};
 
-	{
-		value_t *x;
-
-		x = hattrie_get(ht, "XMAS", 4);
-		*x = (value_t)(intptr_t)xmas;
-		x = hattrie_get(ht, "BOXD", 4);
-		*x = (value_t)(intptr_t)boxd;
+		/* better output this one quickly ere we forget */
+		materialise(prev, c->lstmdfr);
+		/* mop the floor for the next shfit */
+		c->beg = (echs_instant_t){0};
+		c->end = (echs_instant_t){0};
+		c->lst = (echs_instant_t){0};
 	}
+	return;
+}
 
-	coll_add_item(xmasc, xmas);
-	coll_add_item(xmasc, boxd);
+static void
+__collect(const struct item_s *i, echs_event_t e, echs_evmdfr_t st)
+{
+	for (struct collref_s *crp = collref_ptr(i->collrefs->i1st);
+	     crp; crp = collref_ptr(crp->i.next)) {
+		struct coll_s *c = coll_ptr(crp->ref);
 
+		/* print last value? */
+		if (!__inst_eq_p(e.when, c->lst)) {
+			wipe_coll(c);
+		}
+		if (__inst_0_p(c->beg) && st == EVMDFR_START) {
+			c->beg = e.when;
+			e.what = c->nick;
+			materialise(e, EVMDFR_START);
+		} else if (st != c->lstmdfr && __inst_eq_p(e.when, c->lst)) {
+			/* wipe */
+			c->end = (echs_instant_t){0};
+		} else if (__inst_0_p(c->end) && st == EVMDFR_END) {
+			c->end = e.when;
+		}
+
+		c->lst = e.when;
+		c->lstmdfr = st;
+	}
+	return;
+}
+
+static void
+collect(echs_stream_t s, echs_instant_t till)
+{
 	for (echs_event_t e;
 	     (e = echs_stream_next(s),
 	      !__event_0_p(e) && __event_le_p(e, till));) {
@@ -333,89 +385,54 @@ test(echs_stream_t s, echs_instant_t till)
 			token++;
 		}
 
-		if ((x = find_item(ht, token)) == NULL) {
+		if ((x = find_item(items.ht, token)) == NULL) {
 			continue;
 		}
-		for (struct collref_s *crp = collref_ptr(x->collrefs->i1st);
-		     crp; crp = collref_ptr(crp->i.next)) {
-			struct coll_s *c = coll_ptr(crp->ref);
 
-			/* print last value */
-			if (!__inst_0_p(c->end) &&
-			    !__inst_eq_p(e.when, c->lst) && c->lstmdfr) {
-				echs_event_t prev = {c->end, c->nick};
-
-				/* quick output lest we forget */
-				materialise(prev, c->lstmdfr);
-				/* mop the floor for the next shfit */
-				c->beg = (echs_instant_t){0};
-				c->end = (echs_instant_t){0};
-				c->lst = (echs_instant_t){0};
-			}
-			if (__inst_0_p(c->beg) && st == EVMDFR_START) {
-				c->beg = e.when;
-				e.what = c->nick;
-				materialise(e, EVMDFR_START);
-			} else if (st != c->lstmdfr && __inst_eq_p(e.when, c->lst)) {
-				/* wipe */
-				c->end = (echs_instant_t){0};
-			} else if (__inst_0_p(c->end) && st == EVMDFR_END) {
-				c->end = e.when;
-			}
-
-			c->lst = e.when;
-			c->lstmdfr = st;
-		}
+		/* delegate the hard work */
+		__collect(x, e, st);
 	}
-	/* materialise all pending colls */
+	/* materialise and wipe all pending colls */
 	for (size_t i = 0; i < colls.z; i++) {
-		struct coll_s *c = colls.q + i;
-
-		if (!__inst_0_p(c->end) && c->lstmdfr) {
-			echs_event_t prev = {c->end, c->nick};
-			materialise(prev, c->lstmdfr);
-		}
+		wipe_coll(colls.q + i);
 	}
-
-	hattrie_free(ht);
-	free_coll(xmasc);
 	return;
 }
 
-static int
-materialise(echs_event_t e, echs_evmdfr_t m)
+
+/* parser */
+static void
+init_collect(void)
 {
-	static char buf[256];
-	char *bp = buf;
+	items.ht = hattrie_create();
 
-	/* BEST has the guy */
-	bp += dt_strf(buf, sizeof(buf), e.when);
-	*bp++ = '\t';
-	switch (m) {
-	case EVMDFR_END:
-		if (*e.what != '~') {
-			*bp++ = '~';
-		}
-		break;
-	case EVMDFR_BANG:
-		if (*e.what != '!') {
-			*bp++ = '!';
-		}
-		break;
-	default:
-		break;
-	}
 	{
-		size_t e_whaz = strlen(e.what);
-		memcpy(bp, e.what, e_whaz);
-		bp += e_whaz;
+		item_t xmas = make_item("XMAS");
+		item_t boxd = make_item("BOXD");
+		coll_t xmasc = make_coll("xmas");
+
+		coll_add_item(xmasc, xmas);
+		coll_add_item(xmasc, boxd);
 	}
-	*bp++ = '\n';
-	*bp = '\0';
-	if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
-		return -1;
+	return;
+}
+
+static void
+fini_collect(void)
+{
+	hattrie_free(items.ht);
+
+	for (size_t i = 0; i < colls.z; i++) {
+		free_coll(i + 1);
 	}
-	return 0;
+	free(colls.q);
+	colls.q = NULL;
+	colls.z = 0U;
+
+	/* finalise the gq stuff */
+	fini_gq(items.q);
+	fini_gq(collrefs.q);
+	return;
 }
 
 
@@ -482,8 +499,14 @@ main(int argc, char *argv[])
 		}
 	}
 
+	/* process collect file */
+	init_collect();
+
 	/* the iterator */
-	test(s, till);
+	collect(s, till);
+
+	/* we're through */
+	fini_collect();
 
 	{
 		typedef void(*free_stream_f)(echs_stream_t);
