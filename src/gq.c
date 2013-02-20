@@ -196,6 +196,13 @@ gq_pop_head(gq_t q, gq_ll_t dll)
 		dll->ilst = GQ_NULL_ITEM;
 	} else if (res) {
 		gq_ll_set_prev(q, dll->i1st, GQ_NULL_ITEM);
+	} else {
+		return GQ_NULL_ITEM;
+	}
+	{
+		struct gq_item_s *rp = gq_item_ptr(q, res);
+		/* rinse */
+		rp->prev = rp->next = GQ_NULL_ITEM;
 	}
 	return res;
 }
