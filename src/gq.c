@@ -186,6 +186,14 @@ gq_ll_set_prev(gq_t x, gq_item_t i, gq_item_t pr)
 	return;
 }
 
+static void
+gq_rinse(gq_t q, gq_item_t i)
+{
+	struct gq_item_s *ip = gq_item_ptr(q, i);
+	ip->next = ip->prev = GQ_NULL_ITEM;
+	return;
+}
+
 gq_item_t
 gq_pop_head(gq_t q, gq_ll_t dll)
 {
@@ -199,11 +207,7 @@ gq_pop_head(gq_t q, gq_ll_t dll)
 	} else {
 		return GQ_NULL_ITEM;
 	}
-	{
-		struct gq_item_s *rp = gq_item_ptr(q, res);
-		/* rinse */
-		rp->prev = rp->next = GQ_NULL_ITEM;
-	}
+	gq_rinse(q, res);
 	return res;
 }
 
@@ -246,10 +250,7 @@ gq_pop_item(gq_t q, gq_ll_t dll, gq_item_t i)
 		/* must be tail then */
 		dll->ilst = pr;
 	}
-	{
-		struct gq_item_s *ip = gq_item_ptr(q, i);
-		ip->next = ip->prev = GQ_NULL_ITEM;
-	}
+	gq_rinse(q, i);
 	return;
 }
 
