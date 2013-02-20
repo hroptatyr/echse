@@ -1,0 +1,30 @@
+%{
+typedef enum {
+	ECHS_LISP_QUNK,
+	ECHS_LISP_QREST,
+	ECHS_LISP_QEXTEND,
+	ECHS_LISP_QSHRINK,
+} echs_lisp_sym_t;
+%}
+%7bit
+%readonly-tables
+%switch=1
+%ignore-case
+%compare-strncmp
+%compare-lengths
+%enum
+%struct-type
+%define hash-function-name echs_lisp_symh
+%define lookup-function-name echs_lisp_symg
+%define slot-name kstr
+%null-strings
+
+struct echs_lisp_symg_s {
+	const char *kstr;
+	echs_lisp_sym_t klit;
+};
+
+%%
+rest, ECHS_LISP_QREST
+extend, ECHS_LISP_QEXTEND
+shrink, ECHS_LISP_QSHRINK
