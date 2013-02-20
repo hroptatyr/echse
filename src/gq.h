@@ -43,7 +43,7 @@
 /* generic queues */
 typedef struct gq_s *gq_t;
 typedef struct gq_ll_s *gq_ll_t;
-typedef struct gq_item_s *gq_item_t;
+typedef unsigned int gq_item_t;
 
 struct gq_item_s {
 	gq_item_t next;
@@ -58,19 +58,33 @@ struct gq_ll_s {
 };
 
 struct gq_s {
-	gq_item_t items;
-	size_t nitems;
+	void *items;
+	unsigned int nitems;
+	unsigned int itemz;
 
 	struct gq_ll_s free[1];
 };
 
+#define GQ_NULL_ITEM	((gq_item_t)(0U))
 
 extern ptrdiff_t init_gq(gq_t, size_t mbsz, size_t at_least);
 extern void fini_gq(gq_t);
-extern void gq_rbld_ll(gq_ll_t dll, ptrdiff_t);
 
-extern gq_item_t gq_pop_head(gq_ll_t);
-extern void gq_push_tail(gq_ll_t, gq_item_t);
-extern void gq_pop_item(gq_ll_t dll, gq_item_t i);
+extern gq_item_t gq_pop_head(gq_t, gq_ll_t);
+extern void gq_push_tail(gq_t, gq_ll_t, gq_item_t);
+extern void gq_pop_item(gq_t, gq_ll_t, gq_item_t i);
+
+
+static inline void*
+gq_item_ptr(gq_t g, gq_item_t i)
+{
+	return (void*)((char*)g->items + (g->itemz - 1U) * i);
+}
+
+static inline gq_item_t
+gq_item(gq_t g, void *x)
+{
+	return ((char*)x - (char*)g->items) / g->itemz + 1U;
+}
 
 #endif	/* INCLUDED_gq_h_ */

@@ -70,85 +70,44 @@
 static size_t __attribute__((const, pure))
 gq_nmemb(size_t mbsz, size_t n)
 {
-	static size_t pgsz = 0;
-
-	if (!pgsz) {
-		pgsz = sysconf(_SC_PAGESIZE);
-	}
-	return (n * mbsz + (pgsz - 1)) & ~(pgsz - 1);
-}
-
-void
-gq_rbld_ll(gq_ll_t dll, ptrdiff_t df)
-{
-	if (UNLIKELY(df == 0)) {
-		/* thank you thank you thank you */
-		return;
-	}
-
-	if (dll->i1st) {
-		dll->i1st += df;
-	}
-	if (dll->ilst) {
-		dll->ilst += df;
-	}
-	return;
-}
-
-static ptrdiff_t
-gq_rbld(gq_t q, gq_item_t nu, size_t mbsz)
-{
-	ptrdiff_t df = nu - q->items;
-
-	if (UNLIKELY(df == 0)) {
-		/* thank you thank you thank you */
-		return 0;
-	}
-
-	/* rebuild the free dll */
-	gq_rbld_ll(q->free, df);
-	/* hop along all items and up the next and prev pointers */
-	for (char *sp = (void*)nu, *ep = sp + q->nitems; sp < ep; sp += mbsz) {
-		gq_item_t ip = (void*)sp;
-
-		if (ip->next) {
-			ip->next += df;
-		}
-		if (ip->prev) {
-			ip->prev += df;
-		}
-	}
-	return df;
+	return (n * mbsz);
 }
 
 ptrdiff_t
 init_gq(gq_t q, size_t mbsz, size_t at_least)
 {
 	size_t nusz = gq_nmemb(mbsz, at_least);
-	size_t olsz = q->nitems;
-	gq_item_t ol_items = q->items;
-	gq_item_t nu_items;
+	size_t olsz = gq_nmemb(mbsz, q->nitems);
+	void *ol_items = q->items;
+	void *nu_items;
 	ptrdiff_t res = 0;
 
-	if (q->nitems > nusz) {
+	if (olsz >= nusz) {
 		return 0;
 	}
+
+#if defined MREMAP_MAYMOVE
+	if (ol_items) {
+		nu_items = mremap(ol_items, olsz, nusz, MREMAP_MAYMOVE);
+	} else {
+		nu_items = mmap(NULL, nusz, PROT_MEM, MAP_MEM, -1, 0);
+	}
+#else  /* !MREMAP_MAYMOVE */
 	/* get some new items */
 	nu_items = mmap(ol_items, nusz, PROT_MEM, MAP_MEM, -1, 0);
 
-	if (q->items) {
+	if (ol_items) {
 		/* aha, resize */
 		memcpy(nu_items, ol_items, olsz);
-
-		/* fix up all lists */
-		res = gq_rbld(q, nu_items, mbsz);
 
 		/* unmap the old guy */
 		munmap(ol_items, olsz);
 	}
+#endif	/* MREMAP_MAYMOVE */
 	/* reassign */
 	q->items = nu_items;
-	q->nitems = nusz;
+	q->itemz = mbsz;
+	q->nitems = nusz / mbsz;
 
 	/* fixup sizes for the free list fiddling */
 	olsz -= olsz % mbsz;
@@ -157,28 +116,29 @@ init_gq(gq_t q, size_t mbsz, size_t at_least)
 	{
 		char *const ep = (char*)nu_items + olsz;
 		char *const eep = ep + (nusz - olsz);
-		gq_item_t eip = (void*)ep;
+		struct gq_item_s *eip = (void*)ep;
 
 		for (char *sp = ep; sp < eep; sp += mbsz) {
-			gq_item_t ip = (void*)sp;
+			struct gq_item_s *ip = (void*)sp;
 
 			if (sp + mbsz < eep) {
-				ip->next = (void*)(sp + mbsz);
+				ip->next = gq_item(q, sp + mbsz);
 			}
 			if (sp > ep) {
-				ip->prev = (void*)(sp - mbsz);
+				ip->prev = gq_item(q, sp - mbsz);
 			}
 		}
 		/* attach new list to free list */
 		eip->prev = q->free->ilst;
 		if (q->free->ilst) {
-			q->free->ilst->next = eip;
+			struct gq_item_s *ilst = gq_item_ptr(q, q->free->ilst);
+			ilst->next = gq_item(q, eip);
 		} else {
-			assert(q->free->i1st == NULL);
+			assert(q->free->i1st == GQ_NULL_ITEM);
 		}
-		if (q->free->i1st == NULL) {
-			q->free->i1st = eip;
-			q->free->ilst = (void*)(eep - mbsz);
+		if (q->free->i1st == GQ_NULL_ITEM) {
+			q->free->i1st = gq_item(q, eip);
+			q->free->ilst = gq_item(q, (eep - mbsz));
 		}
 	}
 	return res;
@@ -188,59 +148,101 @@ void
 fini_gq(gq_t q)
 {
 	if (q->items) {
-		munmap(q->items, q->nitems);
+		munmap(q->items, gq_nmemb(q->itemz, q->nitems));
 		q->items = NULL;
-		q->nitems = 0;
+		q->nitems = 0U;
+		q->itemz = 0U;
 	}
 	return;
 }
 
+static gq_item_t
+gq_ll_next(gq_t x, gq_item_t i)
+{
+	struct gq_item_s *p = gq_item_ptr(x, i);
+	return p->next;
+}
+
+static gq_item_t
+gq_ll_prev(gq_t x, gq_item_t i)
+{
+	struct gq_item_s *p = gq_item_ptr(x, i);
+	return p->prev;
+}
+
+static void
+gq_ll_set_next(gq_t x, gq_item_t i, gq_item_t nx)
+{
+	struct gq_item_s *p = gq_item_ptr(x, i);
+	p->next = nx;
+	return;
+}
+
+static void
+gq_ll_set_prev(gq_t x, gq_item_t i, gq_item_t pr)
+{
+	struct gq_item_s *p = gq_item_ptr(x, i);
+	p->prev = pr;
+	return;
+}
+
 gq_item_t
-gq_pop_head(gq_ll_t dll)
+gq_pop_head(gq_t q, gq_ll_t dll)
 {
 	gq_item_t res;
 
-	if ((res = dll->i1st) && (dll->i1st = dll->i1st->next) == NULL) {
-		dll->ilst = NULL;
+	if ((res = dll->i1st) &&
+	    (dll->i1st = gq_ll_next(q, dll->i1st)) == GQ_NULL_ITEM) {
+		dll->ilst = GQ_NULL_ITEM;
 	} else if (res) {
-		dll->i1st->prev = NULL;
+		gq_ll_set_prev(q, dll->i1st, GQ_NULL_ITEM);
 	}
 	return res;
 }
 
 void
-gq_push_tail(gq_ll_t dll, gq_item_t i)
+gq_push_tail(gq_t q, gq_ll_t dll, gq_item_t i)
 {
+	struct gq_item_s *ip = gq_item_ptr(q, i);
+
 	if (dll->ilst) {
-		dll->ilst->next = i;
-		i->prev = dll->ilst;
-		i->next = NULL;
+		gq_ll_set_next(q, dll->ilst, i);
+		ip->prev = dll->ilst;
+		ip->next = GQ_NULL_ITEM;
 		dll->ilst = i;
 	} else {
-		assert(dll->i1st == NULL);
+		assert(dll->i1st == 0U);
 		dll->i1st = dll->ilst = i;
-		i->next = NULL;
-		i->prev = NULL;
+		ip->next = GQ_NULL_ITEM;
+		ip->prev = GQ_NULL_ITEM;
 	}
 	return;
 }
 
 void
-gq_pop_item(gq_ll_t dll, gq_item_t ip)
+gq_pop_item(gq_t q, gq_ll_t dll, gq_item_t i)
 {
-	if (ip->prev) {
-		ip->prev->next = ip->next;
+	gq_item_t nx = gq_ll_next(q, i);
+	gq_item_t pr = gq_ll_prev(q, i);
+
+	if (pr != GQ_NULL_ITEM) {
+		/* i->prev->next = i->next */
+		gq_ll_set_next(q, pr, nx);
 	} else {
 		/* must be head then */
-		dll->i1st = ip->next;
+		dll->i1st = nx;
 	}
-	if (ip->next) {
-		ip->next->prev = ip->prev;
+	if (nx != GQ_NULL_ITEM) {
+		/* i->next->prev = i->prev */
+		gq_ll_set_prev(q, nx, pr);
 	} else {
 		/* must be tail then */
-		dll->ilst = ip->prev;
+		dll->ilst = pr;
 	}
-	ip->next = ip->prev = NULL;
+	{
+		struct gq_item_s *ip = gq_item_ptr(q, i);
+		ip->next = ip->prev = GQ_NULL_ITEM;
+	}
 	return;
 }
 
