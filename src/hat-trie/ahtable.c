@@ -304,8 +304,8 @@ int ahtable_del(ahtable_t* T, const char* key, size_t len)
 
 static int cmpkey(const void* a_, const void* b_)
 {
-    slot_t a = *(slot_t*) a_;
-    slot_t b = *(slot_t*) b_;
+    slot_t a = *(const slot_t*) a_;
+    slot_t b = *(const slot_t*) b_;
 
     size_t ka = keylen(a), kb = keylen(b);
 
