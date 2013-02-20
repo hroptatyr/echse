@@ -61,6 +61,9 @@
 #define P_FL		(PROT_READ)
 #define M_FL		(MAP_PRIVATE)
 
+typedef union funcons_u funcons_t;
+typedef struct tstrng_s tstrng_t;
+
 typedef enum {
 	UNK,
 	L_PAREN,
@@ -72,10 +75,14 @@ typedef enum {
 	KEYWORD,
 } toktyp_t;
 
-struct token_s {
-	toktyp_t tt;
+struct tstrng_s {
 	const char *s;
 	size_t z;
+};
+
+struct token_s {
+	toktyp_t tt;
+	tstrng_t s;
 };
 
 struct tokon_s {
@@ -88,6 +95,181 @@ struct tokon_s {
 #include "echs-lisp-keys.c"
 #include "echs-lisp-syms.c"
 #include "echs-lisp-funs.c"
+
+struct collect_s {
+	unsigned int f;
+	tstrng_t as;
+	echs_lisp_sym_t on_olap;
+};
+
+union funcons_u {
+	unsigned int f;
+	struct collect_s collect;
+};
+
+static void
+funcall(funcons_t *f)
+{
+	switch (f->f) {
+	case ECHS_LISP_COLLECT:
+		static char buf[256];
+		memcpy(buf, f->collect.as.s, f->collect.as.z);
+		buf[f->collect.as.z] = '\0';
+		printf("(funcall #'collect :as %s :on-overlap %u)\n",
+		       buf, f->collect.on_olap);
+		break;
+	default:
+		break;
+	}
+}
+
+
+/* token state machine */
+static void
+ass_keyw_u(funcons_t *f, echs_lisp_key_t k, tstrng_t s)
+{
+	switch (f->f) {
+	case ECHS_LISP_COLLECT:
+		switch (k) {
+		case ECHS_LISP__AS:
+			f->collect.as = s;
+			break;
+		}
+		break;
+	}
+	return;
+}
+
+static void
+ass_keyw_q(funcons_t *f, echs_lisp_key_t k, echs_lisp_sym_t s)
+{
+	switch (f->f) {
+	case ECHS_LISP_COLLECT:
+		switch (k) {
+		case ECHS_LISP__ON_OVERLAP:
+			f->collect.on_olap = s;
+			break;
+		}
+		break;
+	}
+	return;
+}
+
+static echs_lisp_sym_t
+__get_sym(tstrng_t s)
+{
+	const struct echs_lisp_symg_s *try;
+
+	if (s.z == 0U) {
+		/* could be a quoted list or something */
+		return ECHS_LISP_QUNK;
+	} else if ((try = echs_lisp_symg(s.s, s.z)) == NULL) {
+		return ECHS_LISP_QUNK;
+	}
+	return try->klit;
+}
+
+static echs_lisp_key_t
+__get_key(tstrng_t s)
+{
+	const struct echs_lisp_keyg_s *try;
+
+	if (UNLIKELY(s.z == 0U)) {
+		/* could be a quoted list or something */
+		return ECHS_LISP__UNK;
+	} else if ((try = echs_lisp_keyg(s.s, s.z)) == NULL) {
+		return ECHS_LISP__UNK;
+	}
+	return try->klit;
+}
+
+static echs_lisp_fun_t
+__get_fun(tstrng_t s)
+{
+	const struct echs_lisp_fung_s *try;
+
+	if (UNLIKELY(s.z == 0U)) {
+		/* could be a quoted list or something */
+		return ECHS_LISP_UNK;
+	} else if ((try = echs_lisp_fung(s.s, s.z)) == NULL) {
+		return ECHS_LISP_UNK;
+	}
+	return try->klit;
+}
+
+static void
+record_state(struct token_s t)
+{
+	static struct token_s st;
+	static funcons_t funs[16];
+	static size_t nfuns = 0U;
+	static funcons_t *curf = NULL;
+	static echs_lisp_key_t lstkey;
+
+	switch (st.tt) {
+	case KEYWORD:
+		switch (t.tt) {
+		default:
+			/* syntax error */
+			break;
+		case USYMBOL:
+			/* aaah keyword value pair */
+			ass_keyw_u(curf, lstkey, t.s);
+			break;
+		case QSYMBOL:
+			ass_keyw_q(curf, lstkey, __get_sym(t.s));
+			break;
+		}
+		st = (struct token_s){UNK};
+		break;
+	case UNK:
+		switch (t.tt) {
+		default:
+		case COMMENT:
+			break;
+		case KEYWORD:
+			st = t;
+			lstkey = __get_key(t.s);
+			break;
+		case L_PAREN:
+			/* prepare funcall */
+			st = (struct token_s){L_PAREN};
+			break;
+		case R_PAREN:
+			printf("curf %p\n", curf);
+			if (curf) {
+				funcall(curf);
+				if (--nfuns == 0U) {
+					curf = NULL;
+				} else {
+					curf = funs + nfuns - 1;
+				}
+			}
+			st = (struct token_s){UNK};
+			break;
+		case QSYMBOL:
+			st = t;
+			break;
+		}
+		break;
+	case L_PAREN:
+		funs[nfuns].f = __get_fun(t.s);
+		curf = funs + nfuns++;
+		st = (struct token_s){UNK};
+		break;
+	case QSYMBOL:
+		switch (t.tt) {
+		case L_PAREN:
+			/* aah quoted list */
+			break;
+		case R_PAREN:
+			/* quoted list end */
+			st = (struct token_s){UNK};
+			break;
+		}
+	}
+	return;
+}
 
 
 static const char*
@@ -120,7 +302,7 @@ next_quot(const char *p, const char *ep)
 	return p;
 }
 
-
+
 static struct tokon_s
 next_token(const char *p, const char *ep)
 {
@@ -136,45 +318,38 @@ next_token(const char *p, const char *ep)
 	switch (*p) {
 	case '(':
 		res.t.tt = L_PAREN;
-		res.t.s = p;
-		res.t.z = 1;
+		res.t.s = (tstrng_t){p, 1U};
 		res.on = p + 1;
 		break;
 	case ')':
-		res.t.tt = L_PAREN;
-		res.t.s = p;
-		res.t.z = 1;
+		res.t.tt = R_PAREN;
+		res.t.s = (tstrng_t){p, 1U};
 		res.on = p + 1;
 		break;
 	case ';':
 		res.t.tt = COMMENT;
-		res.t.s = p;
 		res.on = next_line(p + 1, ep);
-		res.t.z = res.on - res.t.s - 1;
+		res.t.s = (tstrng_t){p, res.on - p - 1};
 		break;
 	case '\'':
 		res.t.tt = QSYMBOL;
-		res.t.s = p + 1;
-		res.on = next_non_graph(res.t.s, ep);
-		res.t.z = res.on - res.t.s;
+		res.on = next_non_graph(p + 1, ep);
+		res.t.s = (tstrng_t){p + 1, res.on - p - 1};
 		break;
 	case '"':
 		res.t.tt = STRING;
-		res.t.s = p + 1;
-		res.on = next_quot(res.t.s, ep) + 1;
-		res.t.z = res.on - p - 2;
+		res.on = next_quot(p + 1, ep) + 1;
+		res.t.s = (tstrng_t){p + 1, res.on - p - 2};
 		break;
 	case ':':
 		res.t.tt = KEYWORD;
-		res.t.s = p + 1;
-		res.on = next_non_graph(res.t.s, ep);
-		res.t.z = res.on - res.t.s;
+		res.on = next_non_graph(p + 1, ep);
+		res.t.s = (tstrng_t){p + 1, res.on - p - 1};
 		break;
 	default:
 		res.t.tt = USYMBOL;
-		res.t.s = p;
-		res.on = next_non_graph(res.t.s, ep);
-		res.t.z = res.on - res.t.s;
+		res.on = next_non_graph(p, ep);
+		res.t.s = (tstrng_t){p, res.on - p};
 		break;
 	}
 	return res;
@@ -185,7 +360,7 @@ static void
 pr_token(struct token_s t)
 {
 	printf("%u\t", t.tt);
-	if (fwrite(t.s, 1, t.z, stdout) < t.z) {
+	if (fwrite(t.s.s, 1, t.s.z, stdout) < t.s.z) {
 		fputc('!', stdout);
 	}
 	fputc('\n', stdout);
@@ -197,49 +372,15 @@ static void
 parse_file(const char *p, size_t z)
 {
 	const char *const ep = p + z;
-	toktyp_t olty = UNK;
 
-	for (struct tokon_s nxt; (nxt = next_token(p, ep)).t.tt;
-	     p = nxt.on, olty = nxt.t.tt) {
+	for (struct tokon_s nxt; (nxt = next_token(p, ep)).t.tt; p = nxt.on) {
 		struct token_s t = nxt.t;
 
 #if defined DEBUG_FLAG
 		pr_token(t);
 #endif	/* DEBUG_FLAG */
 
-		switch (t.tt) {
-		default:
-			break;
-		case USYMBOL: {
-			const struct echs_lisp_fung_s *try;
-
-			if (olty != L_PAREN) {
-				break;
-			}
-			/* yes, function call */
-			if ((try = echs_lisp_fung(t.s, t.z)) != NULL) {
-				printf("(funcall #'%u)\n", try->klit);
-			}
-			break;
-		}
-		case KEYWORD: {
-			const struct echs_lisp_keyg_s *try;
-
-			/* keyword */
-			if ((try = echs_lisp_keyg(t.s, t.z)) != NULL) {
-				printf("keyword :%u\n", try->klit);
-			}
-			break;
-		}
-		case QSYMBOL: {
-			const struct echs_lisp_symg_s *try;
-
-			if ((try = echs_lisp_symg(t.s, t.z)) != NULL) {
-				printf("qsymbol '%u\n", try->klit);
-			}
-			break;
-		}
-		}
+		record_state(t);
 	}
 	return;
 }
