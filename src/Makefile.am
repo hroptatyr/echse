@@ -66,6 +66,7 @@ echse_collect_CPPFLAGS = $(AM_CPPFLAGS)
 echse_collect_CPPFLAGS += $(INCLTDL)
 echse_collect_LDFLAGS = $(AM_LDFLAGS)
 echse_collect_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_collect_LDADD = libhattrie.la
 BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
 
 
