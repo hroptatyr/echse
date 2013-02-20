@@ -69,6 +69,18 @@ echse_collect_LDFLAGS += $(LIBLTDL) -export-dynamic
 BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
 
 
+## daniel jones' hattrie shebang
+noinst_LTLIBRARIES += libhattrie.la
+libhattrie_la_SOURCES = hat-trie/hat-trie.c hat-trie/hat-trie.h
+libhattrie_la_SOURCES += hat-trie/common.h
+libhattrie_la_SOURCES += hat-trie/pstdint.h
+libhattrie_la_SOURCES += hat-trie/ahtable.c hat-trie/ahtable.h
+libhattrie_la_SOURCES += hat-trie/misc.c hat-trie/misc.h
+libhattrie_la_SOURCES += hat-trie/murmurhash3.c hat-trie/murmurhash3.h
+libhattrie_la_CPPFLAGS = $(AM_CPPFLAGS)
+libhattrie_la_LDFLAGS = $(AM_LDFLAGS)
+
+
 ## our rule for gengetopt
 %.c %.h: %.ggo
 	$(AM_V_GEN) $(GENGETOPT) -l -i $< -F $*
