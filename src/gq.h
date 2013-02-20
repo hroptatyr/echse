@@ -78,7 +78,7 @@ extern void gq_pop_item(gq_t, gq_ll_t, gq_item_t i);
 static inline void*
 gq_item_ptr(gq_t g, gq_item_t i)
 {
-	return (void*)((char*)g->items + (g->itemz - 1U) * i);
+	return (void*)((char*)g->items + g->itemz * (i - 1U));
 }
 
 static inline gq_item_t
