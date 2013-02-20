@@ -14,6 +14,10 @@
 
 #define HT_UNUSED(x) x=x
 
+#if defined __INTEL_COMPILER
+# pragma warning (disable:2259)
+#endif	/* __INTEL_COMPILER */
+
 /* maximum number of keys that may be stored in a bucket before it is burst */
 static const size_t MAX_BUCKET_SIZE = 16384;
 #define NODE_MAXCHAR 0xff // 0x7f for 7-bit ASCII

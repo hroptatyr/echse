@@ -11,6 +11,10 @@
 #include <assert.h>
 #include <string.h>
 
+#if defined __INTEL_COMPILER
+# pragma warning (disable:2259)
+# pragma warning (disable:2415)
+#endif	/* __INTEL_COMPILER */
 
 
 const double ahtable_max_load_factor = 100000.0; /* arbitrary large number => don't resize */
