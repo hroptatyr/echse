@@ -248,6 +248,11 @@ record_state(struct token_s t)
 			/* quoted list end */
 			st = (struct token_s){UNK};
 			break;
+		case STRING:
+			item_ll_add(curr->items, make_item(t.s));
+			break;
+		default:
+			break;
 		}
 	}
 	return 0;
