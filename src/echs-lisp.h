@@ -37,6 +37,39 @@
 #if !defined INCLUDED_echs_lisp_h_
 #define INCLUDED_echs_lisp_h_
 
+#include <stdlib.h>
+#include "gq.h"
+
+typedef struct tstrng_s tstrng_t;
+
+typedef struct coll_s *coll_t;
+typedef struct item_s *item_t;
+
+typedef struct gq_ll_s item_ll_t[1];
+
+struct tstrng_s {
+	const char *s;
+	size_t z;
+};
+
+struct collect_s {
+	unsigned int f;
+
+	tstrng_t as;
+	unsigned int on_olap;
+
+	item_ll_t items;
+};
+
+
 extern int echs_lisp(const char *fn);
+
+extern item_t make_item(tstrng_t nick);
+extern void free_item(item_t i);
+extern void item_ll_add(item_ll_t items, item_t);
+extern item_t item_ll_pop(item_ll_t items);
+
+/* publishing collect events */
+extern void add_collect(struct collect_s);
 
 #endif	/* INCLUDED_echs_lisp_h_ */

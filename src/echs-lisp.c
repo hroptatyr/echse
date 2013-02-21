@@ -61,9 +61,6 @@
 #define P_FL		(PROT_READ)
 #define M_FL		(MAP_PRIVATE)
 
-typedef union funcons_u funcons_t;
-typedef struct tstrng_s tstrng_t;
-
 typedef enum {
 	UNK,
 	L_PAREN,
@@ -74,11 +71,6 @@ typedef enum {
 	COMMENT,
 	KEYWORD,
 } toktyp_t;
-
-struct tstrng_s {
-	const char *s;
-	size_t z;
-};
 
 struct token_s {
 	toktyp_t tt;
@@ -91,65 +83,50 @@ struct tokon_s {
 };
 
 
+/* helpers */
+static tstrng_t
+tstrngdup(tstrng_t s)
+{
+	return (tstrng_t){strndup(s.s, s.z), s.z};
+}
+
+
 /* reserved keywords and symbols */
 #include "echs-lisp-keys.c"
 #include "echs-lisp-syms.c"
 #include "echs-lisp-funs.c"
 
-struct collect_s {
-	unsigned int f;
-	tstrng_t as;
-	echs_lisp_sym_t on_olap;
-};
-
-union funcons_u {
-	unsigned int f;
-	struct collect_s collect;
-};
-
-static void
-funcall(funcons_t *f)
-{
-	switch (f->f) {
-	case ECHS_LISP_COLLECT:
-		static char buf[256];
-		memcpy(buf, f->collect.as.s, f->collect.as.z);
-		buf[f->collect.as.z] = '\0';
-		printf("(funcall #'collect :as %s :on-overlap %u)\n",
-		       buf, f->collect.on_olap);
-		break;
-	default:
-		break;
-	}
-}
-
 
 /* token state machine */
 static void
-ass_keyw_u(funcons_t *f, echs_lisp_key_t k, tstrng_t s)
+ass_keyw_u(struct collect_s *c, echs_lisp_key_t k, tstrng_t s)
 {
-	switch (f->f) {
+	switch (c->f) {
 	case ECHS_LISP_COLLECT:
 		switch (k) {
 		case ECHS_LISP__AS:
-			f->collect.as = s;
+			c->as = tstrngdup(s);
 			break;
 		}
+		break;
+	default:
 		break;
 	}
 	return;
 }
 
 static void
-ass_keyw_q(funcons_t *f, echs_lisp_key_t k, echs_lisp_sym_t s)
+ass_keyw_q(struct collect_s *c, echs_lisp_key_t k, echs_lisp_sym_t s)
 {
-	switch (f->f) {
+	switch (c->f) {
 	case ECHS_LISP_COLLECT:
 		switch (k) {
 		case ECHS_LISP__ON_OVERLAP:
-			f->collect.on_olap = s;
+			c->on_olap = s;
 			break;
 		}
+		break;
+	default:
 		break;
 	}
 	return;
@@ -197,13 +174,11 @@ __get_fun(tstrng_t s)
 	return try->klit;
 }
 
-static void
+static int
 record_state(struct token_s t)
 {
 	static struct token_s st;
-	static funcons_t funs[16];
-	static size_t nfuns = 0U;
-	static funcons_t *curf = NULL;
+	static struct collect_s curr[1];
 	static echs_lisp_key_t lstkey;
 
 	switch (st.tt) {
@@ -214,10 +189,10 @@ record_state(struct token_s t)
 			break;
 		case USYMBOL:
 			/* aaah keyword value pair */
-			ass_keyw_u(curf, lstkey, t.s);
+			ass_keyw_u(curr, lstkey, t.s);
 			break;
 		case QSYMBOL:
-			ass_keyw_q(curf, lstkey, __get_sym(t.s));
+			ass_keyw_q(curr, lstkey, __get_sym(t.s));
 			break;
 		}
 		st = (struct token_s){UNK};
@@ -236,26 +211,33 @@ record_state(struct token_s t)
 			st = (struct token_s){L_PAREN};
 			break;
 		case R_PAREN:
-			printf("curf %p\n", curf);
-			if (curf) {
-				funcall(curf);
-				if (--nfuns == 0U) {
-					curf = NULL;
-				} else {
-					curf = funs + nfuns - 1;
-				}
+			switch (curr->f) {
+			case ECHS_LISP_COLLECT:
+				add_collect(*curr);
+				break;
+			default:
+				break;
 			}
 			st = (struct token_s){UNK};
 			break;
 		case QSYMBOL:
 			st = t;
 			break;
+		case STRING:
+			item_ll_add(curr->items, make_item(t.s));
+			break;
 		}
 		break;
 	case L_PAREN:
-		funs[nfuns].f = __get_fun(t.s);
-		curf = funs + nfuns++;
-		st = (struct token_s){UNK};
+		switch (__get_fun(t.s)) {
+		case ECHS_LISP_COLLECT:
+			*curr = (struct collect_s){ECHS_LISP_COLLECT};
+			st = (struct token_s){UNK};
+			break;
+		default:
+			/* big error */
+			return -1;
+		}
 		break;
 	case QSYMBOL:
 		switch (t.tt) {
@@ -268,7 +250,7 @@ record_state(struct token_s t)
 			break;
 		}
 	}
-	return;
+	return 0;
 }
 
 
@@ -380,7 +362,10 @@ parse_file(const char *p, size_t z)
 		pr_token(t);
 #endif	/* DEBUG_FLAG */
 
-		record_state(t);
+		if (record_state(t) < 0) {
+			puts("syntax error");
+			break;
+		}
 	}
 	return;
 }
