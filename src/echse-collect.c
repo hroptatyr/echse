@@ -277,6 +277,7 @@ free_coll(coll_t c)
 		for (collref_t jp;
 		     (jp = item_pop_collref(ip)) != NULL; free_collref(jp));
 	}
+	free_gq_item(colls.q, c);
 	return;
 }
 
