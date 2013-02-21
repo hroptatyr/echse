@@ -419,8 +419,7 @@ fini_collect(void)
 {
 	hattrie_free(items.ht);
 
-	for (coll_t c = active_colls(), cn; c != NULL; c = cn) {
-		cn = next_coll(c);
+	for (coll_t c; (c = (void*)gq_pop_head(colls.active)) != NULL;) {
 		free_coll(c);
 	}
 
