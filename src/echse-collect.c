@@ -52,6 +52,7 @@
 #include "module.h"
 #include "gq.h"
 #include <hat-trie/hat-trie.h>
+#include "echs-lisp.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -63,12 +64,9 @@
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
-typedef struct item_s *item_t;
 typedef struct collref_s *collref_t;
-typedef struct coll_s *coll_t;
 
 typedef struct gq_ll_s collref_ll_t[1];
-typedef struct gq_ll_s item_ll_t[1];
 
 typedef enum {
 	EVMDFR_START,
@@ -89,14 +87,7 @@ struct collref_s {
 struct coll_s {
 	struct gq_item_s i;
 
-	/* :as */
-	const char *nick;
-	item_ll_t items;
-	enum {
-		COLL_OVERLAP_UNK,
-		COLL_OVERLAP_EXTEND,
-		COLL_OVERLAP_SHRINK,
-	} overlap;
+	struct collect_s c[1];
 
 	/* variable bits */
 	echs_instant_t beg;
@@ -191,24 +182,38 @@ static struct {
 } collrefs;
 
 
-static item_t
-make_item(const char *nick)
+item_t
+make_item(tstrng_t nick)
 {
 	item_t res = make_gq_item(items.q, sizeof(*res), 64U);
 
 	/* also bang into hat-trie */
 	{
-		value_t *x = hattrie_get(items.ht, nick, strlen(nick));
+		value_t *x = hattrie_get(items.ht, nick.s, nick.z);
 		*x = (value_t)(intptr_t)res;
 	}
 	return res;
 }
 
-static void
+void
 free_item(item_t i)
 {
 	free_gq_item(items.q, i);
 	return;
+}
+
+void
+item_ll_add(item_ll_t l, item_t i)
+{
+	gq_push_tail(l, (gq_item_t)i);
+	return;
+}
+
+item_t
+item_ll_pop(item_ll_t l)
+{
+	item_t res = (void*)gq_pop_head(l);
+	return res;
 }
 
 static void
@@ -257,44 +262,26 @@ next_collref(collref_t i)
 
 
 static coll_t
-make_coll(const char *nick)
+make_coll(struct collect_s c)
 {
 	coll_t res = make_gq_item(colls.q, sizeof(*res), 16U);
 
-	res->nick = strdup(nick);
+	*res->c = c;
 	return res;
 }
 
 static void
 free_coll(coll_t c)
 {
-	static item_t coll_pop_item(coll_t);
-
 	/* free all items first */
 	for (item_t ip;
-	     (ip = coll_pop_item(c)) != NULL; free_item(ip)) {
+	     (ip = item_ll_pop(c->c->items)) != NULL; free_item(ip)) {
 		/* free the collrefs too */
 		for (collref_t jp;
 		     (jp = item_pop_collref(ip)) != NULL; free_collref(jp));
 	}
 	free_gq_item(colls.q, c);
 	return;
-}
-
-static void
-coll_add_item(coll_t c, item_t i)
-{
-	gq_push_tail(c->items, (gq_item_t)i);
-	/* and push the collection on the ref list of i */
-	item_add_collref(i, make_collref(c));
-	return;
-}
-
-static item_t
-coll_pop_item(coll_t c)
-{
-	void *res = gq_pop_head(c->items);
-	return res;
 }
 
 static coll_t
@@ -309,6 +296,19 @@ next_coll(coll_t c)
 	return (void*)c->i.next;
 }
 
+void
+add_collect(struct collect_s c)
+{
+	coll_t cc = make_coll(c);
+
+	/* add backrefs */
+	for (item_t i = (void*)c.items->i1st; i != NULL; i = (void*)i->i.next) {
+		item_add_collref(i, make_collref(cc));
+	}
+	/* activate */
+	gq_push_tail(colls.active, (gq_item_t)cc);
+	return;
+}
 
 static const struct item_s*
 find_item(hattrie_t *ht, const char *token)
@@ -327,7 +327,7 @@ static void
 wipe_coll(struct coll_s *c)
 {
 	if (!__inst_0_p(c->end) && c->lstmdfr) {
-		echs_event_t prev = {c->end, c->nick};
+		echs_event_t prev = {c->end, c->c->as.s};
 
 		/* better output this one quickly ere we forget */
 		materialise(prev, c->lstmdfr);
@@ -352,7 +352,7 @@ __collect(const struct item_s *i, echs_event_t e, echs_evmdfr_t st)
 		}
 		if (__inst_0_p(c->beg) && st == EVMDFR_START) {
 			c->beg = e.when;
-			e.what = c->nick;
+			e.what = c->c->as.s;
 			materialise(e, EVMDFR_START);
 		} else if (st != c->lstmdfr && __inst_eq_p(e.when, c->lst)) {
 			/* wipe */
@@ -401,16 +401,6 @@ static void
 init_collect(void)
 {
 	items.ht = hattrie_create();
-
-	{
-		item_t xmas = make_item("XMAS");
-		item_t boxd = make_item("BOXD");
-		coll_t xmasc = make_coll("xmas");
-
-		coll_add_item(xmasc, xmas);
-		coll_add_item(xmasc, boxd);
-		gq_push_tail(colls.active, (gq_item_t)xmasc);
-	}
 	return;
 }
 
