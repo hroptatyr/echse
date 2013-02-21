@@ -44,6 +44,16 @@
 #include "instant.h"
 #include "dt-strpf.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
+
 struct clo_s {
 	FILE *f;
 	char *line;
@@ -107,7 +117,7 @@ make_echs_stream(echs_instant_t inst, ...)
 	}
 	return (echs_stream_t){echs_file_stream, clo};
 nul:
-	return (echs_stream_t){NULL};
+	return (echs_stream_t){NULL, clo};
 }
 
 void
@@ -115,6 +125,10 @@ free_echs_stream(echs_stream_t x)
 {
 	struct clo_s *clo = x.clo;
 
+	if (UNLIKELY(clo == NULL)) {
+		/* oh god, how did we get here? */
+		return;
+	}
 	if (clo->f != NULL) {
 		fclose(clo->f);
 	}

@@ -41,7 +41,6 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -62,24 +61,6 @@
 #endif	/* UNUSED */
 
 #define logger(what, how, args...)	fprintf(stderr, how "\n", args)
-
-static inline bool
-__event_0_p(echs_event_t e)
-{
-	return __inst_0_p(e.when);
-}
-
-static inline bool
-__event_lt_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_lt_p(e.when, i);
-}
-
-static inline bool
-__event_le_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_le_p(e.when, i);
-}
 
 
 /* myself as stream */
@@ -221,6 +202,7 @@ free_echs_stream(echs_stream_t s)
 }
 
 
+#if defined STANDALONE
 #if defined __INTEL_COMPILER
 # pragma warning (disable:593)
 # pragma warning (disable:181)
@@ -297,5 +279,6 @@ out:
 	echs_parser_free(argi);
 	return res;
 }
+#endif	/* STANDALONE */
 
 /* echse.c ends here */
