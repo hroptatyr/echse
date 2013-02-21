@@ -63,9 +63,9 @@
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
-typedef gq_item_t item_t;
-typedef gq_item_t collref_t;
-typedef unsigned int coll_t;
+typedef struct item_s *item_t;
+typedef struct collref_s *collref_t;
+typedef struct coll_s *coll_t;
 
 typedef struct gq_ll_s collref_ll_t[1];
 typedef struct gq_ll_s item_ll_t[1];
@@ -87,6 +87,8 @@ struct collref_s {
 };
 
 struct coll_s {
+	struct gq_item_s i;
+
 	/* :as */
 	const char *nick;
 	item_ll_t items;
@@ -154,29 +156,29 @@ materialise(echs_event_t e, echs_evmdfr_t m)
 }
 
 
-static gq_item_t
+static void*
 make_gq_item(gq_t x, size_t membz, size_t nbatch)
 {
 	if (x->free->i1st == GQ_NULL_ITEM) {
 		/* resize */
-		init_gq(x, membz, x->nitems + nbatch);
+		init_gq(x, nbatch, membz);
 	}
 	/* get us a new object and populate */
-	return gq_pop_head(x, x->free);
+	return gq_pop_head(x->free);
 }
 
 static void
-free_gq_item(gq_t x, gq_item_t i)
+free_gq_item(gq_t x, void *i)
 {
 	/* back on our free list */
-	gq_push_tail(x, x->free, i);
+	gq_push_tail(x->free, i);
 	return;
 }
 
 
 static struct {
-	size_t z;
-	struct coll_s *q;
+	struct gq_s q[1];
+	struct gq_ll_s active[1];
 } colls;
 
 static struct {
@@ -188,16 +190,11 @@ static struct {
 	struct gq_s q[1];
 } collrefs;
 
-static inline struct item_s*
-item_ptr(item_t i)
-{
-	return gq_item_ptr(items.q, i);
-}
 
 static item_t
 make_item(const char *nick)
 {
-	gq_item_t res = make_gq_item(items.q, sizeof(struct item_s), 64U);
+	item_t res = make_gq_item(items.q, sizeof(*res), 64U);
 
 	/* also bang into hat-trie */
 	{
@@ -217,66 +214,55 @@ free_item(item_t i)
 static void
 item_add_collref(item_t i, collref_t ref)
 {
-	struct item_s *ip = item_ptr(i);
-
-	gq_push_tail(collrefs.q, ip->collrefs, ref);
+	gq_push_tail(i->collrefs, (gq_item_t)ref);
 	return;
 }
 
 static collref_t
 item_pop_collref(item_t i)
 {
-	struct item_s *ip = item_ptr(i);
-	return gq_pop_head(collrefs.q, ip->collrefs);
+	void *res = gq_pop_head(i->collrefs);
+	return res;
 }
 
-
-static inline struct collref_s*
-collref_ptr(collref_t cref)
+static collref_t
+item_collrefs(const struct item_s *i)
 {
-	return gq_item_ptr(collrefs.q, cref);
+	return (void*)i->collrefs->i1st;
 }
+
 
 static collref_t
 make_collref(coll_t c)
 {
-	struct collref_s *ref;
-	collref_t res = make_gq_item(collrefs.q, sizeof(*ref), 64U);
+	collref_t res = make_gq_item(collrefs.q, sizeof(*res), 64U);
 
-	ref = collref_ptr(res);
-	ref->ref = c;
+	res->ref = c;
 	return res;
 }
 
 static void
-free_collref(collref_t i)
+free_collref(collref_t cr)
 {
-	struct collref_s *ref = collref_ptr(i);
-
-	ref->ref = GQ_NULL_ITEM;
-	free_gq_item(collrefs.q, i);
+	cr->ref = NULL;
+	free_gq_item(collrefs.q, cr);
 	return;
 }
 
-
-static inline struct coll_s*
-coll_ptr(coll_t c)
+static collref_t
+next_collref(collref_t i)
 {
-	return c ? colls.q + (c - 1U) : NULL;
+	return (void*)i->i.next;
 }
+
 
 static coll_t
 make_coll(const char *nick)
 {
-	coll_t res;
+	coll_t res = make_gq_item(colls.q, sizeof(*res), 16U);
 
-	if ((colls.z % 16U) == 0U) {
-		colls.q = realloc(colls.q, (colls.z + 16U) * sizeof(*colls.q));
-	}
-	res = (coll_t)colls.z++;
-
-	colls.q[res].nick = strdup(nick);
-	return ++res;
+	res->nick = strdup(nick);
+	return res;
 }
 
 static void
@@ -286,11 +272,10 @@ free_coll(coll_t c)
 
 	/* free all items first */
 	for (item_t ip;
-	     (ip = coll_pop_item(c)) != GQ_NULL_ITEM; free_item(ip)) {
+	     (ip = coll_pop_item(c)) != NULL; free_item(ip)) {
 		/* free the collrefs too */
 		for (collref_t jp;
-		     (jp = item_pop_collref(ip)) != GQ_NULL_ITEM;
-		     free_collref(jp));
+		     (jp = item_pop_collref(ip)) != NULL; free_collref(jp));
 	}
 	return;
 }
@@ -298,9 +283,7 @@ free_coll(coll_t c)
 static void
 coll_add_item(coll_t c, item_t i)
 {
-	struct coll_s *cp = coll_ptr(c);
-
-	gq_push_tail(items.q, cp->items, i);
+	gq_push_tail(c->items, (gq_item_t)i);
 	/* and push the collection on the ref list of i */
 	item_add_collref(i, make_collref(c));
 	return;
@@ -309,8 +292,20 @@ coll_add_item(coll_t c, item_t i)
 static item_t
 coll_pop_item(coll_t c)
 {
-	struct coll_s *cp = coll_ptr(c);
-	return gq_pop_head(items.q, cp->items);
+	void *res = gq_pop_head(c->items);
+	return res;
+}
+
+static coll_t
+active_colls(void)
+{
+	return (void*)colls.active->i1st;
+}
+
+static coll_t
+next_coll(coll_t c)
+{
+	return (void*)c->i.next;
 }
 
 
@@ -323,7 +318,7 @@ find_item(hattrie_t *ht, const char *token)
 	if ((x = hattrie_tryget(ht, token, toklen)) == NULL) {
 		return NULL;
 	}
-	return item_ptr((intptr_t)*x);
+	return *x;
 }
 
 
@@ -346,9 +341,9 @@ wipe_coll(struct coll_s *c)
 static void
 __collect(const struct item_s *i, echs_event_t e, echs_evmdfr_t st)
 {
-	for (struct collref_s *crp = collref_ptr(i->collrefs->i1st);
-	     crp; crp = collref_ptr(crp->i.next)) {
-		struct coll_s *c = coll_ptr(crp->ref);
+	for (collref_t cr = item_collrefs(i);
+	     cr != NULL; cr = next_collref(cr)) {
+		coll_t c = cr->ref;
 
 		/* print last value? */
 		if (!__inst_eq_p(e.when, c->lst)) {
@@ -393,8 +388,8 @@ collect(echs_stream_t s, echs_instant_t till)
 		__collect(x, e, st);
 	}
 	/* materialise and wipe all pending colls */
-	for (size_t i = 0; i < colls.z; i++) {
-		wipe_coll(colls.q + i);
+	for (coll_t c = active_colls(); c != NULL; c = next_coll(c)) {
+		wipe_coll(c);
 	}
 	return;
 }
@@ -413,6 +408,7 @@ init_collect(void)
 
 		coll_add_item(xmasc, xmas);
 		coll_add_item(xmasc, boxd);
+		gq_push_tail(colls.active, (gq_item_t)xmasc);
 	}
 	return;
 }
@@ -422,16 +418,15 @@ fini_collect(void)
 {
 	hattrie_free(items.ht);
 
-	for (size_t i = 0; i < colls.z; i++) {
-		free_coll(i + 1);
+	for (coll_t c = active_colls(), cn; c != NULL; c = cn) {
+		cn = next_coll(c);
+		free_coll(c);
 	}
-	free(colls.q);
-	colls.q = NULL;
-	colls.z = 0U;
 
 	/* finalise the gq stuff */
 	fini_gq(items.q);
 	fini_gq(collrefs.q);
+	fini_gq(colls.q);
 	return;
 }
 
