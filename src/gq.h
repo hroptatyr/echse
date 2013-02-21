@@ -57,13 +57,13 @@ struct gq_ll_s {
 };
 
 struct gq_s {
-	void *items;
 	unsigned int nitems;
 	unsigned int itemz;
-	size_t ntot;
 
 	/* we keep all the ready-to-go elements here */
 	struct gq_ll_s free[1];
+	/* we chain up all book keeper elements here */
+	struct gq_ll_s book[1];
 };
 
 #define GQ_NULL_ITEM	((gq_item_t)(NULL))

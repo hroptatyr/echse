@@ -69,6 +69,13 @@
 # define PROT_MEM	(PROT_READ | PROT_WRITE)
 #endif	/* PROT_MEM */
 
+typedef struct bk_item_s *bk_item_t;
+
+struct bk_item_s {
+	bk_item_t next;
+	size_t z;
+};
+
 
 static inline __attribute__((const, pure)) size_t
 gq_nmemb(size_t mbsz, size_t n)
@@ -97,7 +104,7 @@ gq_rinse(gq_item_t i)
 void
 init_gq(gq_t q, size_t nnew_members, size_t mbsz)
 {
-	void *ol_items = q->items;
+	void *ol_items = q->book->i1st;
 	void *nu_items;
 	size_t olsz;
 	size_t nusz;
@@ -125,39 +132,35 @@ init_gq(gq_t q, size_t nnew_members, size_t mbsz)
 	}
 
 	/* reassign */
-	q->items = nu_items;
 	q->nitems = nusz / mbsz;
 
 	if (nu_items != ol_items) {
-		q->ntot += q->nitems;
-		/* reset old size slot so the free list adder can work */
-		olsz = 0UL;
+		/* steal one item again for the book keeper */
+		bk_item_t bk = nu_items;
+
+		bk->z = nusz;
+		gq_push_head(q->book, (gq_item_t)bk);
+
+		/* reset nu_items and size */
+		nu_items = (char*)nu_items + mbsz;
+		nusz -= mbsz;
+	} else {
+		/* update the book keeper */
+		bk_item_t bk = nu_items;
+
+		bk->z = nusz;
+
+		/* reset nu_items pointer */
+		nu_items = (char*)nu_items + olsz;
+		nusz -= olsz;
 	}
 
-	/* fill up the free list */
-	{
-		char *const ep = (char*)nu_items + olsz;
-		char *const eep = ep + (nusz - olsz);
-		struct gq_item_s *eip = (void*)ep;
-
-		for (char *sp = ep; sp < eep; sp += mbsz) {
-			struct gq_item_s *ip = (void*)sp;
-
-			if (sp + mbsz < eep) {
-				ip->next = gq_item(q, sp + mbsz);
-			}
-		}
-		/* attach new list to free list */
-		if (q->free->ilst != GQ_NULL_ITEM) {
-			struct gq_item_s *ilst = gq_item_ptr(q, q->free->ilst);
-			ilst->next = gq_item(q, eip);
-		} else {
-			assert(q->free->i1st == GQ_NULL_ITEM);
-		}
-		if (q->free->i1st == GQ_NULL_ITEM) {
-			q->free->i1st = gq_item(q, eip);
-			q->free->ilst = gq_item(q, (eep - mbsz));
-		}
+	/* fill up the free list
+	 * the first member of the list will not be pointed to by i1st
+	 * it's a bookkeeper */
+	for (char *sp = nu_items, *const ep = sp + nusz;
+	     sp < ep; sp += mbsz) {
+		gq_push_tail(q->free, (gq_item_t)sp);
 	}
 	return;
 }
@@ -165,13 +168,12 @@ init_gq(gq_t q, size_t nnew_members, size_t mbsz)
 void
 fini_gq(gq_t q)
 {
-/* redo me */
-	if (q->items) {
-		munmap(q->items, gq_nmemb(q->itemz, q->nitems));
-		q->items = NULL;
-		q->nitems = 0U;
-		q->itemz = 0U;
+	/* use the bookkeeper elements to determine size and addresses */
+	for (bk_item_t bk; (bk = (void*)gq_pop_head(q->book)) != NULL;) {
+		munmap(bk, bk->z);
 	}
+	q->nitems = 0U;
+	q->itemz = 0U;
 	return;
 }
 
