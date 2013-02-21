@@ -1,4 +1,4 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** echs-lisp.h -- echse collection file parser
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,73 +34,42 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
+#if !defined INCLUDED_echs_lisp_h_
+#define INCLUDED_echs_lisp_h_
 
-#include <stdbool.h>
-#include "echse.h"
+#include <stdlib.h>
+#include "gq.h"
 
-/**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+typedef struct tstrng_s tstrng_t;
 
-
-static inline __attribute__((pure)) bool
-__inst_0_p(echs_instant_t x)
-{
-	return x.u == 0U;
-}
+typedef struct coll_s *coll_t;
+typedef struct item_s *item_t;
 
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
-{
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
-}
+typedef struct gq_ll_s item_ll_t[1];
 
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
-{
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
-}
+struct tstrng_s {
+	const char *s;
+	size_t z;
+};
 
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
+struct collect_s {
+	unsigned int f;
+
+	tstrng_t as;
+	unsigned int on_olap;
+
+	item_ll_t items;
+};
 
 
-/* convenience */
-static inline bool
-__event_0_p(echs_event_t e)
-{
-	return __inst_0_p(e.when);
-}
+extern int echs_lisp(const char *fn);
 
-static inline bool
-__event_lt_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_lt_p(e.when, i);
-}
+extern item_t make_item(tstrng_t nick);
+extern void free_item(item_t i);
+extern void item_ll_add(item_ll_t items, item_t);
+extern item_t item_ll_pop(item_ll_t items);
 
-static inline bool
-__event_le_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_le_p(e.when, i);
-}
+/* publishing collect events */
+extern void add_collect(struct collect_s);
 
-#endif	/* INCLUDED_instant_h_ */
+#endif	/* INCLUDED_echs_lisp_h_ */

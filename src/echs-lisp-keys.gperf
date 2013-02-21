@@ -1,0 +1,28 @@
+%{
+typedef enum {
+	ECHS_LISP__UNK,
+	ECHS_LISP__AS,
+	ECHS_LISP__ON_OVERLAP,
+} echs_lisp_key_t;
+%}
+%7bit
+%readonly-tables
+%switch=1
+%ignore-case
+%compare-strncmp
+%compare-lengths
+%enum
+%struct-type
+%define hash-function-name echs_lisp_keyh
+%define lookup-function-name echs_lisp_keyg
+%define slot-name kstr
+%null-strings
+
+struct echs_lisp_keyg_s {
+	const char *kstr;
+	echs_lisp_key_t klit;
+};
+
+%%
+as, ECHS_LISP__AS
+on-overlap, ECHS_LISP__ON_OVERLAP

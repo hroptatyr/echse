@@ -37,6 +37,7 @@ AC_PROG_CC([icc gcc tcc cc])
 AC_PROG_CPP
 SXE_CHECK_CC([c11 c1x c99 gnu99])
 SXE_CHECK_CFLAGS
+AC_CHECK_TOOLS([AR], [xiar ar], [false])
 AC_C_BIGENDIAN
 
 AC_PATH_PROG([GENGETOPT], [gengetopt])
@@ -44,6 +45,12 @@ if test -z "${GENGETOPT}"; then
 	GENGETOPT="gengetopt"
 fi
 AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
+
+AC_PATH_PROG([GPERF], [gperf])
+if test -z "${GPERF}"; then
+	GPERF="gperf"
+fi
+AC_ARG_VAR([GPERF], [full path to the gperf tool])
 
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
