@@ -73,5 +73,6 @@ extern void fini_gq(gq_t);
 
 extern gq_item_t gq_pop_head(gq_ll_t);
 extern void gq_push_tail(gq_ll_t, gq_item_t);
+extern void gq_push_head(gq_ll_t, gq_item_t);
 
 #endif	/* INCLUDED_gq_h_ */

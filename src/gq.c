@@ -203,4 +203,18 @@ gq_push_tail(gq_ll_t dll, gq_item_t i)
 	return;
 }
 
+void
+gq_push_head(gq_ll_t dll, gq_item_t i)
+{
+	gq_rinse(i);
+	if (dll->i1st != GQ_NULL_ITEM) {
+		i->next = dll->i1st;
+		dll->i1st = i;
+	} else {
+		assert(dll->ilst == GQ_NULL_ITEM);
+		dll->i1st = dll->ilst = i;
+	}
+	return;
+}
+
 /* gq.c ends here */
