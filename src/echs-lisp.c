@@ -83,14 +83,6 @@ struct tokon_s {
 };
 
 
-/* helpers */
-static tstrng_t
-tstrngdup(tstrng_t s)
-{
-	return (tstrng_t){strndup(s.s, s.z), s.z};
-}
-
-
 /* reserved keywords and symbols */
 #include "echs-lisp-keys.c"
 #include "echs-lisp-syms.c"
@@ -105,7 +97,11 @@ ass_keyw_u(struct collect_s *c, echs_lisp_key_t k, tstrng_t s)
 	case ECHS_LISP_COLLECT:
 		switch (k) {
 		case ECHS_LISP__AS:
-			c->as = tstrngdup(s);
+			/* also provide the modifier here */
+			c->as = malloc(s.z + 1U/*modifier*/ + 1U/*\nul*/);
+			c->as[0] = '~';
+			memcpy(c->as + 1U, s.s, s.z);
+			(c->as + 1U)[s.z] = '\0';
 			break;
 		}
 		break;
@@ -224,6 +220,7 @@ record_state(struct token_s t)
 			st = t;
 			break;
 		case STRING:
+		case USYMBOL:
 			item_ll_add(curr->items, make_item(t.s));
 			break;
 		}
@@ -249,6 +246,7 @@ record_state(struct token_s t)
 			st = (struct token_s){UNK};
 			break;
 		case STRING:
+		case USYMBOL:
 			item_ll_add(curr->items, make_item(t.s));
 			break;
 		default:
