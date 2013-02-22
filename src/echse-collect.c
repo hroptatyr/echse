@@ -525,7 +525,23 @@ main(int argc, char *argv[])
 	}
 
 	/* iterate! */
-	;
+	for (echs_event_t e;
+	     (e = echs_stream_next(s),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		if (!__event_0_p(e = echs_filter_next(this, e))) {
+			/* output */
+			materialise(e);
+		}
+	}
+	/* drain */
+	for (echs_event_t e;
+	     (e = echs_filter_drain(this),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		materialise(e);
+	}
+
+	/* free filter */
+	free_echs_filter(this);
 
 	{
 		typedef void(*free_stream_f)(echs_stream_t);
