@@ -224,6 +224,7 @@ record_state(struct token_s t)
 			st = t;
 			break;
 		case STRING:
+		case USYMBOL:
 			item_ll_add(curr->items, make_item(t.s));
 			break;
 		}
@@ -249,6 +250,7 @@ record_state(struct token_s t)
 			st = (struct token_s){UNK};
 			break;
 		case STRING:
+		case USYMBOL:
 			item_ll_add(curr->items, make_item(t.s));
 			break;
 		default:
