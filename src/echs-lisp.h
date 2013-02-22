@@ -55,7 +55,7 @@ struct tstrng_s {
 struct collect_s {
 	unsigned int f;
 
-	tstrng_t as;
+	char *as;
 	unsigned int on_olap;
 
 	item_ll_t items;
