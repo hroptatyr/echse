@@ -346,9 +346,11 @@ __collect(const struct item_s *i, echs_event_t e, echs_evmdfr_t st)
 	     cr != NULL; cr = next_collref(cr)) {
 		coll_t c = cr->ref;
 
-		/* print last value? */
-		if (!__inst_eq_p(e.when, c->lst)) {
-			wipe_coll(c);
+		/* print values from the active queue? */
+		for (coll_t ac = active_colls(); ac; ac = next_coll(ac)) {
+			if (!__inst_eq_p(e.when, ac->lst)) {
+				wipe_coll(ac);
+			}
 		}
 		if (__inst_0_p(c->beg) && st == EVMDFR_START) {
 			c->beg = e.when;
