@@ -99,9 +99,14 @@ refix_ym:
 	}
 
 	if (UNLIKELY(e.d > (md = mdays[e.m]))) {
-		e.d -= md;
-		e.m++;
-		goto refix_ym;
+		/* leap year handling */
+		if (UNLIKELY(e.m == 2U && (e.y % 4U) == 0U)) {
+			md++;
+		}
+		if (LIKELY((e.d -= md) > 0U)) {
+			e.m++;
+			goto refix_ym;
+		}
 	}
 	return e;
 }
