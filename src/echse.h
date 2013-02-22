@@ -109,4 +109,10 @@ echs_filter_next(echs_filter_t f, echs_event_t e)
 	return f.f(e, f.clo);
 }
 
+static inline echs_event_t
+echs_filter_drain(echs_filter_t f)
+{
+	return f.f((echs_event_t){0}, f.clo);
+}
+
 #endif	/* INCLUDED_echse_h_ */
