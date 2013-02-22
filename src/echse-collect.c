@@ -423,6 +423,37 @@ fini_collect(void)
 }
 
 
+static echs_event_t
+echs_identity(echs_event_t e, void *UNUSED(clo))
+{
+	return e;
+}
+
+echs_filter_t
+make_echs_filter(echs_instant_t from, ...)
+{
+	va_list ap;
+	const char *fn;
+
+	va_start(ap, from);
+	fn = va_arg(ap, const char *);
+	va_end(ap);
+
+	/* process collect file */
+	init_collect();
+
+	echs_lisp(fn);
+	return (echs_filter_t){echs_identity, NULL};
+}
+
+void
+free_echs_filter(echs_filter_t UNUSED(f))
+{
+	fini_collect();
+	return;
+}
+
+
 #if defined __INTEL_COMPILER
 # pragma warning (disable:593)
 # pragma warning (disable:181)
@@ -449,6 +480,7 @@ main(int argc, char *argv[])
 	echs_instant_t till;
 	echs_mod_t ex;
 	echs_stream_t s;
+	echs_filter_t this;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {
@@ -466,6 +498,12 @@ main(int argc, char *argv[])
 		till = dt_strp(argi->till_arg);
 	} else {
 		till = (echs_instant_t){2037, 12, 31};
+	}
+
+	if (argi->filter_given) {
+		this = make_echs_filter(from, argi->filter_arg);
+	} else {
+		this = (echs_filter_t){echs_identity, NULL};
 	}
 
 	{
@@ -486,14 +524,8 @@ main(int argc, char *argv[])
 		}
 	}
 
-	/* process collect file */
-	init_collect();
-
-	/* the iterator */
-	collect(s, till);
-
-	/* we're through */
-	fini_collect();
+	/* iterate! */
+	;
 
 	{
 		typedef void(*free_stream_f)(echs_stream_t);

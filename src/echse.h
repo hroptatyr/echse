@@ -49,6 +49,7 @@ typedef union echs_instant_u echs_instant_t;
 typedef const char *echs_state_t;
 typedef struct echs_event_s echs_event_t;
 typedef struct echs_stream_s echs_stream_t;
+typedef struct echs_filter_s echs_filter_t;
 
 union echs_instant_u {
 	struct {
@@ -73,6 +74,11 @@ struct echs_stream_s {
 	void *clo;
 };
 
+struct echs_filter_s {
+	echs_event_t(*f)(echs_event_t, void*);
+	void *clo;
+};
+
 
 /**
  * Stream ctor. */
@@ -82,11 +88,25 @@ extern echs_stream_t make_echs_stream(echs_instant_t, ...);
  * Stream dtor. */
 extern void free_echs_stream(echs_stream_t);
 
+/**
+ * Filter ctor. */
+extern echs_filter_t make_echs_filter(echs_instant_t, ...);
+
+/**
+ * Filter dtor. */
+extern void free_echs_filter(echs_filter_t);
+
 
 static inline echs_event_t
 echs_stream_next(echs_stream_t s)
 {
 	return s.f(s.clo);
+}
+
+static inline echs_event_t
+echs_filter_next(echs_filter_t f, echs_event_t e)
+{
+	return f.f(e, f.clo);
 }
 
 #endif	/* INCLUDED_echse_h_ */

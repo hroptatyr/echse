@@ -10,3 +10,7 @@ option "from" -
 option "till" -
 	"Finish event streams by DT."
 	string typestr="DT" optional
+
+option "filter" f
+	"Use filter script FILE."
+	string typestr="FILE" optional
