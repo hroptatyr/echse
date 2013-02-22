@@ -63,6 +63,31 @@
 #define logger(what, how, args...)	fprintf(stderr, how "\n", args)
 
 
+#if defined STANDALONE
+static int
+materialise(echs_event_t e)
+{
+	static char buf[256];
+	char *bp = buf;
+
+	/* BEST has the guy */
+	bp += dt_strf(buf, sizeof(buf), e.when);
+	*bp++ = '\t';
+	{
+		size_t e_whaz = strlen(e.what);
+		memcpy(bp, e.what, e_whaz);
+		bp += e_whaz;
+	}
+	*bp++ = '\n';
+	*bp = '\0';
+	if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+		return -1;
+	}
+	return 0;
+}
+#endif	/* STANDALONE */
+
+
 /* myself as stream */
 struct echse_clo_s {
 	size_t nstrms;
@@ -254,20 +279,7 @@ main(int argc, char *argv[])
 	for (echs_event_t e;
 	     (e = echs_stream_next(this),
 	      !__event_0_p(e) && __event_le_p(e, till));) {
-		static char buf[256];
-		char *bp = buf;
-
-		/* BEST has the guy */
-		bp += dt_strf(buf, sizeof(buf), e.when);
-		*bp++ = '\t';
-		{
-			size_t e_whaz = strlen(e.what);
-			memcpy(bp, e.what, e_whaz);
-			bp += e_whaz;
-		}
-		*bp++ = '\n';
-		*bp = '\0';
-		if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+		if (UNLIKELY(materialise(e) < 0)) {
 			break;
 		}
 	}
