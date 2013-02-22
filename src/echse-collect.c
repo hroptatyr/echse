@@ -65,6 +65,7 @@
 #endif	/* UNUSED */
 
 typedef struct collref_s *collref_t;
+typedef struct ev_s *ev_t;
 
 typedef struct gq_ll_s collref_ll_t[1];
 
@@ -94,6 +95,19 @@ struct coll_s {
 	echs_instant_t end;
 	echs_instant_t lst;
 	echs_evmdfr_t lstmdfr;
+
+	enum {
+		IMMED,
+		CANCEL,
+		LATER,
+	} flag;
+};
+
+struct ev_s {
+	struct gq_item_s i;
+
+	echs_event_t e;
+	coll_t c;
 };
 
 
@@ -111,10 +125,11 @@ echs_event_modifier(echs_event_t e)
 }
 
 static int
-materialise(echs_event_t e, echs_evmdfr_t m)
+materialise(echs_event_t e)
 {
 	static char buf[256];
 	char *bp = buf;
+	echs_evmdfr_t m = echs_event_modifier(e);
 
 	/* BEST has the guy */
 	bp += dt_strf(buf, sizeof(buf), e.when);
@@ -180,6 +195,11 @@ static struct {
 static struct {
 	struct gq_s q[1];
 } collrefs;
+
+static struct {
+	struct gq_s pool[1];
+	struct gq_ll_s q[1];
+} evs;
 
 
 item_t
@@ -280,6 +300,8 @@ free_coll(coll_t c)
 		for (collref_t jp;
 		     (jp = item_pop_collref(ip)) != NULL; free_collref(jp));
 	}
+	/* free the alias */
+	free(c->c->as);
 	free_gq_item(colls.q, c);
 	return;
 }
@@ -322,83 +344,122 @@ find_item(hattrie_t *ht, const char *token)
 	return *x;
 }
 
-
-static void
-wipe_coll(struct coll_s *c)
+static echs_event_t
+pop_ev(void)
 {
-	if (!__inst_0_p(c->end) && c->lstmdfr) {
-		echs_event_t prev = {c->end, c->c->as.s};
+	ev_t ev;
+	echs_event_t res = {0};
 
-		/* better output this one quickly ere we forget */
-		materialise(prev, c->lstmdfr);
-		/* mop the floor for the next shfit */
-		c->beg = (echs_instant_t){0};
-		c->end = (echs_instant_t){0};
-		c->lst = (echs_instant_t){0};
+again:
+	if (LIKELY((ev = (void*)gq_pop_head(evs.q)) != NULL)) {
+		coll_t c;
+
+		if ((c = ev->c) == NULL) {
+			goto immed;
+		}
+
+		switch (c->flag) {
+		case LATER:
+			/* return a 0 event but keep this guy */
+			gq_push_head(evs.q, (gq_item_t)ev);
+			c->flag = IMMED;
+			break;
+		case CANCEL:
+			/* mop the floor for the next shfit */
+			c->end = (echs_instant_t){0};
+			/* just flush this guy */
+			free_gq_item(evs.pool, ev);
+			/* and start over */
+			goto again;
+
+		case IMMED:
+		default:
+			/* mop the floor for the next shfit */
+			c->end = (echs_instant_t){0};
+		immed:
+			/* just the ordinary event */
+			res = ev->e;
+			/* and pool him up again */
+			free_gq_item(evs.pool, ev);
+			break;
+		}
 	}
-	return;
+	return res;
 }
 
 static void
-__collect(const struct item_s *i, echs_event_t e, echs_evmdfr_t st)
+push_ev(echs_event_t e, coll_t c)
 {
-	for (collref_t cr = item_collrefs(i);
+	ev_t ev = make_gq_item(evs.pool, sizeof(*ev), 64U);
+	ev->e = e;
+	ev->c = c;
+	gq_push_tail(evs.q, (gq_item_t)ev);
+	return;
+}
+
+
+static echs_event_t
+echs_identity(echs_event_t e, void *UNUSED(clo))
+{
+	return e;
+}
+
+static echs_event_t
+__filter(echs_event_t e, void *UNUSED(clo))
+{
+	const char *token = e.what;
+	const struct item_s *x;
+	echs_evmdfr_t st;
+
+	/* check if we're draining */
+	if (UNLIKELY(__event_0_p(e))) {
+		goto out;
+	}
+
+	if ((st = echs_event_modifier(e)) != EVMDFR_START) {
+		token++;
+	}
+	if ((x = find_item(items.ht, token)) == NULL) {
+		push_ev(e, NULL);
+		goto out;
+	}
+
+	/* otherwise, ... the hard work */
+	for (collref_t cr = item_collrefs(x);
 	     cr != NULL; cr = next_collref(cr)) {
 		coll_t c = cr->ref;
 
-		/* print values from the active queue? */
-		for (coll_t ac = active_colls(); ac; ac = next_coll(ac)) {
-			if (!__inst_eq_p(e.when, ac->lst)) {
-				wipe_coll(ac);
-			}
-		}
 		if (__inst_0_p(c->beg) && st == EVMDFR_START) {
 			c->beg = e.when;
-			e.what = c->c->as.s;
-			materialise(e, EVMDFR_START);
-		} else if (st != c->lstmdfr && __inst_eq_p(e.when, c->lst)) {
-			/* wipe */
-			c->end = (echs_instant_t){0};
+			e.what = c->c->as + 1U;
+			push_ev(e, NULL);
 		} else if (__inst_0_p(c->end) && st == EVMDFR_END) {
 			c->end = e.when;
+			e.what = c->c->as + 0U;
+			/* just in case push */
+			c->flag = LATER;
+			push_ev(e, c);
+		} else if (__inst_eq_p(e.when, c->lst)) {
+			/* join! */
+			c->flag = CANCEL;
+		} else if (st == EVMDFR_START) {
+			c->beg = e.when;
+			c->flag = IMMED;
+			e.what = c->c->as + 1U;
+			push_ev(e, NULL);
+		} else {
+			/* use the already queued LATER event */
+			c->end = e.when;
+			c->flag = IMMED;
 		}
 
 		c->lst = e.when;
 		c->lstmdfr = st;
 	}
-	return;
+out:
+	return pop_ev();
 }
 
-static void
-collect(echs_stream_t s, echs_instant_t till)
-{
-	for (echs_event_t e;
-	     (e = echs_stream_next(s),
-	      !__event_0_p(e) && __event_le_p(e, till));) {
-		const char *token = e.what;
-		const struct item_s *x;
-		echs_evmdfr_t st;
-
-		if ((st = echs_event_modifier(e)) != EVMDFR_START) {
-			token++;
-		}
-
-		if ((x = find_item(items.ht, token)) == NULL) {
-			continue;
-		}
-
-		/* delegate the hard work */
-		__collect(x, e, st);
-	}
-	/* materialise and wipe all pending colls */
-	for (coll_t c = active_colls(); c != NULL; c = next_coll(c)) {
-		wipe_coll(c);
-	}
-	return;
-}
-
-
-/* parser */
 static void
 init_collect(void)
 {
@@ -422,13 +483,6 @@ fini_collect(void)
 	return;
 }
 
-
-static echs_event_t
-echs_identity(echs_event_t e, void *UNUSED(clo))
-{
-	return e;
-}
-
 echs_filter_t
 make_echs_filter(echs_instant_t from, ...)
 {
@@ -443,7 +497,7 @@ make_echs_filter(echs_instant_t from, ...)
 	init_collect();
 
 	echs_lisp(fn);
-	return (echs_filter_t){echs_identity, NULL};
+	return (echs_filter_t){__filter, NULL};
 }
 
 void
