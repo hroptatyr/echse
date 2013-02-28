@@ -15,6 +15,7 @@ EXTRA_DIST =
 CLEANFILES = $(BUILT_SOURCES)
 
 
+## predef streams
 pkglib_LTLIBRARIES += xmas.la
 xmas_la_LDFLAGS = $(MOD_LDFLAGS)
 
@@ -26,6 +27,13 @@ new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 
 pkglib_LTLIBRARIES += weekend.la
 weekend_la_LDFLAGS = $(MOD_LDFLAGS)
+
+## predef filters
+pkglib_LTLIBRARIES += collect.la
+collect_la_SOURCES = collect.c
+collect_la_SOURCES += gq.c gq.h
+collect_la_LDFLAGS = $(MOD_LDFLAGS)
+collect_la_LIBADD = libhattrie.la
 
 ## DSOs for internal use
 pkglib_LTLIBRARIES += echs-file.la
@@ -75,6 +83,18 @@ BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
 BUILT_SOURCES += echs-lisp-keys.c
 BUILT_SOURCES += echs-lisp-syms.c
 BUILT_SOURCES += echs-lisp-funs.c
+
+noinst_PROGRAMS += echse-filter
+echse_filter_SOURCES = echse-filter.c
+echse_filter_SOURCES += echse-filter-clo.ggo
+echse_filter_SOURCES += dt-strpf.c dt-strpf.h
+echse_filter_SOURCES += fltdef.c fltdef.h
+echse_filter_SOURCES += module.c module.h
+echse_filter_CPPFLAGS = $(AM_CPPFLAGS)
+echse_filter_CPPFLAGS += $(INCLTDL)
+echse_filter_LDFLAGS = $(AM_LDFLAGS)
+echse_filter_LDFLAGS += $(LIBLTDL) -export-dynamic
+BUILT_SOURCES += echse-filter-clo.c echse-filter-clo.h
 
 ## daniel jones' hattrie shebang
 noinst_LTLIBRARIES += libhattrie.la
