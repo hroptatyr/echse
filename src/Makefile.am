@@ -15,6 +15,7 @@ EXTRA_DIST =
 CLEANFILES = $(BUILT_SOURCES)
 
 
+## predef streams
 pkglib_LTLIBRARIES += xmas.la
 xmas_la_LDFLAGS = $(MOD_LDFLAGS)
 
@@ -26,6 +27,13 @@ new_year_la_LDFLAGS = $(MOD_LDFLAGS)
 
 pkglib_LTLIBRARIES += weekend.la
 weekend_la_LDFLAGS = $(MOD_LDFLAGS)
+
+## predef filters
+pkglib_LTLIBRARIES += collect.la
+collect_la_SOURCES = collect.c
+collect_la_SOURCES += gq.c gq.h
+collect_la_LDFLAGS = $(MOD_LDFLAGS)
+collect_la_LIBADD = libhattrie.la
 
 ## DSOs for internal use
 pkglib_LTLIBRARIES += echs-file.la
