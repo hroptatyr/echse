@@ -43,6 +43,7 @@
 #include "echse.h"
 #include "fltdef.h"
 #include "module.h"
+#include "instant.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -94,6 +95,66 @@ echs_close_fltdef(echs_fltdef_t sd)
 
 		/* and (or otherwise) close the module */
 		echs_mod_close(sd.m);
+	}
+	return;
+}
+
+
+/* service to turn a filter plus a stream into a stream */
+struct fltstr_clo_s {
+	unsigned int drain;
+	echs_filter_t filt;
+	echs_stream_t strm;
+};
+
+static echs_event_t
+__stream(void *clo)
+{
+	struct fltstr_clo_s *x = clo;
+
+	switch (x->drain) {
+	case 0:
+		/* iterate! */
+		for (echs_event_t e;
+		     (e = echs_stream_next(x->strm), !__event_0_p(e));) {
+			if (!__event_0_p(e = echs_filter_next(x->filt, e))) {
+				return e;
+			}
+		}
+		x->drain = 1;
+	case 1:
+		/* drain */
+		for (echs_event_t e;
+		     (e = echs_filter_drain(x->filt), !__event_0_p(e));) {
+			return e;
+		}
+	default:
+		break;
+	}
+	return (echs_event_t){0};
+}
+
+echs_stream_t
+make_echs_filtstrm(echs_filter_t f, echs_stream_t s)
+{
+	struct fltstr_clo_s *clo;
+
+	clo = calloc(1, sizeof(*clo));
+	clo->filt = f;
+	clo->strm = s;
+
+	return (echs_stream_t){__stream, clo};
+}
+
+void
+free_echs_filtstrm(echs_stream_t s)
+{
+	struct fltstr_clo_s *clo = s.clo;
+
+	if (LIKELY(clo != NULL)) {
+		clo->filt = (echs_filter_t){NULL};
+		clo->strm = (echs_stream_t){NULL};
+		free(clo);
 	}
 	return;
 }
