@@ -88,6 +88,12 @@ materialise(echs_event_t e)
 }
 #endif	/* STANDALONE */
 
+static inline bool
+__events_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return __inst_eq_p(e1.when, e2.when) && strcmp(e1.what, e2.what) == 0;
+}
+
 
 /* myself as stream */
 struct echse_clo_s {
@@ -96,10 +102,8 @@ struct echse_clo_s {
 		echs_strdef_t sd;
 		echs_event_t ev;
 	} *strms;
-	/* index to refill */
-	size_t rfll;
-	/* last instant served */
-	echs_instant_t last;
+	/* last event served */
+	echs_event_t last;
 };
 
 static echs_event_t
@@ -140,11 +144,12 @@ __stream(void *clo)
 			echs_close(x->strms[i].sd);
 			memset(x->strms + i, 0, sizeof(*x->strms));
 			continue;
-		} else if (i == x->rfll || __inst_lt_p(inst, x->last)) {
+		} else if (__inst_lt_p(inst, x->last.when) ||
+			   __events_eq_p(x->strms[i].ev, x->last)) {
 			echs_stream_t s = x->strms[i].sd.s;
 			echs_event_t e;
 
-			if (__event_0_p(e = __refill(s, x->last))) {
+			if (__event_0_p(e = __refill(s, x->last.when))) {
 				goto clos_0;
 			}
 
@@ -161,8 +166,7 @@ __stream(void *clo)
 	}
 
 	/* BEST has the guy */
-	if (UNLIKELY((x->rfll = bestindx) == -1UL ||
-		     __inst_0_p(x->last = bestinst))) {
+	if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
 		/* big fucking fuck */
 		return (echs_event_t){0};
 	}
@@ -207,8 +211,8 @@ make_echs_stream(echs_instant_t inst, ...)
 		/* inc */
 		x.nstrms++;
 	}
-	/* set refill slot */
-	x.rfll = -1UL;
+	/* set last slot */
+	x.last = (echs_event_t){.when = 0, .what = ""};
 	return (echs_stream_t){__stream, &x};
 }
 
