@@ -72,12 +72,6 @@ struct echsf_clo_s {
 };
 
 static echs_event_t
-__identity(echs_event_t e, void *UNUSED(clo))
-{
-	return e;
-}
-
-static echs_event_t
 __filter(echs_event_t e, void *clo)
 {
 	struct echsf_clo_s *x = clo;
