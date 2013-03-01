@@ -91,7 +91,8 @@ materialise(echs_event_t e)
 static inline bool
 __events_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	return __inst_eq_p(e1.when, e2.when) && strcmp(e1.what, e2.what) == 0;
+	return __inst_eq_p(e1.when, e2.when) &&
+		(e1.what == e2.what || strcmp(e1.what, e2.what) == 0);
 }
 
 
