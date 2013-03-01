@@ -47,6 +47,7 @@ echse_SOURCES += boobs.h
 echse_SOURCES += instant.c instant.h
 echse_SOURCES += dt-strpf.c dt-strpf.h
 echse_SOURCES += strdef.c strdef.h
+echse_SOURCES += fltdef.c fltdef.h
 echse_SOURCES += module.c module.h
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_CPPFLAGS += $(INCLTDL)
