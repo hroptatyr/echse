@@ -85,18 +85,6 @@ BUILT_SOURCES += echs-lisp-keys.c
 BUILT_SOURCES += echs-lisp-syms.c
 BUILT_SOURCES += echs-lisp-funs.c
 
-noinst_PROGRAMS += echse-filter
-echse_filter_SOURCES = echse-filter.c
-echse_filter_SOURCES += echse-filter-clo.ggo
-echse_filter_SOURCES += dt-strpf.c dt-strpf.h
-echse_filter_SOURCES += fltdef.c fltdef.h
-echse_filter_SOURCES += module.c module.h
-echse_filter_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
-echse_filter_CPPFLAGS += $(INCLTDL)
-echse_filter_LDFLAGS = $(AM_LDFLAGS)
-echse_filter_LDFLAGS += $(LIBLTDL) -export-dynamic
-BUILT_SOURCES += echse-filter-clo.c echse-filter-clo.h
-
 ## daniel jones' hattrie shebang
 noinst_LTLIBRARIES += libhattrie.la
 libhattrie_la_SOURCES = hat-trie/hat-trie.c hat-trie/hat-trie.h
