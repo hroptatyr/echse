@@ -66,6 +66,7 @@
 #define logger(what, how, args...)	fprintf(stderr, how "\n", args)
 
 
+#if defined STANDALONE
 static int
 materialise(echs_event_t e)
 {
@@ -127,6 +128,7 @@ clos_out:
 	echs_mod_close(sd.m);
 	return;
 }
+#endif	/* STANDALONE */
 
 
 /* myself as filter */
@@ -234,6 +236,7 @@ free_echs_stream(echs_stream_t UNUSED(s))
 }
 
 
+#if defined STANDALONE
 #if defined __INTEL_COMPILER
 # pragma warning (disable:593)
 # pragma warning (disable:181)
@@ -314,5 +317,6 @@ out:
 	echs_parser_free(argi);
 	return res;
 }
+#endif	/* STANDALONE */
 
 /* echse-filter.c ends here */
