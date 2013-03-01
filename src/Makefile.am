@@ -39,6 +39,9 @@ collect_la_LIBADD = libhattrie.la
 pkglib_LTLIBRARIES += echs-file.la
 echs_file_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += echs-filter.la
+echs_filter_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
