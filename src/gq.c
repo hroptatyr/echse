@@ -83,17 +83,6 @@ gq_nmemb(size_t mbsz, size_t n)
 	return (n * mbsz);
 }
 
-static inline __attribute__((pure)) gq_item_t
-gq_item(gq_t UNUSED(q), void *x)
-{
-	return x;
-}
-static inline __attribute__((pure)) struct gq_item_s*
-gq_item_ptr(gq_t UNUSED(q), gq_item_t x)
-{
-	return x;
-}
-
 static void
 gq_rinse(gq_item_t i)
 {

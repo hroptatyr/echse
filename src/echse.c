@@ -49,6 +49,7 @@
 #include "instant.h"
 #include "dt-strpf.h"
 #include "strdef.h"
+#include "fltdef.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -87,6 +88,13 @@ materialise(echs_event_t e)
 }
 #endif	/* STANDALONE */
 
+static inline bool
+__events_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return __inst_eq_p(e1.when, e2.when) &&
+		(e1.what == e2.what || strcmp(e1.what, e2.what) == 0);
+}
+
 
 /* myself as stream */
 struct echse_clo_s {
@@ -95,10 +103,8 @@ struct echse_clo_s {
 		echs_strdef_t sd;
 		echs_event_t ev;
 	} *strms;
-	/* index to refill */
-	size_t rfll;
-	/* last instant served */
-	echs_instant_t last;
+	/* last event served */
+	echs_event_t last;
 };
 
 static echs_event_t
@@ -139,11 +145,12 @@ __stream(void *clo)
 			echs_close(x->strms[i].sd);
 			memset(x->strms + i, 0, sizeof(*x->strms));
 			continue;
-		} else if (i == x->rfll || __inst_lt_p(inst, x->last)) {
+		} else if (__inst_lt_p(inst, x->last.when) ||
+			   __events_eq_p(x->strms[i].ev, x->last)) {
 			echs_stream_t s = x->strms[i].sd.s;
 			echs_event_t e;
 
-			if (__event_0_p(e = __refill(s, x->last))) {
+			if (__event_0_p(e = __refill(s, x->last.when))) {
 				goto clos_0;
 			}
 
@@ -160,8 +167,7 @@ __stream(void *clo)
 	}
 
 	/* BEST has the guy */
-	if (UNLIKELY((x->rfll = bestindx) == -1UL ||
-		     __inst_0_p(x->last = bestinst))) {
+	if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
 		/* big fucking fuck */
 		return (echs_event_t){0};
 	}
@@ -206,8 +212,8 @@ make_echs_stream(echs_instant_t inst, ...)
 		/* inc */
 		x.nstrms++;
 	}
-	/* set refill slot */
-	x.rfll = -1UL;
+	/* set last slot */
+	x.last = (echs_event_t){.when = 0, .what = ""};
 	return (echs_stream_t){__stream, &x};
 }
 
@@ -223,6 +229,48 @@ free_echs_stream(echs_stream_t s)
 		free(x->strms);
 	}
 	memset(x, 0, sizeof(*x));
+	return;
+}
+
+
+/* myself as filter */
+struct echsf_clo_s {
+	echs_fltdef_t fd;
+};
+
+static echs_event_t
+__filter(echs_event_t e, void *clo)
+{
+	struct echsf_clo_s *x = clo;
+
+	return echs_filter_next(x->fd.f, e);
+}
+
+echs_filter_t
+make_echs_filter(echs_instant_t from, ...)
+{
+	static struct echsf_clo_s x;
+	va_list ap;
+	const char *fn;
+
+	va_start(ap, from);
+	fn = va_arg(ap, const char *);
+	va_end(ap);
+
+	if ((x.fd = echs_open_fltdef(from, fn)).m == NULL) {
+		logger(LOG_ERR, "cannot use stream DSO %s", fn);
+	}
+	return (echs_filter_t){__filter, &x};
+}
+
+void
+free_echs_filter(echs_filter_t f)
+{
+	struct echsf_clo_s *clo = f.clo;
+
+	if (LIKELY(clo != NULL)) {
+		echs_close_fltdef(clo->fd);
+	}
 	return;
 }
 
@@ -253,7 +301,9 @@ main(int argc, char *argv[])
 	/* date range to scan through */
 	echs_instant_t from;
 	echs_instant_t till;
+	echs_filter_t thif;
 	echs_stream_t this;
+	echs_stream_t strm;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {
@@ -273,7 +323,16 @@ main(int argc, char *argv[])
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
-	this = make_echs_stream(from, argi->inputs, argi->inputs_num);
+	/* generate the input stream to our filter */
+	strm = make_echs_stream(from, argi->inputs, argi->inputs_num);
+
+	if (argi->filter_given) {
+		thif = make_echs_filter(from, argi->filter_arg);
+		this = make_echs_filtstrm(thif, strm);
+	} else {
+		thif = (echs_filter_t){NULL};
+		this = strm;
+	}
 
 	/* the iterator */
 	for (echs_event_t e;
@@ -284,8 +343,16 @@ main(int argc, char *argv[])
 		}
 	}
 
+	/* free filtstrm */
+	if (argi->filter_given) {
+		free_echs_filtstrm(this);
+	}
+
+	/* free filter */
+	free_echs_filter(thif);
+
 	/* get all of them streams in here finished */
-	free_echs_stream(this);
+	free_echs_stream(strm);
 
 out:
 	echs_parser_free(argi);
