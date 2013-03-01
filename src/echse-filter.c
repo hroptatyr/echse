@@ -50,6 +50,7 @@
 #include "instant.h"
 #include "dt-strpf.h"
 #include "module.h"
+#include "strdef.h"
 #include "fltdef.h"
 
 #if !defined LIKELY
@@ -86,6 +87,45 @@ materialise(echs_event_t e)
 		return -1;
 	}
 	return 0;
+}
+
+static echs_strdef_t
+make_argi_stream(echs_instant_t from, const char *const *in, size_t nin)
+{
+	typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
+	echs_stream_t s = {NULL};
+	echs_mod_t m;
+	echs_mod_f f;
+
+	if ((m = echs_mod_open("echse")) == NULL) {
+		printf("NOPE\n");
+	} else if ((f = echs_mod_sym(m, "make_echs_stream")) == NULL) {
+		printf("no m_e_s()\n");
+	} else if ((s = ((make_stream_f)f)(from, in, nin)).f == NULL) {
+		printf("no stream\n");
+	}
+	return (echs_strdef_t){s, m};
+}
+
+static void
+free_argi_stream(echs_strdef_t sd)
+{
+	typedef void(*free_stream_f)(echs_stream_t);
+	echs_mod_f f;
+
+	if (UNLIKELY(sd.m == NULL)) {
+		return;
+	}
+
+	if ((f = echs_mod_sym(sd.m, "free_echs_stream")) == NULL) {
+		printf("no f_e_s()\n");
+		goto clos_out;
+	}
+	((free_stream_f)f)(sd.s);
+
+clos_out:
+	echs_mod_close(sd.m);
+	return;
 }
 
 
@@ -141,9 +181,7 @@ free_echs_filter(echs_filter_t f)
 struct echss_clo_s {
 	unsigned int drain;
 	echs_filter_t filt;
-	/* stuff we ctor */
 	echs_stream_t strm;
-	echs_mod_t m;
 };
 
 static echs_event_t
@@ -176,57 +214,22 @@ __stream(void *clo)
 echs_stream_t
 make_echs_stream(echs_instant_t inst, ...)
 {
-/* INST, FILTER, STRDEF, NSTRDEF */
+/* INST, FILTER, STREAM */
 	typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
 	static struct echss_clo_s clo;
 	va_list ap;
-	echs_filter_t f;
-	const char *const *in;
-	size_t nin;
-	echs_mod_f mf;
 
 	va_start(ap, inst);
-	f = va_arg(ap, echs_filter_t);
-	in = va_arg(ap, const char *const*);
-	nin = va_arg(ap, size_t);
+	clo.filt = va_arg(ap, echs_filter_t);
+	clo.strm = va_arg(ap, echs_stream_t);
 	va_end(ap);
 
-	if ((clo.m = echs_mod_open("echse")) == NULL) {
-		printf("NOPE\n");
-		goto out;
-	} else if ((mf = echs_mod_sym(clo.m, "make_echs_stream")) == NULL) {
-		printf("no m_e_s()\n");
-		goto out;
-	} else if ((clo.strm = ((make_stream_f)mf)(inst, in, nin)).f == NULL) {
-		printf("no stream\n");
-		goto out;
-	}
-	/* assign the filter */
-	clo.filt = f;
-
 	return (echs_stream_t){__stream, &clo};
-
-out:
-	return (echs_stream_t){NULL, &clo};
 }
 
 void
-free_echs_stream(echs_stream_t s)
+free_echs_stream(echs_stream_t UNUSED(s))
 {
-	typedef void(*free_stream_f)(echs_stream_t);
-	struct echss_clo_s *clo = s.clo;
-	echs_mod_f f;
-
-	if (UNLIKELY(clo->m == NULL)) {
-		return;
-	} else if ((f = echs_mod_sym(clo->m, "free_echs_stream")) == NULL) {
-		printf("no f_e_s()\n");
-		goto clos_out;
-	}
-	((free_stream_f)f)(clo->strm);
-
-clos_out:
-	echs_mod_close(clo->m);
 	return;
 }
 
@@ -255,6 +258,7 @@ main(int argc, char *argv[])
 	struct echs_args_info argi[1];
 	echs_instant_t from;
 	echs_instant_t till;
+	echs_strdef_t argi_sd;
 	echs_filter_t thif;
 	echs_stream_t this;
 	int res = 0;
@@ -282,8 +286,11 @@ main(int argc, char *argv[])
 		thif = (echs_filter_t){__identity, NULL};
 	}
 
+	/* generate the input stream to our filter */
+	argi_sd = make_argi_stream(from, argi->inputs, argi->inputs_num);
+
 	/* create a stream f(s) with f being THIF and s being S */
-	this = make_echs_stream(from, thif, argi->inputs, argi->inputs_num);
+	this = make_echs_stream(from, thif, argi_sd.s);
 
 	/* the iterator */
 	for (echs_event_t e;
@@ -296,6 +303,9 @@ main(int argc, char *argv[])
 
 	/* get all of them streams in here finished */
 	free_echs_stream(this);
+
+	/* free the argi stream */
+	free_argi_stream(argi_sd);
 
 	/* free filter */
 	free_echs_filter(thif);
