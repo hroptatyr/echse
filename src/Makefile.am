@@ -39,6 +39,9 @@ collect_la_LIBADD = libhattrie.la
 pkglib_LTLIBRARIES += echs-file.la
 echs_file_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += echs-filter.la
+echs_filter_la_LDFLAGS = $(MOD_LDFLAGS)
+
 
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
@@ -47,6 +50,7 @@ echse_SOURCES += boobs.h
 echse_SOURCES += instant.c instant.h
 echse_SOURCES += dt-strpf.c dt-strpf.h
 echse_SOURCES += strdef.c strdef.h
+echse_SOURCES += fltdef.c fltdef.h
 echse_SOURCES += module.c module.h
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_CPPFLAGS += $(INCLTDL)
@@ -83,18 +87,6 @@ BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
 BUILT_SOURCES += echs-lisp-keys.c
 BUILT_SOURCES += echs-lisp-syms.c
 BUILT_SOURCES += echs-lisp-funs.c
-
-noinst_PROGRAMS += echse-filter
-echse_filter_SOURCES = echse-filter.c
-echse_filter_SOURCES += echse-filter-clo.ggo
-echse_filter_SOURCES += dt-strpf.c dt-strpf.h
-echse_filter_SOURCES += fltdef.c fltdef.h
-echse_filter_SOURCES += module.c module.h
-echse_filter_CPPFLAGS = $(AM_CPPFLAGS)
-echse_filter_CPPFLAGS += $(INCLTDL)
-echse_filter_LDFLAGS = $(AM_LDFLAGS)
-echse_filter_LDFLAGS += $(LIBLTDL) -export-dynamic
-BUILT_SOURCES += echse-filter-clo.c echse-filter-clo.h
 
 ## daniel jones' hattrie shebang
 noinst_LTLIBRARIES += libhattrie.la

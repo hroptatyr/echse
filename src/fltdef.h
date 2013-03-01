@@ -51,4 +51,14 @@ struct echs_fltdef_s {
 extern echs_fltdef_t echs_open_fltdef(echs_instant_t i, const char *fltdef);
 extern void echs_close_fltdef(echs_fltdef_t);
 
+/**
+ * Plug a stream S into a filter F and return the result stream. */
+extern echs_stream_t
+make_echs_filtstrm(echs_filter_t f, echs_stream_t s);
+
+/**
+ * Rid a filter-stream, as in separate its input stream from the filter.
+ * This will not free the input stream nor the filter. */
+extern void free_echs_filtstrm(echs_stream_t);
+
 #endif	/* INCLUDED_fltdef_h_ */
