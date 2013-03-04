@@ -35,6 +35,12 @@ collect_la_SOURCES += gq.c gq.h
 collect_la_LDFLAGS = $(MOD_LDFLAGS)
 collect_la_LIBADD = libhattrie.la
 
+pkglib_LTLIBRARIES += in-lieu.la
+in_lieu_la_SOURCES = in-lieu.c
+in_lieu_la_SOURCES += gq.c gq.h
+in_lieu_la_LDFLAGS = $(MOD_LDFLAGS)
+in_lieu_la_LIBADD = libhattrie.la
+
 ## DSOs for internal use
 pkglib_LTLIBRARIES += echs-file.la
 echs_file_la_LDFLAGS = $(MOD_LDFLAGS)

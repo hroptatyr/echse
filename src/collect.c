@@ -289,6 +289,7 @@ free_echs_filter(echs_filter_t f)
 		clo->annos = NULL;
 		clo->nannos = 0U;
 	}
+	fini_gq(clo->evq->pool);
 	free(clo);
 	return;
 }
