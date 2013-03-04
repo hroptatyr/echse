@@ -37,7 +37,6 @@
 #include <string.h>
 #include <hat-trie/hat-trie.h>
 #include "echse.h"
-#include "echs-lisp.h"
 #include "instant.h"
 #include "gq.h"
 
