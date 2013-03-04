@@ -339,6 +339,7 @@ emit_lieu_maybe(struct evq_s *evq, echs_instant_t cutoff, echs_instant_t last)
 		/* yay, pop the lieu event and emit */
 		a = pop_lieu_after(evq, prev);
 		emit_lieu(evq, fixup_lieu(a, last));
+		last = a->end.when;
 		continue;
 	next:
 		prev = ev;
