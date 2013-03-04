@@ -74,26 +74,6 @@ echse_la_SOURCES += module.c module.h
 echse_la_LDFLAGS = $(MOD_LDFLAGS)
 echse_la_LDFLAGS += -rpath /none
 
-noinst_PROGRAMS += echse-collect
-echse_collect_SOURCES = echse-collect.c
-echse_collect_SOURCES += echse-collect-clo.ggo
-echse_collect_SOURCES += echs-lisp.c echs-lisp.h
-echse_collect_SOURCES += echs-lisp-keys.gperf
-echse_collect_SOURCES += echs-lisp-syms.gperf
-echse_collect_SOURCES += echs-lisp-funs.gperf
-echse_collect_SOURCES += dt-strpf.c dt-strpf.h
-echse_collect_SOURCES += module.c module.h
-echse_collect_SOURCES += gq.c gq.h
-echse_collect_CPPFLAGS = $(AM_CPPFLAGS)
-echse_collect_CPPFLAGS += $(INCLTDL)
-echse_collect_LDFLAGS = $(AM_LDFLAGS)
-echse_collect_LDFLAGS += $(LIBLTDL) -export-dynamic
-echse_collect_LDADD = libhattrie.la
-BUILT_SOURCES += echse-collect-clo.c echse-collect-clo.h
-BUILT_SOURCES += echs-lisp-keys.c
-BUILT_SOURCES += echs-lisp-syms.c
-BUILT_SOURCES += echs-lisp-funs.c
-
 ## daniel jones' hattrie shebang
 noinst_LTLIBRARIES += libhattrie.la
 libhattrie_la_SOURCES = hat-trie/hat-trie.c hat-trie/hat-trie.h
