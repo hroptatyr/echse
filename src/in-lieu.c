@@ -389,10 +389,6 @@ __in_lieu(echs_event_t e, void *_clo)
 		/* oh don't forget to push the current guy */
 		push_ev(clo->evq, e);
 
-	} else if (immovablep(c)) {
-		/* yay, we can insert in-lieus now */
-		push_ev(clo->evq, e);
-
 	} else if (movablep(c)) {
 		/* ah movable, push to in-lieu list right away */
 		push_lieu(clo->evq, e, c);
