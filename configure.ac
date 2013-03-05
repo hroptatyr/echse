@@ -52,6 +52,11 @@ if test -z "${GPERF}"; then
 fi
 AC_ARG_VAR([GPERF], [full path to the gperf tool])
 
+PKG_CHECK_MODULES([guile], [guile-2.0], [:], [
+	PKG_CHECK_MODULES([guile], [guile-1.8])
+])
+
+
 SXE_CHECK_LIBTOOL
 SXE_CHECK_LIBLTDL
 
