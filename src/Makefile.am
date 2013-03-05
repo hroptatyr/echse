@@ -85,6 +85,14 @@ libhattrie_la_SOURCES += hat-trie/murmurhash3.c hat-trie/murmurhash3.h
 libhattrie_la_CPPFLAGS = $(AM_CPPFLAGS)
 libhattrie_la_LDFLAGS = $(AM_LDFLAGS)
 
+## just to test the guile stuff
+noinst_PROGRAMS += echs-lisp
+echs_lisp_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
+echs_lisp_CPPFLAGS += $(guile_CFLAGS)
+echs_lisp_LDFLAGS = $(AM_LDFLAGS)
+echs_lisp_LDFLAGS += $(guile_LIBS)
+BUILT_SOURCES += echs-lisp.x
+
 
 ## gperf rule
 %.c: %.gperf
@@ -93,6 +101,9 @@ libhattrie_la_LDFLAGS = $(AM_LDFLAGS)
 ## our rule for gengetopt
 %.c %.h: %.ggo
 	$(AM_V_GEN) $(GENGETOPT) -l -i $< -F $*
+
+%.x: %.c
+	$(AM_V_GEN) guile-snarf -o $@ $< $(AM_CPPFLAGS) $(echs_lisp_CPPFLAGS)
 
 # 
 # Help the developers get nice post-processed source files
