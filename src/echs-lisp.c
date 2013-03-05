@@ -154,7 +154,19 @@ print_echs_mod(SCM obj, SCM port, scm_print_state *UNUSED(pstate))
 {
 	struct echs_mod_smob_s *smob = (void*)SCM_SMOB_DATA(obj);
 
-	scm_puts("#<echs-mod :from ", port);
+	scm_puts("#<echs-", port);
+	switch (smob->typ) {
+	case EM_TYP_STRM:
+		scm_puts("strm", port);
+		break;
+	case EM_TYP_FILT:
+		scm_puts("filt", port);
+		break;
+	default:
+		scm_puts("mod", port);
+		break;
+	}
+	scm_puts(" :from ", port);
 	scm_write(smob->fn, port);
 	scm_puts(">", port);
 
