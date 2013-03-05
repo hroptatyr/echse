@@ -65,6 +65,9 @@ SCM_SYMBOL(sym_pset, "set-object-property!");
 SCM_SYMBOL(sym_rset, "read-set!");
 SCM_SYMBOL(sym_keywords, "keywords");
 SCM_SYMBOL(sym_prefix, "prefix");
+#if defined DEBUG_FLAG
+SCM_SYMBOL(sym_top_repl, "top-repl");
+#endif	/* DEBUG_FLAG */
 
 static SCM
 __begin(SCM form)
@@ -286,6 +289,11 @@ boot(void *clo)
 		SCM_SETCDR(tail, _load(c->inp[i]));
 		tail = SCM_CDR(tail);
 	}
+
+#if defined DEBUG_FLAG
+	/* stay in the shell */
+	SCM_SETCDR(tail, scm_cons(scm_cons(sym_top_repl, SCM_EOL), SCM_EOL));
+#endif	/* DEBUG_FLAG */
 
 	scm_eval_x(form, scm_current_module());
 	return NULL;
