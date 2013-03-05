@@ -62,6 +62,9 @@ SCM_GLOBAL_KEYWORD(k_args, "args");
 SCM_SYMBOL(sym_load, "load");
 SCM_SYMBOL(sym_begin, "begin");
 SCM_SYMBOL(sym_pset, "set-object-property!");
+SCM_SYMBOL(sym_rset, "read-set!");
+SCM_SYMBOL(sym_keywords, "keywords");
+SCM_SYMBOL(sym_prefix, "prefix");
 
 static SCM
 __begin(SCM form)
@@ -97,6 +100,21 @@ static SCM
 __define(SCM sym, SCM what)
 {
 	return scm_list_3(scm_sym_define, sym, what);
+}
+
+static SCM
+__rset(void)
+{
+	return scm_list_3(
+		sym_rset,
+		sym_keywords,
+		scm_cons2(scm_sym_quote, sym_prefix, SCM_EOL));
+}
+
+static SCM
+_rset(void)
+{
+	return scm_cons(__rset(), SCM_EOL);
 }
 
 SCM_DEFINE(
@@ -254,12 +272,15 @@ boot(void *clo)
 	SCM form;
 	SCM tail;
 
+	/* initialise our system */
 	init_echs_lisp();
 
 	/* start out with a begin block */
 	form = tail = __begin(SCM_EOL);
-	for (unsigned int i = 0; i < c->ninp; i++) {
+	SCM_SETCDR(tail, _rset());
+	tail = SCM_CDR(tail);
 
+	for (unsigned int i = 0; i < c->ninp; i++) {
 		SCM_SETCDR(tail, _load(c->inp[i]));
 		tail = SCM_CDR(tail);
 	}
