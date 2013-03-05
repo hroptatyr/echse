@@ -38,11 +38,25 @@
 #define HAVE_STDINT_H	1
 #include <libguile.h>
 #include "strdef.h"
+#include "fltdef.h"
 #include "dt-strpf.h"
 
 #if !defined UNUSED
 # define UNUSED(x)		__attribute__((unused)) x
 #endif	/* UNUSED */
+
+struct echs_mod_smob_s {
+	enum {
+		EM_TYP_UNK,
+		EM_TYP_STRM,
+		EM_TYP_FILT,
+	} typ;
+	union {
+		echs_strdef_t s;
+		echs_fltdef_t f;
+	};
+	char *fn;
+};
 
 
 #if defined __INTEL_COMPILER
@@ -69,6 +83,79 @@ SCM_SYMBOL(sym_prefix, "prefix");
 SCM_SYMBOL(sym_top_repl, "top-repl");
 #endif	/* DEBUG_FLAG */
 
+static scm_t_bits scm_tc16_echs_mod;
+static echs_instant_t from;
+
+SCM_DEFINE(
+	load_strm, "load-strm", 1, 0, 0,
+	(SCM dso),
+	"Load the stream from DSO.")
+{
+#define FUNC_NAME	"load-strm"
+	SCM XSMOB;
+	struct echs_mod_smob_s *smob;
+	char *fn;
+
+	SCM_VALIDATE_STRING(1, dso);
+	fn = scm_to_locale_string(dso);
+
+	/* alloc and ... */
+	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
+	/* init */
+	smob->typ = EM_TYP_STRM;
+	smob->s = echs_open(from, fn);
+	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
+	return XSMOB;
+#undef FUNC_NAME
+}
+SCM_GLOBAL_SYMBOL(scm_sym_load_strm, s_load_strm);
+
+SCM_DEFINE(
+	load_filt, "load-filt", 1, 0, 0,
+	(SCM dso),
+	"Load the filter from DSO.")
+{
+#define FUNC_NAME	"load-filt"
+	return dso;
+#undef FUNC_NAME
+}
+SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
+
+static SCM
+mark_echs_mod(SCM UNUSED(obj))
+{
+	return SCM_BOOL_F;
+}
+
+static int
+print_echs_mod(SCM UNUSED(obj), SCM port, scm_print_state *UNUSED(pstate))
+{
+	scm_puts("#<echs-mod>", port);
+
+	/* non-zero means success */
+	return 1;
+}
+
+static size_t
+free_echs_mod(SCM obj)
+{
+	struct echs_mod_smob_s *smob = (void*)SCM_SMOB_DATA(obj);
+
+	switch (smob->typ) {
+	case EM_TYP_STRM:
+		echs_close(smob->s);
+		break;
+	default:
+		/* bad sign */
+		break;
+	}
+	scm_gc_free(smob, sizeof(*smob), "echs-mod");
+	return 0;
+}
+
+
+/* some macros */
+/* helpers */
 static SCM
 __begin(SCM form)
 {
@@ -120,30 +207,6 @@ _rset(void)
 	return scm_cons(__rset(), SCM_EOL);
 }
 
-SCM_DEFINE(
-	load_strm, "load-strm", 1, 0, 0,
-	(SCM dso),
-	"Load the stream from DSO.")
-{
-#define FUNC_NAME	"load-strm"
-	return dso;
-#undef FUNC_NAME
-}
-SCM_GLOBAL_SYMBOL(scm_sym_load_strm, s_load_strm);
-
-SCM_DEFINE(
-	load_filt, "load-filt", 1, 0, 0,
-	(SCM dso),
-	"Load the filter from DSO.")
-{
-#define FUNC_NAME	"load-filt"
-	return dso;
-#undef FUNC_NAME
-}
-SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
-
-
-/* some macros */
 static SCM
 scm_m_defstrm(SCM expr, SCM UNUSED(env))
 {
@@ -243,6 +306,11 @@ init_echs_lisp(void)
 #if !defined SCM_MAGIC_SNARFER
 #	include "echs-lisp.x"
 #endif	/* SCM_MAGIC_SNARFER */
+	scm_tc16_echs_mod = scm_make_smob_type(
+		"echs-mod", sizeof(struct echs_mod_smob_s));
+	scm_set_smob_mark(scm_tc16_echs_mod, mark_echs_mod);
+	scm_set_smob_print(scm_tc16_echs_mod, print_echs_mod);
+	scm_set_smob_free(scm_tc16_echs_mod, free_echs_mod);
 	return;
 }
 
@@ -305,7 +373,6 @@ main(int argc, char **argv)
 	/* command line options */
 	struct echs_args_info argi[1];
 	/* date range to scan through */
-	echs_instant_t from;
 	echs_instant_t till;
 	int res = 0;
 
