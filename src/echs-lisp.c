@@ -120,7 +120,23 @@ SCM_DEFINE(
 	"Load the filter from DSO.")
 {
 #define FUNC_NAME	"load-filt"
-	return dso;
+	SCM XSMOB;
+	struct echs_mod_smob_s *smob;
+	char *fn;
+
+	SCM_VALIDATE_STRING(1, dso);
+	fn = scm_to_locale_string(dso);
+
+	/* alloc and ... */
+	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
+	/* init */
+	smob->typ = EM_TYP_FILT;
+	smob->s = echs_open(from, fn);
+	smob->fn = dso;
+	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
+
+	free(fn);
+	return XSMOB;
 #undef FUNC_NAME
 }
 SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
