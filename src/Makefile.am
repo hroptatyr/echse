@@ -101,6 +101,7 @@ echs_lisp_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echs_lisp_CPPFLAGS += $(guile_CFLAGS)
 echs_lisp_LDFLAGS = $(AM_LDFLAGS)
 echs_lisp_LDFLAGS += $(guile_LIBS)
+echs_lisp_LDADD = libechse.la
 BUILT_SOURCES += echs-lisp.x
 
 
