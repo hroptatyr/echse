@@ -49,6 +49,16 @@ pkglib_LTLIBRARIES += echs-filter.la
 echs_filter_la_LDFLAGS = $(MOD_LDFLAGS)
 
 
+## ourself as .so
+noinst_LTLIBRARIES += libechse.la
+libechse_la_SOURCES =
+libechse_la_SOURCES += instant.c instant.h
+libechse_la_SOURCES += dt-strpf.c dt-strpf.h
+libechse_la_SOURCES += strdef.c strdef.h
+libechse_la_SOURCES += fltdef.c fltdef.h
+libechse_la_SOURCES += module.c module.h
+
+
 noinst_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h
 echse_SOURCES += echse-clo.ggo
