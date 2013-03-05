@@ -264,7 +264,7 @@ init_echs_lisp(void)
 
 struct clo_s {
 	unsigned int ninp;
-	const char **inp;
+	const char *const *inp;
 };
 
 static void*
@@ -318,8 +318,7 @@ main(int argc, char **argv)
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
-	struct clo_s x = {argi->inputs_num, argi->inputs};
-	scm_with_guile(boot, &x);
+	scm_with_guile(boot, &(struct clo_s){argi->inputs_num, argi->inputs});
 
 out:
 	echs_parser_free(argi);
