@@ -145,24 +145,26 @@ static SCM
 scm_m_defstrm(SCM expr, SCM UNUSED(env))
 {
 #define FUNC_NAME	"defstrm"
-	SCM cdr_expr = SCM_CDR(expr);
+	SCM tail = SCM_CDR(expr);
+	SCM dso = SCM_EOL;
 	SCM sym;
-	SCM dso;
 
-	sym = SCM_CAR(cdr_expr);
+	sym = SCM_CAR(tail);
 	SCM_VALIDATE_SYMBOL(1, sym);
 
-	if (!scm_is_null((cdr_expr = SCM_CDR(cdr_expr)))) {
+	if (!scm_is_null((tail = SCM_CDR(tail)))) {
 		SCM tmp;
 
-		if (scm_is_keyword(tmp = SCM_CAR(cdr_expr)) &&
+		if (scm_is_keyword(tmp = SCM_CAR(tail)) &&
 		    scm_is_eq(tmp, k_from)) {
-			dso = SCM_CAR(SCM_CDR(cdr_expr));
+			tail = SCM_CDR(tail);
+			dso = SCM_CAR(tail);
 		}
-	} else {
-		dso = scm_symbol_to_string(sym);
 	}
 
+	if (scm_is_null(dso)) {
+		dso = scm_symbol_to_string(sym);
+	}
 	expr = __define(sym, scm_cons2(scm_sym_load_strm, dso, SCM_EOL));
 
 #if defined DEBUG_FLAG
