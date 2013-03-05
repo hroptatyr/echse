@@ -57,6 +57,8 @@ libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += strdef.c strdef.h
 libechse_la_SOURCES += fltdef.c fltdef.h
 libechse_la_SOURCES += module.c module.h
+libechse_la_LDFLAGS = $(AM_LDFLAGS)
+libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 
 
 noinst_PROGRAMS += echse
