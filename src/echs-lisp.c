@@ -55,7 +55,8 @@ struct echs_mod_smob_s {
 		echs_strdef_t s;
 		echs_fltdef_t f;
 	};
-	char *fn;
+
+	SCM fn;
 };
 
 
@@ -104,7 +105,10 @@ SCM_DEFINE(
 	/* init */
 	smob->typ = EM_TYP_STRM;
 	smob->s = echs_open(from, fn);
+	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
+
+	free(fn);
 	return XSMOB;
 #undef FUNC_NAME
 }
@@ -122,15 +126,21 @@ SCM_DEFINE(
 SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
 
 static SCM
-mark_echs_mod(SCM UNUSED(obj))
+mark_echs_mod(SCM obj)
 {
-	return SCM_BOOL_F;
+	struct echs_mod_smob_s *smob = (void*)SCM_SMOB_DATA(obj);
+
+	return smob->fn;
 }
 
 static int
-print_echs_mod(SCM UNUSED(obj), SCM port, scm_print_state *UNUSED(pstate))
+print_echs_mod(SCM obj, SCM port, scm_print_state *UNUSED(pstate))
 {
-	scm_puts("#<echs-mod>", port);
+	struct echs_mod_smob_s *smob = (void*)SCM_SMOB_DATA(obj);
+
+	scm_puts("#<echs-mod :from ", port);
+	scm_write(smob->fn, port);
+	scm_puts(">", port);
 
 	/* non-zero means success */
 	return 1;
