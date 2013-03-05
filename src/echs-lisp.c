@@ -219,7 +219,7 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 
 	/* bang the define */
 	{
-		SCM ls = scm_cons2(scm_sym_load_strm, dso, SCM_EOL);
+		SCM ls = scm_cons2(scm_sym_load_filt, dso, SCM_EOL);
 		SCM d = __define(sym, ls);
 
 		SCM_SETCDR(expr, scm_cons(d, SCM_CDR(expr)));
