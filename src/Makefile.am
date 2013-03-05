@@ -111,8 +111,9 @@ BUILT_SOURCES += echs-lisp.x
 %.c %.h: %.ggo
 	$(AM_V_GEN) $(GENGETOPT) -l -i $< -F $*
 
+snarf_opts = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(guile_CFLAGS)
 %.x: %.c
-	$(AM_V_GEN) guile-snarf -o $@ $< $(AM_CPPFLAGS) $(guile_CFLAGS)
+	$(AM_V_GEN) guile-snarf -o $@ $< $(snarf_opts)
 
 # 
 # Help the developers get nice post-processed source files
