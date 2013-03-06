@@ -64,6 +64,8 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
 
+typedef void(*pset_f)(echs_filter_t, const char*, struct filter_pset_s);
+
 struct echs_mod_smob_s {
 	enum {
 		EM_TYP_UNK,
@@ -131,15 +133,46 @@ SCM_DEFINE(
 #undef FUNC_NAME
 }
 
+static void
+__load_filt_ass_kv(pset_f pset, echs_filter_t f, const char *key, SCM val)
+{
+	if (scm_is_string(val)) {
+		size_t z;
+		char *s = scm_to_locale_stringn(val, &z);
+
+		pset(f, key, (struct filter_pset_s){PSET_TYP_STR, s, z});
+		free(s);
+	} else if (scm_is_pair(val)) {
+		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
+			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
+		}
+	}
+	return;
+}
+
+static const char*
+__stringify(SCM kw)
+{
+	static char buf[64] = ":";
+	SCM kw_str;
+	size_t z;
+
+	kw_str = scm_symbol_to_string(scm_keyword_to_symbol(kw));
+	z = scm_to_locale_stringbuf(kw_str, buf + 1, sizeof(buf) - 2);
+	buf[++z] = '\0';
+	return buf;
+}
+
 SCM_SYMBOL(scm_sym_load_filt, "load-filt");
 SCM_DEFINE(
-	load_filt, "load-filt", 1, 0, 0,
-	(SCM dso),
+	load_filt, "load-filt", 1, 0, 1,
+	(SCM dso, SCM rest),
 	"Load the filter from DSO.")
 {
 #define FUNC_NAME	"load-filt"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
+	pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -154,6 +187,25 @@ SCM_DEFINE(
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
 	free(fn);
+
+	/* have we got a pset fun in our filter? */
+	if ((pset = echs_fltdef_psetter(smob->f)) == NULL) {
+		goto skip;
+	}
+
+	/* pass the keywords to the psetter */
+	for (SCM k, v = rest; !scm_is_null(v); v = SCM_CDR(v)) {
+		const char *key;
+
+		if (!scm_is_keyword(k = SCM_CAR(v))) {
+			continue;
+		}
+		v = SCM_CDR(v);
+
+		key = __stringify(k);
+		__load_filt_ass_kv(pset, smob->f.f, key, SCM_CAR(v));
+	}
+skip:
 	return XSMOB;
 #undef FUNC_NAME
 }
