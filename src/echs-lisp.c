@@ -45,6 +45,25 @@
 # define UNUSED(x)		__attribute__((unused)) x
 #endif	/* UNUSED */
 
+#define GUILE_VERSION				\
+	((SCM_MAJOR_VERSION * 100U +		\
+	  SCM_MINOR_VERSION) * 100U +		\
+	 SCM_MICRO_VERSION)
+
+#if GUILE_VERSION >= 20000U
+# define MYSCM_SYNTAX(RANAME, STR, CFN)					\
+SCM_SNARF_HERE(static SCM CFN(SCM xorig, SCM env))			\
+SCM_SNARF_INIT(scm_c_define(STR, scm_i_make_primitive_macro(STR, CFN)))
+
+#elif GUILE_VERSION >= 10800U
+# define MYSCM_SYNTAX(RANAME, STR, CFN)				\
+SCM_SNARF_HERE(static const char RANAME[]=STR)			\
+SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
+
+#else
+# error unsupported guile version
+#endif	/* GUILE_VERSION */
+
 struct echs_mod_smob_s {
 	enum {
 		EM_TYP_UNK,
@@ -65,11 +84,8 @@ struct echs_mod_smob_s {
 # pragma warning (disable:981)
 #endif	/* __INTEL_COMPILER */
 
-SCM_SYNTAX(s_defstrm, "defstrm", scm_i_makbimacro, scm_m_defstrm);
-SCM_GLOBAL_SYMBOL(scm_sym_defstrm, s_defstrm);
-
-SCM_SYNTAX(s_deffilt, "deffilt", scm_i_makbimacro, scm_m_deffilt);
-SCM_GLOBAL_SYMBOL(scm_sym_deffilt, s_deffilt);
+MYSCM_SYNTAX(s_defstrm, "defstrm", scm_m_defstrm);
+MYSCM_SYNTAX(s_deffilt, "deffilt", scm_m_deffilt);
 
 SCM_GLOBAL_KEYWORD(k_from, "from");
 SCM_GLOBAL_KEYWORD(k_args, "args");
@@ -87,6 +103,7 @@ SCM_SYMBOL(sym_top_repl, "top-repl");
 static scm_t_bits scm_tc16_echs_mod;
 static echs_instant_t from;
 
+SCM_SYMBOL(scm_sym_load_strm, "load-strm");
 SCM_DEFINE(
 	load_strm, "load-strm", 1, 0, 0,
 	(SCM dso),
@@ -112,8 +129,8 @@ SCM_DEFINE(
 	return XSMOB;
 #undef FUNC_NAME
 }
-SCM_GLOBAL_SYMBOL(scm_sym_load_strm, s_load_strm);
 
+SCM_SYMBOL(scm_sym_load_filt, "load-filt");
 SCM_DEFINE(
 	load_filt, "load-filt", 1, 0, 0,
 	(SCM dso),
@@ -139,7 +156,6 @@ SCM_DEFINE(
 	return XSMOB;
 #undef FUNC_NAME
 }
-SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
 
 static SCM
 mark_echs_mod(SCM obj)
