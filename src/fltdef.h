@@ -53,6 +53,11 @@ extern echs_fltdef_t echs_open_fltdef(echs_instant_t i, const char *fltdef);
 extern void echs_close_fltdef(echs_fltdef_t);
 
 /**
+ * Pass property (k, v) to filter definition F. */
+extern void
+echs_fltdef_pset(echs_fltdef_t f, const char *k, struct filter_pset_s v);
+
+/**
  * Plug a stream S into a filter F and return the result stream. */
 extern echs_stream_t
 make_echs_filtstrm(echs_filter_t f, echs_stream_t s);
