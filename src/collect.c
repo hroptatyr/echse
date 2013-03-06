@@ -82,7 +82,7 @@ struct clo_s {
 	hattrie_t *ht;
 
 	/* them alias */
-	const char *as;
+	char *as;
 
 	size_t nannos;
 	struct ev_anno_s *annos;
@@ -112,15 +112,15 @@ echs_event_modifier(echs_event_t e)
 }
 
 static ev_anno_t
-find_item(hattrie_t *ht, const char *token)
+find_item(const struct clo_s *clo, const char *token)
 {
 	size_t toklen = strlen(token);
 	value_t *x;
 
-	if ((x = hattrie_tryget(ht, token, toklen)) == NULL) {
+	if ((x = hattrie_tryget(clo->ht, token, toklen)) == NULL) {
 		return NULL;
 	}
-	return *x;
+	return clo->annos + (intptr_t)(*x) - 1U;
 }
 
 static void*
@@ -206,12 +206,14 @@ __collect(echs_event_t e, struct clo_s *clo)
 	/* check if we're draining */
 	if (UNLIKELY(__event_0_p(e))) {
 		goto out;
+	} else if (UNLIKELY(clo->as == NULL)) {
+		goto out;
 	}
 
 	if ((st = echs_event_modifier(e)) != EVMDFR_START) {
 		token++;
 	}
-	if ((c = find_item(clo->ht, token)) == NULL) {
+	if ((c = find_item(clo, token)) == NULL) {
 		push_ev(clo->evq, e, NULL);
 		goto out;
 	}
@@ -255,18 +257,6 @@ make_echs_filter(echs_instant_t UNUSED(i), ...)
 	struct clo_s *clo = calloc(1, sizeof(*clo));
 
 	clo->ht = hattrie_create();
-	clo->as = "~xmas";
-
-	clo->annos = calloc(clo->nannos = 2U, sizeof(*clo->annos));
-
-	{
-		value_t *x = hattrie_get(clo->ht, "XMAS", 4);
-		*x = clo->annos + 0U;
-	}
-	{
-		value_t *x = hattrie_get(clo->ht, "BOXD", 4);
-		*x = clo->annos + 1U;
-	}
 	return (echs_filter_t){(echs_event_t(*)())__collect, clo};
 }
 
@@ -288,8 +278,51 @@ free_echs_filter(echs_filter_t f)
 		clo->annos = NULL;
 		clo->nannos = 0U;
 	}
+	if (LIKELY(clo->as != NULL)) {
+		free(clo->as);
+	}
 	fini_gq(clo->evq->pool);
 	free(clo);
+	return;
+}
+
+void
+echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
+{
+	struct clo_s *clo = f.clo;
+
+	if (!strcmp(key, ":as")) {
+		switch (v.typ) {
+		case PSET_TYP_STR:
+			clo->as = malloc(v.z + 1U/*for ~*/ + 1U/*for \nul*/);
+			clo->as[0] = '~';
+			memcpy(clo->as + 1U, v.str, v.z);
+			clo->as[1U + v.z] = '\0';
+			break;
+		default:
+			break;
+		}
+		return;
+	}
+
+	switch (v.typ) {
+	case PSET_TYP_STR: {
+		value_t *x;
+
+		if ((clo->nannos % 16U) == 0U) {
+			size_t ol_z = (clo->nannos + 0U) * sizeof(*clo->annos);
+			size_t nu_z = (clo->nannos + 16U) * sizeof(*clo->annos);
+			clo->annos = realloc(clo->annos, nu_z);
+			memset(clo->annos + clo->nannos, 0, nu_z - ol_z);
+		}
+
+		x = hattrie_get(clo->ht, v.str, v.z);
+		*x = (value_t)(++clo->nannos);
+		break;
+	}
+	default:
+		break;
+	}
 	return;
 }
 

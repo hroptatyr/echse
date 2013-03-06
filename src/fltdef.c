@@ -99,6 +99,34 @@ echs_close_fltdef(echs_fltdef_t sd)
 	return;
 }
 
+void(*
+	    echs_fltdef_psetter(echs_fltdef_t sf)
+	)(echs_filter_t, const char*, struct filter_pset_s)
+{
+	typedef void(*filter_pset_f)(
+		echs_filter_t, const char*, struct filter_pset_s);
+
+	if (sf.m != NULL) {
+		echs_mod_f f;
+
+		if ((f = echs_mod_sym(sf.m, "echs_filter_pset")) != NULL) {
+			return (filter_pset_f)f;
+		}
+	}
+	return NULL;
+}
+
+void
+echs_fltdef_pset(echs_fltdef_t sf, const char *k, struct filter_pset_s v)
+{
+	void(*f)(echs_filter_t, const char*, struct filter_pset_s);
+
+	if ((f = echs_fltdef_psetter(sf)) != NULL) {
+		f(sf.f, k, v);
+	}
+	return;
+}
+
 
 /* service to turn a filter plus a stream into a stream */
 struct fltstr_clo_s {

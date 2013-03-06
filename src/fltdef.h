@@ -37,6 +37,7 @@
 #if !defined INCLUDED_fltdef_h_
 #define INCLUDED_fltdef_h_
 
+#include <stdint.h>
 #include "echse.h"
 
 typedef struct echs_fltdef_s echs_fltdef_t;
@@ -50,6 +51,17 @@ struct echs_fltdef_s {
 
 extern echs_fltdef_t echs_open_fltdef(echs_instant_t i, const char *fltdef);
 extern void echs_close_fltdef(echs_fltdef_t);
+
+/**
+ * Pass property (k, v) to filter definition F. */
+extern void
+echs_fltdef_pset(echs_fltdef_t f, const char *k, struct filter_pset_s v);
+
+/**
+ * Return the psetter of filter definition F. */
+extern void(*
+	    echs_fltdef_psetter(echs_fltdef_t)
+	)(echs_filter_t, const char*, struct filter_pset_s);
 
 /**
  * Plug a stream S into a filter F and return the result stream. */

@@ -39,8 +39,15 @@
 #include <libguile.h>
 #include "strdef.h"
 #include "fltdef.h"
+#include "instant.h"
 #include "dt-strpf.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 #if !defined UNUSED
 # define UNUSED(x)		__attribute__((unused)) x
 #endif	/* UNUSED */
@@ -64,6 +71,8 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
 
+typedef void(*pset_f)(echs_filter_t, const char*, struct filter_pset_s);
+
 struct echs_mod_smob_s {
 	enum {
 		EM_TYP_UNK,
@@ -78,6 +87,16 @@ struct echs_mod_smob_s {
 	SCM fn;
 };
 
+struct echse_clo_s {
+	size_t nstrms;
+	struct {
+		echs_stream_t s;
+		echs_event_t ev;
+	} *strms;
+	/* last event served */
+	echs_event_t last;
+};
+
 
 #if defined __INTEL_COMPILER
 # pragma warning (disable:1418)
@@ -89,12 +108,11 @@ struct echs_mod_smob_s {
 MYSCM_SYNTAX(s_defstrm, "defstrm", scm_m_defstrm);
 MYSCM_SYNTAX(s_deffilt, "deffilt", scm_m_deffilt);
 
-SCM_GLOBAL_KEYWORD(k_from, "from");
-SCM_GLOBAL_KEYWORD(k_args, "args");
+SCM_KEYWORD(k_from, "from");
+SCM_KEYWORD(k_args, "args");
 
 SCM_SYMBOL(sym_load, "load");
 SCM_SYMBOL(sym_begin, "begin");
-SCM_SYMBOL(sym_pset, "set-object-property!");
 SCM_SYMBOL(sym_rset, "read-set!");
 SCM_SYMBOL(sym_keywords, "keywords");
 SCM_SYMBOL(sym_prefix, "prefix");
@@ -103,7 +121,9 @@ SCM_SYMBOL(sym_top_repl, "top-repl");
 #endif	/* DEBUG_FLAG */
 
 static scm_t_bits scm_tc16_echs_mod;
+/* date range to scan through */
 static echs_instant_t from;
+static echs_instant_t till;
 
 SCM_SYMBOL(scm_sym_load_strm, "load-strm");
 SCM_DEFINE(
@@ -132,15 +152,46 @@ SCM_DEFINE(
 #undef FUNC_NAME
 }
 
+static void
+__load_filt_ass_kv(pset_f pset, echs_filter_t f, const char *key, SCM val)
+{
+	if (scm_is_string(val)) {
+		size_t z;
+		char *s = scm_to_locale_stringn(val, &z);
+
+		pset(f, key, (struct filter_pset_s){PSET_TYP_STR, s, z});
+		free(s);
+	} else if (scm_is_pair(val)) {
+		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
+			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
+		}
+	}
+	return;
+}
+
+static const char*
+__stringify(SCM kw)
+{
+	static char buf[64] = ":";
+	SCM kw_str;
+	size_t z;
+
+	kw_str = scm_symbol_to_string(scm_keyword_to_symbol(kw));
+	z = scm_to_locale_stringbuf(kw_str, buf + 1, sizeof(buf) - 2);
+	buf[++z] = '\0';
+	return buf;
+}
+
 SCM_SYMBOL(scm_sym_load_filt, "load-filt");
 SCM_DEFINE(
-	load_filt, "load-filt", 1, 0, 0,
-	(SCM dso),
+	load_filt, "load-filt", 1, 0, 1,
+	(SCM dso, SCM rest),
 	"Load the filter from DSO.")
 {
 #define FUNC_NAME	"load-filt"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
+	pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -150,11 +201,30 @@ SCM_DEFINE(
 	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
 	/* init */
 	smob->typ = EM_TYP_FILT;
-	smob->s = echs_open(from, fn);
+	smob->f = echs_open_fltdef(from, fn);
 	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
 	free(fn);
+
+	/* have we got a pset fun in our filter? */
+	if ((pset = echs_fltdef_psetter(smob->f)) == NULL) {
+		goto skip;
+	}
+
+	/* pass the keywords to the psetter */
+	for (SCM k, v = rest; !scm_is_null(v); v = SCM_CDR(v)) {
+		const char *key;
+
+		if (!scm_is_keyword(k = SCM_CAR(v))) {
+			continue;
+		}
+		v = SCM_CDR(v);
+
+		key = __stringify(k);
+		__load_filt_ass_kv(pset, smob->f.f, key, SCM_CAR(v));
+	}
+skip:
 	return XSMOB;
 #undef FUNC_NAME
 }
@@ -199,15 +269,59 @@ free_echs_mod(SCM obj)
 
 	switch (smob->typ) {
 	case EM_TYP_STRM:
-		echs_close(smob->s);
+		if (smob->s.m != NULL) {
+			/* probably a DSO */
+			echs_close(smob->s);
+		} else {
+			/* probably our shit */
+			void *sc = smob->s.s.clo;
+
+			scm_gc_free(sc, sizeof(struct echse_clo_s), "echs-mod");
+			smob->s.s = (echs_stream_t){NULL, NULL};;
+		}
 		break;
 	default:
 		/* bad sign */
+		echs_close_fltdef(smob->f);
 		break;
 	}
 	scm_gc_free(smob, sizeof(*smob), "echs-mod");
 	return 0;
 }
+
+static int
+scm_is_echs_strm(SCM x)
+{
+	struct echs_mod_smob_s *smob;
+
+	if (SCM_TYP16_PREDICATE(scm_tc16_echs_mod, x) &&
+	    (smob = (void*)SCM_SMOB_DATA(x))->typ == EM_TYP_STRM) {
+		return 1;
+	}
+	return 0;
+}
+
+static int
+scm_is_echs_filt(SCM x)
+{
+	struct echs_mod_smob_s *smob;
+
+	if (SCM_TYP16_PREDICATE(scm_tc16_echs_mod, x) &&
+	    (smob = (void*)SCM_SMOB_DATA(x))->typ == EM_TYP_FILT) {
+		return 1;
+	}
+	return 0;
+}
+
+#define SCM_VALIDATE_ECHS_STRM(pos, obj)				\
+	do {								\
+		SCM_ASSERT(scm_is_echs_strm(obj), obj, pos, FUNC_NAME);	\
+	} while (0)
+
+#define SCM_VALIDATE_ECHS_FILT(pos, obj)				\
+	do {								\
+		SCM_ASSERT(scm_is_echs_filt(obj), obj, pos, FUNC_NAME);	\
+	} while (0)
 
 
 /* some macros */
@@ -231,15 +345,10 @@ _load(const char *fn)
 }
 
 static SCM
-__pset(SCM sym, SCM what, SCM val)
+__pset(SCM curr, SCM UNUSED(sym), SCM what, SCM val)
 {
-	return scm_list_4(sym_pset, sym, what, val);
-}
-
-static SCM
-_pset(SCM sym, SCM what, SCM val)
-{
-	return scm_cons(__pset(sym, what, val), SCM_EOL);
+	SCM_SETCDR(curr, scm_cons2(what, val, SCM_EOL));
+	return SCM_CDR(SCM_CDR(curr));
 }
 
 static SCM
@@ -323,12 +432,10 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 			dso = SCM_CAR(tail);
 		} else if (scm_is_keyword(tmp)) {
 			tail = SCM_CDR(tail);
-			SCM_SETCDR(pset, _pset(sym, tmp, SCM_CAR(tail)));
-			pset = SCM_CDR(pset);
+			pset = __pset(pset, sym, tmp, SCM_CAR(tail));
 		} else {
 			/* must be args then innit? */
-			SCM_SETCDR(pset, _pset(sym, k_args, SCM_CAR(tail)));
-			pset = SCM_CDR(pset);
+			pset = __pset(pset, sym, k_args, SCM_CAR(tail));
 		}
 	}
 
@@ -337,12 +444,7 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 	}
 
 	/* bang the define */
-	{
-		SCM ls = scm_cons2(scm_sym_load_filt, dso, SCM_EOL);
-		SCM d = __define(sym, ls);
-
-		SCM_SETCDR(expr, scm_cons(d, SCM_CDR(expr)));
-	}
+	expr = __define(sym, scm_cons2(scm_sym_load_filt, dso, SCM_CDR(expr)));
 
 #if defined DEBUG_FLAG
 	{
@@ -352,6 +454,278 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 	}
 #endif	/* DEBUG_FLAG */
 	return expr;
+#undef FUNC_NAME
+}
+
+
+/* beef functionality */
+static inline bool
+__events_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return __inst_eq_p(e1.when, e2.when) &&
+		(e1.what == e2.what || strcmp(e1.what, e2.what) == 0);
+}
+
+static int
+materialise(echs_event_t e)
+{
+	static char buf[256];
+	char *bp = buf;
+
+	/* BEST has the guy */
+	bp += dt_strf(buf, sizeof(buf), e.when);
+	*bp++ = '\t';
+	{
+		size_t e_whaz = strlen(e.what);
+		memcpy(bp, e.what, e_whaz);
+		bp += e_whaz;
+	}
+	*bp++ = '\n';
+	*bp = '\0';
+	if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+static echs_event_t
+__refill(echs_stream_t s, echs_instant_t last)
+{
+	echs_event_t e;
+
+	do {
+		if (__event_0_p(e = echs_stream_next(s))) {
+			break;
+		}
+	} while (__event_lt_p(e, last));
+	return e;
+}
+
+static echs_event_t
+__stream(void *clo)
+{
+	struct echse_clo_s *x = clo;
+	echs_instant_t bestinst;
+	size_t bestindx;
+
+	if (UNLIKELY(x->strms == NULL)) {
+		return (echs_event_t){0};
+	}
+	/* start out with the best, non-0 index */
+	bestindx = -1UL;
+	bestinst = (echs_instant_t){.u = (uint64_t)-1};
+
+	/* try and find the very next event out of all instants */
+	for (size_t i = 0; i < x->nstrms; i++) {
+		echs_instant_t inst = x->strms[i].ev.when;
+
+		if (x->strms[i].s.f == NULL) {
+			continue;
+		} else if (__inst_0_p(inst)) {
+		clos_0:
+			memset(x->strms + i, 0, sizeof(*x->strms));
+			continue;
+		} else if (__inst_lt_p(inst, x->last.when) ||
+			   __events_eq_p(x->strms[i].ev, x->last)) {
+			echs_stream_t s = x->strms[i].s;
+			echs_event_t e;
+
+			if (__event_0_p(e = __refill(s, x->last.when))) {
+				goto clos_0;
+			}
+
+			/* cache E */
+			x->strms[i].ev = e;
+			inst = e.when;
+		}
+
+		/* do the actual check */
+		if (__inst_lt_p(inst, bestinst) || __inst_0_p(bestinst)) {
+			bestindx = i;
+			bestinst = x->strms[bestindx].ev.when;
+		}
+	}
+
+	/* BEST has the guy */
+	if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
+		/* big fucking fuck */
+		return (echs_event_t){0};
+	}
+	/* otherwise just use the cache */
+	return x->strms[bestindx].ev;
+}
+
+SCM_DEFINE(
+	make_stream, "make-stream", 0, 0, 1,
+	(SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"make-stream"
+	SCM XSMOB;
+	SCM gath;
+	struct echs_mod_smob_s *smob;
+	struct echse_clo_s *x;
+	echs_stream_t this;
+	size_t k = 0;
+
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
+	}
+
+	/* alloc and ... */
+	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
+	x = scm_gc_malloc(sizeof(*x), FUNC_NAME);
+	this = (echs_stream_t){__stream, x};
+	/* init */
+	smob->typ = EM_TYP_STRM;
+	smob->s = (echs_strdef_t){this, NULL};
+	smob->fn = gath = scm_cons(SCM_BOOL_F, SCM_EOL);
+
+	/* rinse */
+	memset(x, 0, sizeof(*x));
+
+	for (SCM tail = s; !scm_is_null(tail); tail = SCM_CDR(tail)) {
+		struct echs_mod_smob_s *strm;
+		SCM XSTRM = SCM_CAR(tail);
+
+		SCM_VALIDATE_ECHS_STRM(++k, XSTRM);
+		SCM_SETCDR(gath, scm_cons(XSTRM, SCM_EOL));
+		gath = SCM_CDR(gath);
+		/* deref */
+		strm = (void*)SCM_SMOB_DATA(XSTRM);
+
+		if (UNLIKELY((x->nstrms % 64U) == 0U)) {
+			/* realloc the streams array */
+			size_t ol_z = (x->nstrms + 0U) * sizeof(*x->strms);
+			size_t nu_z = (x->nstrms + 64U) * sizeof(*x->strms);
+
+			x->strms = scm_gc_realloc(
+				x->strms, ol_z, nu_z, FUNC_NAME);
+			memset(x->strms + x->nstrms, 0, nu_z - ol_z);
+		}
+
+		/* bang stream */
+		x->strms[x->nstrms].s = strm->s.s;
+		/* cache the next event */
+		x->strms[x->nstrms].ev = echs_stream_next(strm->s.s);
+		/* inc */
+		x->nstrms++;
+	}
+
+	/* set last slot */
+	x->last = (echs_event_t){.when = 0, .what = ""};
+
+	/* reset the fn field */
+	smob->fn = SCM_CDR(smob->fn);
+
+	/* we're ready */
+	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
+	return XSMOB;
+#undef FUNC_NAME
+}
+
+SCM_DEFINE(
+	stream, "stream", 0, 0, 1,
+	(SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"stream"
+	SCM XSTRM;
+	echs_stream_t this;
+	int inhibit_tidy_p = 0;
+
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
+	} else if (scm_is_null(SCM_CDR(s)) &&
+		   scm_is_echs_strm(XSTRM = SCM_CAR(s))) {
+		/* special case for just one stream
+		 * make sure we don't free the guy though */
+		inhibit_tidy_p = 1;
+	} else {
+		/* otherwise delegate the hard work to #'make-stream */
+		XSTRM = make_stream(s);
+	}
+
+	{
+		struct echs_mod_smob_s *smob;
+		smob = (void*)SCM_SMOB_DATA(XSTRM);
+		this = smob->s.s;
+	}
+
+	/* just iterate */
+	for (echs_event_t e;
+	     (e = echs_stream_next(this),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		if (UNLIKELY(materialise(e) < 0)) {
+			break;
+		}
+	}
+
+	/* tidy up */
+	if (!inhibit_tidy_p) {
+		scm_smob_free(XSTRM);
+	}
+	return SCM_BOOL_T;
+#undef FUNC_NAME
+}
+
+SCM_DEFINE(
+	filter, "filter", 1, 0, 1,
+	(SCM f, SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"filter"
+	SCM XSTRM;
+	echs_filter_t thif;
+	echs_stream_t this;
+	echs_stream_t strm;
+	int inhibit_tidy_p = 0;
+
+	SCM_VALIDATE_ECHS_FILT(1, f);
+
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
+	} else if (scm_is_null(SCM_CDR(s)) &&
+		   scm_is_echs_strm(XSTRM = SCM_CAR(s))) {
+		/* special case for just one stream
+		 * make sure we don't free the guy though */
+		inhibit_tidy_p = 1;
+	} else {
+		/* otherwise delegate the hard work to #'make-stream */
+		XSTRM = make_stream(s);
+	}
+
+	{
+		struct echs_mod_smob_s *smob;
+		smob = (void*)SCM_SMOB_DATA(XSTRM);
+		this = smob->s.s;
+	}
+
+	{
+		struct echs_mod_smob_s *smob;
+		smob = (void*)SCM_SMOB_DATA(f);
+		thif = smob->f.f;
+	}
+
+	/* generate a filter stream */
+	strm = make_echs_filtstrm(thif, this);
+
+	/* just iterate */
+	for (echs_event_t e;
+	     (e = echs_stream_next(strm),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		if (UNLIKELY(materialise(e) < 0)) {
+			break;
+		}
+	}
+
+	/* tidy up */
+	free_echs_filtstrm(strm);
+
+	if (!inhibit_tidy_p) {
+		scm_smob_free(XSTRM);
+	}
+	return SCM_BOOL_T;
 #undef FUNC_NAME
 }
 
@@ -428,8 +802,6 @@ main(int argc, char **argv)
 {
 	/* command line options */
 	struct echs_args_info argi[1];
-	/* date range to scan through */
-	echs_instant_t till;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {

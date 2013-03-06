@@ -96,6 +96,33 @@ extern echs_filter_t make_echs_filter(echs_instant_t, ...);
  * Filter dtor. */
 extern void free_echs_filter(echs_filter_t);
 
+struct filter_pset_s {
+	enum {
+		PSET_TYP_UNK,
+		PSET_TYP_PTR,
+		PSET_TYP_STR,
+		PSET_TYP_MEM,
+		PSET_TYP_INT,
+		PSET_TYP_DBL,
+	} typ;
+	union {
+		/* values with z == 0 */
+		const void *ptr;
+		intmax_t ival;
+		double dval;
+
+		/* values for which z should be >0 */
+		const void *mem;
+		const char *str;
+	};
+	size_t z;
+};
+
+/**
+ * Set property of F with key K to V. */
+extern void
+echs_filter_pset(echs_filter_t f, const char *k, struct filter_pset_s v);
+
 
 static inline echs_event_t
 echs_stream_next(echs_stream_t s)
