@@ -425,29 +425,6 @@ make_echs_filter(echs_instant_t UNUSED(i), ...)
 	struct clo_s *clo = calloc(1, sizeof(*clo));
 
 	clo->ht = hattrie_create();
-
-	clo->annos = calloc(clo->nannos = 4U, sizeof(*clo->annos));
-	{
-		value_t *x = hattrie_get(clo->ht, "SAT", 3);
-		*x = clo->annos + 0U;
-		clo->annos[0U].immovable = 1;
-	}
-	{
-		value_t *x = hattrie_get(clo->ht, "SUN", 3);
-		*x = clo->annos + 1U;
-		clo->annos[1U].immovable = 1;
-	}
-	{
-		value_t *x = hattrie_get(clo->ht, "XMAS", 4);
-		*x = clo->annos + 2U;
-		clo->annos[2U].movable = 1;
-	}
-	{
-		value_t *x = hattrie_get(clo->ht, "BOXD", 4);
-		*x = clo->annos + 3U;
-		clo->annos[3U].movable = 1;
-	}
-
 	return (echs_filter_t){__in_lieu, clo};
 }
 
@@ -471,6 +448,39 @@ free_echs_filter(echs_filter_t UNUSED(f))
 	}
 	fini_gq(clo->evq->pool);
 	free(clo);
+	return;
+}
+
+void
+echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
+{
+	struct clo_s *clo = f.clo;
+
+	switch (v.typ) {
+	case PSET_TYP_STR: {
+		value_t *x;
+		size_t this = clo->nannos;
+
+		if ((clo->nannos % 16U) == 0U) {
+			size_t ol_z = (clo->nannos + 0U) * sizeof(*clo->annos);
+			size_t nu_z = (clo->nannos + 16U) * sizeof(*clo->annos);
+			clo->annos = realloc(clo->annos, nu_z);
+			memset(clo->annos + clo->nannos, 0, nu_z - ol_z);
+		}
+
+		x = hattrie_get(clo->ht, v.str, v.z);
+		*x = (value_t)(++clo->nannos);
+
+		if (!strcmp(key, ":movable")) {
+			clo->annos[this].movable = 1;
+		} else if (!strcmp(key, ":immovable")) {
+			clo->annos[this].immovable = 1;
+		}
+		break;
+	}
+	default:
+		break;
+	}
 	return;
 }
 
