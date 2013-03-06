@@ -149,7 +149,7 @@ SCM_DEFINE(
 	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
 	/* init */
 	smob->typ = EM_TYP_FILT;
-	smob->s = echs_open(from, fn);
+	smob->f = echs_open_fltdef(from, fn);
 	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
