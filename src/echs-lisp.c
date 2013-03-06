@@ -39,8 +39,15 @@
 #include <libguile.h>
 #include "strdef.h"
 #include "fltdef.h"
+#include "instant.h"
 #include "dt-strpf.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 #if !defined UNUSED
 # define UNUSED(x)		__attribute__((unused)) x
 #endif	/* UNUSED */
@@ -104,7 +111,9 @@ SCM_SYMBOL(sym_top_repl, "top-repl");
 #endif	/* DEBUG_FLAG */
 
 static scm_t_bits scm_tc16_echs_mod;
+/* date range to scan through */
 static echs_instant_t from;
+static echs_instant_t till;
 
 SCM_SYMBOL(scm_sym_load_strm, "load-strm");
 SCM_DEFINE(
@@ -395,6 +404,56 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 }
 
 
+/* beef functionality */
+static int
+materialise(echs_event_t e)
+{
+	static char buf[256];
+	char *bp = buf;
+
+	/* BEST has the guy */
+	bp += dt_strf(buf, sizeof(buf), e.when);
+	*bp++ = '\t';
+	{
+		size_t e_whaz = strlen(e.what);
+		memcpy(bp, e.what, e_whaz);
+		bp += e_whaz;
+	}
+	*bp++ = '\n';
+	*bp = '\0';
+	if (write(STDOUT_FILENO, buf, bp - buf) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+SCM_DEFINE(
+	stream, "stream", 1, 0, 0,
+	(SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"stream"
+	struct echs_mod_smob_s *smob;
+
+	SCM_VALIDATE_SMOB(1, s, echs_mod);
+	smob = (void*)SCM_SMOB_DATA(s);
+
+	if (smob->typ != EM_TYP_STRM) {
+		SCM_WRONG_TYPE_ARG(1, s);
+	}
+
+	/* just iterate */
+	for (echs_event_t e;
+	     (e = echs_stream_next(smob->s.s),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		if (UNLIKELY(materialise(e) < 0)) {
+			break;
+		}
+	}
+	return SCM_BOOL_T;
+#undef FUNC_NAME
+}
+
 void
 init_echs_lisp(void)
 {
@@ -467,8 +526,6 @@ main(int argc, char **argv)
 {
 	/* command line options */
 	struct echs_args_info argi[1];
-	/* date range to scan through */
-	echs_instant_t till;
 	int res = 0;
 
 	if (echs_parser(argc, argv, argi)) {
