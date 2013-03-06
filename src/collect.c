@@ -287,13 +287,13 @@ free_echs_filter(echs_filter_t f)
 }
 
 void
-echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
+echs_filter_pset(echs_filter_t f, const char *key, struct echs_pset_s v)
 {
 	struct clo_s *clo = f.clo;
 
 	if (!strcmp(key, ":as")) {
 		switch (v.typ) {
-		case PSET_TYP_STR:
+		case ECHS_PSET_STR:
 			clo->as = malloc(v.z + 1U/*for ~*/ + 1U/*for \nul*/);
 			clo->as[0] = '~';
 			memcpy(clo->as + 1U, v.str, v.z);
@@ -306,7 +306,7 @@ echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
 	}
 
 	switch (v.typ) {
-	case PSET_TYP_STR: {
+	case ECHS_PSET_STR: {
 		value_t *x;
 
 		if ((clo->nannos % 16U) == 0U) {

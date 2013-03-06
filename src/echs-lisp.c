@@ -71,7 +71,8 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
 
-typedef void(*pset_f)(echs_filter_t, const char*, struct filter_pset_s);
+typedef void(*strm_pset_f)(echs_stream_t, const char*, struct echs_pset_s);
+typedef void(*filt_pset_f)(echs_filter_t, const char*, struct echs_pset_s);
 
 struct echs_mod_smob_s {
 	enum {
@@ -125,15 +126,63 @@ static scm_t_bits scm_tc16_echs_mod;
 static echs_instant_t from;
 static echs_instant_t till;
 
+static const char*
+__stringify(SCM kw)
+{
+	static char buf[64] = ":";
+	SCM kw_str;
+	size_t z;
+
+	kw_str = scm_symbol_to_string(scm_keyword_to_symbol(kw));
+	z = scm_to_locale_stringbuf(kw_str, buf + 1, sizeof(buf) - 2);
+	buf[++z] = '\0';
+	return buf;
+}
+
+static void
+__load_strm_ass_kv(strm_pset_f pset, echs_stream_t s, const char *key, SCM val)
+{
+	if (scm_is_string(val)) {
+		size_t z;
+		char *v = scm_to_locale_stringn(val, &z);
+
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
+		free(v);
+	} else if (scm_is_pair(val)) {
+		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
+			__load_strm_ass_kv(pset, s, key, SCM_CAR(h));
+		}
+	}
+	return;
+}
+
+static void
+__load_filt_ass_kv(filt_pset_f pset, echs_filter_t f, const char *key, SCM val)
+{
+	if (scm_is_string(val)) {
+		size_t z;
+		char *s = scm_to_locale_stringn(val, &z);
+
+		pset(f, key, (struct echs_pset_s){ECHS_PSET_STR, s, z});
+		free(s);
+	} else if (scm_is_pair(val)) {
+		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
+			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
+		}
+	}
+	return;
+}
+
 SCM_SYMBOL(scm_sym_load_strm, "load-strm");
 SCM_DEFINE(
-	load_strm, "load-strm", 1, 0, 0,
-	(SCM dso),
+	load_strm, "load-strm", 1, 0, 1,
+	(SCM dso, SCM rest),
 	"Load the stream from DSO.")
 {
 #define FUNC_NAME	"load-strm"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
+	strm_pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -148,38 +197,27 @@ SCM_DEFINE(
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
 	free(fn);
+
+	/* have we got a pset fun in our filter? */
+	if ((pset = echs_strdef_psetter(smob->s)) == NULL) {
+		goto skip;
+	}
+
+	/* pass the keywords to the psetter */
+	for (SCM k, v = rest; !scm_is_null(v); v = SCM_CDR(v)) {
+		const char *key;
+
+		if (!scm_is_keyword(k = SCM_CAR(v))) {
+			continue;
+		}
+		v = SCM_CDR(v);
+
+		key = __stringify(k);
+		__load_strm_ass_kv(pset, smob->s.s, key, SCM_CAR(v));
+	}
+skip:
 	return XSMOB;
 #undef FUNC_NAME
-}
-
-static void
-__load_filt_ass_kv(pset_f pset, echs_filter_t f, const char *key, SCM val)
-{
-	if (scm_is_string(val)) {
-		size_t z;
-		char *s = scm_to_locale_stringn(val, &z);
-
-		pset(f, key, (struct filter_pset_s){PSET_TYP_STR, s, z});
-		free(s);
-	} else if (scm_is_pair(val)) {
-		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
-			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
-		}
-	}
-	return;
-}
-
-static const char*
-__stringify(SCM kw)
-{
-	static char buf[64] = ":";
-	SCM kw_str;
-	size_t z;
-
-	kw_str = scm_symbol_to_string(scm_keyword_to_symbol(kw));
-	z = scm_to_locale_stringbuf(kw_str, buf + 1, sizeof(buf) - 2);
-	buf[++z] = '\0';
-	return buf;
 }
 
 SCM_SYMBOL(scm_sym_load_filt, "load-filt");
@@ -191,7 +229,7 @@ SCM_DEFINE(
 #define FUNC_NAME	"load-filt"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
-	pset_f pset;
+	filt_pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -378,25 +416,36 @@ scm_m_defstrm(SCM expr, SCM UNUSED(env))
 #define FUNC_NAME	"defstrm"
 	SCM tail = SCM_CDR(expr);
 	SCM dso = SCM_EOL;
+	SCM pset;
 	SCM sym;
 
 	sym = SCM_CAR(tail);
 	SCM_VALIDATE_SYMBOL(1, sym);
 
-	if (!scm_is_null((tail = SCM_CDR(tail)))) {
+	expr = pset = __begin(SCM_EOL);
+
+	while (!scm_is_null((tail = SCM_CDR(tail)))) {
 		SCM tmp;
 
 		if (scm_is_keyword(tmp = SCM_CAR(tail)) &&
 		    scm_is_eq(tmp, k_from)) {
 			tail = SCM_CDR(tail);
 			dso = SCM_CAR(tail);
+		} else if (scm_is_keyword(tmp)) {
+			tail = SCM_CDR(tail);
+			pset = __pset(pset, sym, tmp, SCM_CAR(tail));
+		} else {
+			/* must be args then innit? */
+			pset = __pset(pset, sym, k_args, SCM_CAR(tail));
 		}
 	}
 
 	if (scm_is_null(dso)) {
 		dso = scm_symbol_to_string(sym);
 	}
-	expr = __define(sym, scm_cons2(scm_sym_load_strm, dso, SCM_EOL));
+
+	/* bang the define */
+	expr = __define(sym, scm_cons2(scm_sym_load_strm, dso, SCM_CDR(expr)));
 
 #if defined DEBUG_FLAG
 	{

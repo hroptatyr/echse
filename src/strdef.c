@@ -116,4 +116,32 @@ echs_close(echs_strdef_t sd)
 	return;
 }
 
+void(*
+	    echs_strdef_psetter(echs_strdef_t sf)
+	)(echs_stream_t, const char*, struct echs_pset_s)
+{
+	typedef void(*echs_pset_f)(
+		echs_stream_t, const char*, struct echs_pset_s);
+
+	if (sf.m != NULL) {
+		echs_mod_f f;
+
+		if ((f = echs_mod_sym(sf.m, "echs_stream_pset")) != NULL) {
+			return (echs_pset_f)f;
+		}
+	}
+	return NULL;
+}
+
+void
+echs_strdef_pset(echs_strdef_t sf, const char *k, struct echs_pset_s v)
+{
+	void(*f)(echs_stream_t, const char*, struct echs_pset_s);
+
+	if ((f = echs_strdef_psetter(sf)) != NULL) {
+		f(sf.s, k, v);
+	}
+	return;
+}
+
 /* strdef.c ends here */
