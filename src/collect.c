@@ -294,7 +294,10 @@ echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
 	if (!strcmp(key, ":as")) {
 		switch (v.typ) {
 		case PSET_TYP_STR:
-			clo->as = strndup(v.str, v.z);
+			clo->as = malloc(v.z + 1U/*for ~*/ + 1U/*for \nul*/);
+			clo->as[0] = '~';
+			memcpy(clo->as + 1U, v.str, v.z);
+			clo->as[1U + v.z] = '\0';
 			break;
 		default:
 			break;
