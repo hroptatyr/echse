@@ -669,6 +669,66 @@ SCM_DEFINE(
 #undef FUNC_NAME
 }
 
+SCM_DEFINE(
+	filter, "filter", 1, 0, 1,
+	(SCM f, SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"filter"
+	SCM XSTRM;
+	echs_filter_t thif;
+	echs_stream_t this;
+	echs_stream_t strm;
+	int inhibit_tidy_p = 0;
+
+	SCM_VALIDATE_ECHS_FILT(1, f);
+
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
+	} else if (scm_is_null(SCM_CDR(s)) &&
+		   scm_is_echs_strm(XSTRM = SCM_CAR(s))) {
+		/* special case for just one stream
+		 * make sure we don't free the guy though */
+		inhibit_tidy_p = 1;
+	} else {
+		/* otherwise delegate the hard work to #'make-stream */
+		XSTRM = make_stream(s);
+	}
+
+	{
+		struct echs_mod_smob_s *smob;
+		smob = (void*)SCM_SMOB_DATA(XSTRM);
+		this = smob->s.s;
+	}
+
+	{
+		struct echs_mod_smob_s *smob;
+		smob = (void*)SCM_SMOB_DATA(f);
+		thif = smob->f.f;
+	}
+
+	/* generate a filter stream */
+	strm = make_echs_filtstrm(thif, this);
+
+	/* just iterate */
+	for (echs_event_t e;
+	     (e = echs_stream_next(strm),
+	      !__event_0_p(e) && __event_le_p(e, till));) {
+		if (UNLIKELY(materialise(e) < 0)) {
+			break;
+		}
+	}
+
+	/* tidy up */
+	free_echs_filtstrm(strm);
+
+	if (!inhibit_tidy_p) {
+		scm_smob_free(XSTRM);
+	}
+	return SCM_BOOL_T;
+#undef FUNC_NAME
+}
+
 
 void
 init_echs_lisp(void)
