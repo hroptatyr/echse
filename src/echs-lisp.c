@@ -87,6 +87,16 @@ struct echs_mod_smob_s {
 	SCM fn;
 };
 
+struct echse_clo_s {
+	size_t nstrms;
+	struct {
+		echs_stream_t s;
+		echs_event_t ev;
+	} *strms;
+	/* last event served */
+	echs_event_t last;
+};
+
 
 #if defined __INTEL_COMPILER
 # pragma warning (disable:1418)
@@ -259,7 +269,16 @@ free_echs_mod(SCM obj)
 
 	switch (smob->typ) {
 	case EM_TYP_STRM:
-		echs_close(smob->s);
+		if (smob->s.m != NULL) {
+			/* probably a DSO */
+			echs_close(smob->s);
+		} else {
+			/* probably our shit */
+			void *sc = smob->s.s.clo;
+
+			scm_gc_free(sc, sizeof(struct echse_clo_s), "echs-mod");
+			smob->s.s = (echs_stream_t){NULL, NULL};;
+		}
 		break;
 	default:
 		/* bad sign */
@@ -406,16 +425,6 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 
 
 /* beef functionality */
-struct echse_clo_s {
-	size_t nstrms;
-	struct {
-		echs_stream_t s;
-		echs_event_t ev;
-	} *strms;
-	/* last event served */
-	echs_event_t last;
-};
-
 static inline bool
 __events_eq_p(echs_event_t e1, echs_event_t e2)
 {
@@ -513,6 +522,79 @@ __stream(void *clo)
 }
 
 SCM_DEFINE(
+	make_stream, "make-stream", 0, 0, 1,
+	(SCM s),
+	"yep.")
+{
+#define FUNC_NAME	"make-stream"
+	SCM XSMOB;
+	SCM gath;
+	struct echs_mod_smob_s *smob;
+	struct echse_clo_s *x;
+	echs_stream_t this;
+	size_t k = 0;
+
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
+	}
+
+	/* alloc and ... */
+	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
+	x = scm_gc_malloc(sizeof(*x), FUNC_NAME);
+	this = (echs_stream_t){__stream, x};
+	/* init */
+	smob->typ = EM_TYP_STRM;
+	smob->s = (echs_strdef_t){this, NULL};
+	smob->fn = gath = scm_cons(SCM_BOOL_F, SCM_EOL);
+
+	/* rinse */
+	memset(x, 0, sizeof(*x));
+
+	for (SCM tail = s; !scm_is_null(tail); tail = SCM_CDR(tail)) {
+		struct echs_mod_smob_s *strm;
+		SCM XSTRM = SCM_CAR(tail);
+
+		SCM_VALIDATE_SMOB(++k, XSTRM, echs_mod);
+		strm = (void*)SCM_SMOB_DATA(XSTRM);
+
+		if (strm->typ != EM_TYP_STRM) {
+			SCM_WRONG_TYPE_ARG(k, XSTRM);
+		}
+
+		SCM_SETCDR(gath, scm_cons(XSTRM, SCM_EOL));
+		gath = SCM_CDR(gath);
+
+		if (UNLIKELY((x->nstrms % 64U) == 0U)) {
+			/* realloc the streams array */
+			size_t ol_z = (x->nstrms + 0U) * sizeof(*x->strms);
+			size_t nu_z = (x->nstrms + 64U) * sizeof(*x->strms);
+
+			x->strms = scm_gc_realloc(
+				x->strms, ol_z, nu_z, FUNC_NAME);
+			memset(x->strms + x->nstrms, 0, nu_z - ol_z);
+		}
+
+		/* bang stream */
+		x->strms[x->nstrms].s = strm->s.s;
+		/* cache the next event */
+		x->strms[x->nstrms].ev = echs_stream_next(strm->s.s);
+		/* inc */
+		x->nstrms++;
+	}
+
+	/* set last slot */
+	x->last = (echs_event_t){.when = 0, .what = ""};
+
+	/* reset the fn field */
+	smob->fn = SCM_CDR(smob->fn);
+
+	/* we're ready */
+	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
+	return XSMOB;
+#undef FUNC_NAME
+}
+
+SCM_DEFINE(
 	stream, "stream", 0, 0, 1,
 	(SCM s),
 	"yep.")
@@ -556,8 +638,6 @@ SCM_DEFINE(
 
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
-
-	printf("nstrms %zu\n", x->nstrms);
 
 	/* set up this stream */
 	this.f = __stream;
