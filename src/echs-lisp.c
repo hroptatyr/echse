@@ -89,8 +89,8 @@ struct echs_mod_smob_s {
 MYSCM_SYNTAX(s_defstrm, "defstrm", scm_m_defstrm);
 MYSCM_SYNTAX(s_deffilt, "deffilt", scm_m_deffilt);
 
-SCM_GLOBAL_KEYWORD(k_from, "from");
-SCM_GLOBAL_KEYWORD(k_args, "args");
+SCM_KEYWORD(k_from, "from");
+SCM_KEYWORD(k_args, "args");
 
 SCM_SYMBOL(sym_load, "load");
 SCM_SYMBOL(sym_begin, "begin");
