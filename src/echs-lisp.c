@@ -406,6 +406,23 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 
 
 /* beef functionality */
+struct echse_clo_s {
+	size_t nstrms;
+	struct {
+		echs_stream_t s;
+		echs_event_t ev;
+	} *strms;
+	/* last event served */
+	echs_event_t last;
+};
+
+static inline bool
+__events_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return __inst_eq_p(e1.when, e2.when) &&
+		(e1.what == e2.what || strcmp(e1.what, e2.what) == 0);
+}
+
 static int
 materialise(echs_event_t e)
 {
@@ -428,33 +445,141 @@ materialise(echs_event_t e)
 	return 0;
 }
 
+static echs_event_t
+__refill(echs_stream_t s, echs_instant_t last)
+{
+	echs_event_t e;
+
+	do {
+		if (__event_0_p(e = echs_stream_next(s))) {
+			break;
+		}
+	} while (__event_lt_p(e, last));
+	return e;
+}
+
+static echs_event_t
+__stream(void *clo)
+{
+	struct echse_clo_s *x = clo;
+	echs_instant_t bestinst;
+	size_t bestindx;
+
+	if (UNLIKELY(x->strms == NULL)) {
+		return (echs_event_t){0};
+	}
+	/* start out with the best, non-0 index */
+	bestindx = -1UL;
+	bestinst = (echs_instant_t){.u = (uint64_t)-1};
+
+	/* try and find the very next event out of all instants */
+	for (size_t i = 0; i < x->nstrms; i++) {
+		echs_instant_t inst = x->strms[i].ev.when;
+
+		if (x->strms[i].s.f == NULL) {
+			continue;
+		} else if (__inst_0_p(inst)) {
+		clos_0:
+			memset(x->strms + i, 0, sizeof(*x->strms));
+			continue;
+		} else if (__inst_lt_p(inst, x->last.when) ||
+			   __events_eq_p(x->strms[i].ev, x->last)) {
+			echs_stream_t s = x->strms[i].s;
+			echs_event_t e;
+
+			if (__event_0_p(e = __refill(s, x->last.when))) {
+				goto clos_0;
+			}
+
+			/* cache E */
+			x->strms[i].ev = e;
+			inst = e.when;
+		}
+
+		/* do the actual check */
+		if (__inst_lt_p(inst, bestinst) || __inst_0_p(bestinst)) {
+			bestindx = i;
+			bestinst = x->strms[bestindx].ev.when;
+		}
+	}
+
+	/* BEST has the guy */
+	if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
+		/* big fucking fuck */
+		return (echs_event_t){0};
+	}
+	/* otherwise just use the cache */
+	return x->strms[bestindx].ev;
+}
+
 SCM_DEFINE(
-	stream, "stream", 1, 0, 0,
+	stream, "stream", 0, 0, 1,
 	(SCM s),
 	"yep.")
 {
 #define FUNC_NAME	"stream"
-	struct echs_mod_smob_s *smob;
+	static struct echse_clo_s x[1];
+	echs_stream_t this;
+	size_t k = 0;
 
-	SCM_VALIDATE_SMOB(1, s, echs_mod);
-	smob = (void*)SCM_SMOB_DATA(s);
-
-	if (smob->typ != EM_TYP_STRM) {
-		SCM_WRONG_TYPE_ARG(1, s);
+	if (scm_is_null(s)) {
+		SCM_WRONG_NUM_ARGS();
 	}
+
+	for (SCM tail = s; !scm_is_null(tail); tail = SCM_CDR(tail)) {
+		struct echs_mod_smob_s *smob;
+		SCM strm = SCM_CAR(tail);
+
+		SCM_VALIDATE_SMOB(++k, strm, echs_mod);
+		smob = (void*)SCM_SMOB_DATA(strm);
+
+		if (smob->typ != EM_TYP_STRM) {
+			SCM_WRONG_TYPE_ARG(k, strm);
+		}
+
+		if (UNLIKELY((x->nstrms % 64U) == 0U)) {
+			/* realloc the streams array */
+			size_t ol_z = (x->nstrms + 0U) * sizeof(*x->strms);
+			size_t nu_z = (x->nstrms + 64U) * sizeof(*x->strms);
+
+			x->strms = realloc(x->strms, nu_z);
+			memset(x->strms + x->nstrms, 0, nu_z - ol_z);
+		}
+
+		/* bang stream */
+		x->strms[x->nstrms].s = smob->s.s;
+		/* cache the next event */
+		x->strms[x->nstrms].ev = echs_stream_next(smob->s.s);
+		/* inc */
+		x->nstrms++;
+	}
+
+	/* set last slot */
+	x->last = (echs_event_t){.when = 0, .what = ""};
+
+	printf("nstrms %zu\n", x->nstrms);
+
+	/* set up this stream */
+	this.f = __stream;
+	this.clo = x;
 
 	/* just iterate */
 	for (echs_event_t e;
-	     (e = echs_stream_next(smob->s.s),
+	     (e = echs_stream_next(this),
 	      !__event_0_p(e) && __event_le_p(e, till));) {
 		if (UNLIKELY(materialise(e) < 0)) {
 			break;
 		}
 	}
+
+	/* tidy up */
+	free(x->strms);
+	memset(x, 0, sizeof(*x));
 	return SCM_BOOL_T;
 #undef FUNC_NAME
 }
 
+
 void
 init_echs_lisp(void)
 {
