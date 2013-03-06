@@ -71,7 +71,7 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
 
-typedef void(*pset_f)(echs_filter_t, const char*, struct filter_pset_s);
+typedef void(*filt_pset_f)(echs_filter_t, const char*, struct echs_pset_s);
 
 struct echs_mod_smob_s {
 	enum {
@@ -153,13 +153,13 @@ SCM_DEFINE(
 }
 
 static void
-__load_filt_ass_kv(pset_f pset, echs_filter_t f, const char *key, SCM val)
+__load_filt_ass_kv(filt_pset_f pset, echs_filter_t f, const char *key, SCM val)
 {
 	if (scm_is_string(val)) {
 		size_t z;
 		char *s = scm_to_locale_stringn(val, &z);
 
-		pset(f, key, (struct filter_pset_s){PSET_TYP_STR, s, z});
+		pset(f, key, (struct echs_pset_s){ECHS_PSET_STR, s, z});
 		free(s);
 	} else if (scm_is_pair(val)) {
 		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
@@ -191,7 +191,7 @@ SCM_DEFINE(
 #define FUNC_NAME	"load-filt"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
-	pset_f pset;
+	filt_pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
