@@ -416,25 +416,36 @@ scm_m_defstrm(SCM expr, SCM UNUSED(env))
 #define FUNC_NAME	"defstrm"
 	SCM tail = SCM_CDR(expr);
 	SCM dso = SCM_EOL;
+	SCM pset;
 	SCM sym;
 
 	sym = SCM_CAR(tail);
 	SCM_VALIDATE_SYMBOL(1, sym);
 
-	if (!scm_is_null((tail = SCM_CDR(tail)))) {
+	expr = pset = __begin(SCM_EOL);
+
+	while (!scm_is_null((tail = SCM_CDR(tail)))) {
 		SCM tmp;
 
 		if (scm_is_keyword(tmp = SCM_CAR(tail)) &&
 		    scm_is_eq(tmp, k_from)) {
 			tail = SCM_CDR(tail);
 			dso = SCM_CAR(tail);
+		} else if (scm_is_keyword(tmp)) {
+			tail = SCM_CDR(tail);
+			pset = __pset(pset, sym, tmp, SCM_CAR(tail));
+		} else {
+			/* must be args then innit? */
+			pset = __pset(pset, sym, k_args, SCM_CAR(tail));
 		}
 	}
 
 	if (scm_is_null(dso)) {
 		dso = scm_symbol_to_string(sym);
 	}
-	expr = __define(sym, scm_cons2(scm_sym_load_strm, dso, SCM_EOL));
+
+	/* bang the define */
+	expr = __define(sym, scm_cons2(scm_sym_load_strm, dso, SCM_CDR(expr)));
 
 #if defined DEBUG_FLAG
 	{
