@@ -58,6 +58,12 @@ extern void
 echs_fltdef_pset(echs_fltdef_t f, const char *k, struct filter_pset_s v);
 
 /**
+ * Return the psetter of filter definition F. */
+extern void(*
+	    echs_fltdef_psetter(echs_fltdef_t)
+	)(echs_filter_t, const char*, struct filter_pset_s);
+
+/**
  * Plug a stream S into a filter F and return the result stream. */
 extern echs_stream_t
 make_echs_filtstrm(echs_filter_t f, echs_stream_t s);
