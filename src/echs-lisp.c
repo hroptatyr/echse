@@ -263,6 +263,7 @@ free_echs_mod(SCM obj)
 		break;
 	default:
 		/* bad sign */
+		echs_close_fltdef(smob->f);
 		break;
 	}
 	scm_gc_free(smob, sizeof(*smob), "echs-mod");
