@@ -62,27 +62,4 @@ make_echs_filtstrm(echs_filter_t f, echs_stream_t s);
  * This will not free the input stream nor the filter. */
 extern void free_echs_filtstrm(echs_stream_t);
 
-struct fltdef_pset_s {
-	enum {
-		PSET_TYP_UNK,
-		PSET_TYP_PTR,
-		PSET_TYP_STR,
-		PSET_TYP_INT,
-		PSET_TYP_DBL,
-	} typ;
-	union {
-		void *ptr;
-		const void *cptr;
-		char *str;
-		const char *cstr;
-		intmax_t ival;
-		double dval;
-	};
-};
-
-/**
- * Set property of F with key K to V. */
-extern void
-echs_fltdef_pset(echs_fltdef_t, const char *k, struct fltdef_pset_s v);
-
 #endif	/* INCLUDED_fltdef_h_ */
