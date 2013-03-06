@@ -452,12 +452,12 @@ free_echs_filter(echs_filter_t UNUSED(f))
 }
 
 void
-echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
+echs_filter_pset(echs_filter_t f, const char *key, struct echs_pset_s v)
 {
 	struct clo_s *clo = f.clo;
 
 	switch (v.typ) {
-	case PSET_TYP_STR: {
+	case ECHS_PSET_STR: {
 		value_t *x;
 		size_t this = clo->nannos;
 
