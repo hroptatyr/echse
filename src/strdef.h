@@ -51,4 +51,15 @@ struct echs_strdef_s {
 extern echs_strdef_t echs_open(echs_instant_t i, const char *strdef);
 extern void echs_close(echs_strdef_t);
 
+/**
+ * Pass property (k, v) to stream definition S. */
+extern void
+echs_strdef_pset(echs_strdef_t s, const char *k, struct echs_pset_s v);
+
+/**
+ * Return the psetter of stream definition S. */
+extern void(*
+	    echs_strdef_psetter(echs_strdef_t S)
+	)(echs_stream_t, const char*, struct echs_pset_s);
+
 #endif	/* INCLUDED_strdef_h_ */
