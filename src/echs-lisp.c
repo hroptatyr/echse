@@ -94,7 +94,6 @@ SCM_KEYWORD(k_args, "args");
 
 SCM_SYMBOL(sym_load, "load");
 SCM_SYMBOL(sym_begin, "begin");
-SCM_SYMBOL(sym_pset, "set-object-property!");
 SCM_SYMBOL(sym_rset, "read-set!");
 SCM_SYMBOL(sym_keywords, "keywords");
 SCM_SYMBOL(sym_prefix, "prefix");
@@ -231,15 +230,10 @@ _load(const char *fn)
 }
 
 static SCM
-__pset(SCM sym, SCM what, SCM val)
+__pset(SCM curr, SCM UNUSED(sym), SCM what, SCM val)
 {
-	return scm_list_4(sym_pset, sym, what, val);
-}
-
-static SCM
-_pset(SCM sym, SCM what, SCM val)
-{
-	return scm_cons(__pset(sym, what, val), SCM_EOL);
+	SCM_SETCDR(curr, scm_cons2(what, val, SCM_EOL));
+	return SCM_CDR(SCM_CDR(curr));
 }
 
 static SCM
@@ -323,12 +317,10 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 			dso = SCM_CAR(tail);
 		} else if (scm_is_keyword(tmp)) {
 			tail = SCM_CDR(tail);
-			SCM_SETCDR(pset, _pset(sym, tmp, SCM_CAR(tail)));
-			pset = SCM_CDR(pset);
+			pset = __pset(pset, sym, tmp, SCM_CAR(tail));
 		} else {
 			/* must be args then innit? */
-			SCM_SETCDR(pset, _pset(sym, k_args, SCM_CAR(tail)));
-			pset = SCM_CDR(pset);
+			pset = __pset(pset, sym, k_args, SCM_CAR(tail));
 		}
 	}
 
@@ -337,12 +329,7 @@ scm_m_deffilt(SCM expr, SCM UNUSED(env))
 	}
 
 	/* bang the define */
-	{
-		SCM ls = scm_cons2(scm_sym_load_filt, dso, SCM_EOL);
-		SCM d = __define(sym, ls);
-
-		SCM_SETCDR(expr, scm_cons(d, SCM_CDR(expr)));
-	}
+	expr = __define(sym, scm_cons2(scm_sym_load_filt, dso, SCM_CDR(expr)));
 
 #if defined DEBUG_FLAG
 	{
