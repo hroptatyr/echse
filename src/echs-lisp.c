@@ -97,6 +97,7 @@ SCM_SYMBOL(sym_top_repl, "top-repl");
 static scm_t_bits scm_tc16_echs_mod;
 static echs_instant_t from;
 
+SCM_SYMBOL(scm_sym_load_strm, "load-strm");
 SCM_DEFINE(
 	load_strm, "load-strm", 1, 0, 0,
 	(SCM dso),
@@ -122,8 +123,8 @@ SCM_DEFINE(
 	return XSMOB;
 #undef FUNC_NAME
 }
-SCM_GLOBAL_SYMBOL(scm_sym_load_strm, s_load_strm);
 
+SCM_SYMBOL(scm_sym_load_filt, "load-filt");
 SCM_DEFINE(
 	load_filt, "load-filt", 1, 0, 0,
 	(SCM dso),
@@ -149,7 +150,6 @@ SCM_DEFINE(
 	return XSMOB;
 #undef FUNC_NAME
 }
-SCM_GLOBAL_SYMBOL(scm_sym_load_filt, s_load_filt);
 
 static SCM
 mark_echs_mod(SCM obj)
