@@ -51,9 +51,15 @@
 	 SCM_MICRO_VERSION)
 
 #if GUILE_VERSION >= 20000U
-# define MYSCM_SYNTAX(x, y, z)	SCM_SYNTAX(y, z)
+# define MYSCM_SYNTAX(RANAME, STR, CFN)					\
+SCM_SNARF_HERE(static SCM CFN(SCM xorig, SCM env))			\
+SCM_SNARF_INIT(scm_c_define(STR, scm_i_make_primitive_macro(STR, CFN)))
+
 #elif GUILE_VERSION >= 10800U
-# define MYSCM_SYNTAX(x, y, z)	SCM_SYNTAX(x, y, scm_i_makbimacro, z)
+# define MYSCM_SYNTAX(RANAME, STR, CFN)				\
+SCM_SNARF_HERE(static const char RANAME[]=STR)			\
+SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
+
 #else
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
