@@ -79,31 +79,14 @@ struct echs_filter_s {
 	void *clo;
 };
 
-
-/**
- * Stream ctor. */
-extern echs_stream_t make_echs_stream(echs_instant_t, ...);
-
-/**
- * Stream dtor. */
-extern void free_echs_stream(echs_stream_t);
-
-/**
- * Filter ctor. */
-extern echs_filter_t make_echs_filter(echs_instant_t, ...);
-
-/**
- * Filter dtor. */
-extern void free_echs_filter(echs_filter_t);
-
-struct filter_pset_s {
+struct echs_pset_s {
 	enum {
-		PSET_TYP_UNK,
-		PSET_TYP_PTR,
-		PSET_TYP_STR,
-		PSET_TYP_MEM,
-		PSET_TYP_INT,
-		PSET_TYP_DBL,
+		ECHS_PSET_UNK,
+		ECHS_PSET_PTR,
+		ECHS_PSET_STR,
+		ECHS_PSET_MEM,
+		ECHS_PSET_INT,
+		ECHS_PSET_DBL,
 	} typ;
 	union {
 		/* values with z == 0 */
@@ -118,10 +101,32 @@ struct filter_pset_s {
 	size_t z;
 };
 
+
+/**
+ * Stream ctor. */
+extern echs_stream_t make_echs_stream(echs_instant_t, ...);
+
+/**
+ * Stream dtor. */
+extern void free_echs_stream(echs_stream_t);
+
+/**
+ * Set property of S with key K to V. */
+extern void
+echs_stream_pset(echs_stream_t s, const char *k, struct echs_pset_s v);
+
+/**
+ * Filter ctor. */
+extern echs_filter_t make_echs_filter(echs_instant_t, ...);
+
+/**
+ * Filter dtor. */
+extern void free_echs_filter(echs_filter_t);
+
 /**
  * Set property of F with key K to V. */
 extern void
-echs_filter_pset(echs_filter_t f, const char *k, struct filter_pset_s v);
+echs_filter_pset(echs_filter_t f, const char *k, struct echs_pset_s v);
 
 
 static inline echs_event_t
