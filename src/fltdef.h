@@ -55,13 +55,13 @@ extern void echs_close_fltdef(echs_fltdef_t);
 /**
  * Pass property (k, v) to filter definition F. */
 extern void
-echs_fltdef_pset(echs_fltdef_t f, const char *k, struct filter_pset_s v);
+echs_fltdef_pset(echs_fltdef_t f, const char *k, struct echs_pset_s v);
 
 /**
  * Return the psetter of filter definition F. */
 extern void(*
 	    echs_fltdef_psetter(echs_fltdef_t)
-	)(echs_filter_t, const char*, struct filter_pset_s);
+	)(echs_filter_t, const char*, struct echs_pset_s);
 
 /**
  * Plug a stream S into a filter F and return the result stream. */
