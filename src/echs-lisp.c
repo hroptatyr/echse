@@ -55,6 +55,8 @@
 SCM_SNARF_HERE(static SCM CFN(SCM xorig, SCM env))			\
 SCM_SNARF_INIT(scm_c_define(STR, scm_i_make_primitive_macro(STR, CFN)))
 
+extern SCM scm_i_make_primitive_macro(const char*, scm_t_macro_primitive);
+
 #elif GUILE_VERSION >= 10800U
 # define MYSCM_SYNTAX(RANAME, STR, CFN)				\
 SCM_SNARF_HERE(static const char RANAME[]=STR)			\
