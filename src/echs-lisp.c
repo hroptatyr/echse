@@ -53,21 +53,7 @@
 #if GUILE_VERSION >= 20000U
 # define MYSCM_SYNTAX(RANAME, STR, CFN)					\
 SCM_SNARF_HERE(static SCM CFN(SCM xorig, SCM env))			\
-SCM_SNARF_INIT(scm_c_define(STR, __i_make_primitive_macro(STR, CFN)))
-
-static SCM
-__i_make_primitive_macro(const char *name, scm_t_macro_primitive fn)
-{
-	extern scm_t_bits scm_tc16_macro;
-	SCM z = scm_words(scm_tc16_macro, 5);
-	SCM sname = scm_from_locale_symbol(name);
-
-	SCM_SET_SMOB_DATA_N(z, 1, (scm_t_bits)fn);
-	SCM_SET_SMOB_OBJECT_N(z, 2, sname);
-	SCM_SET_SMOB_OBJECT_N(z, 3, SCM_BOOL_F);
-	SCM_SET_SMOB_OBJECT_N(z, 4, SCM_BOOL_F);
-	return z;
-}
+SCM_SNARF_INIT(scm_c_define(STR, scm_i_make_primitive_macro(STR, CFN)))
 
 #elif GUILE_VERSION >= 10800U
 # define MYSCM_SYNTAX(RANAME, STR, CFN)				\
