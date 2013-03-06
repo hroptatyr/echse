@@ -101,17 +101,21 @@ struct filter_pset_s {
 		PSET_TYP_UNK,
 		PSET_TYP_PTR,
 		PSET_TYP_STR,
+		PSET_TYP_MEM,
 		PSET_TYP_INT,
 		PSET_TYP_DBL,
 	} typ;
 	union {
-		void *ptr;
-		const void *cptr;
-		char *str;
-		const char *cstr;
+		/* values with z == 0 */
+		const void *ptr;
 		intmax_t ival;
 		double dval;
+
+		/* values for which z should be >0 */
+		const void *mem;
+		const char *str;
 	};
+	size_t z;
 };
 
 /**
