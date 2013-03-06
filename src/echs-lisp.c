@@ -301,9 +301,26 @@ scm_is_echs_strm(SCM x)
 	return 0;
 }
 
+static int
+scm_is_echs_filt(SCM x)
+{
+	struct echs_mod_smob_s *smob;
+
+	if (SCM_TYP16_PREDICATE(scm_tc16_echs_mod, x) &&
+	    (smob = (void*)SCM_SMOB_DATA(x))->typ == EM_TYP_FILT) {
+		return 1;
+	}
+	return 0;
+}
+
 #define SCM_VALIDATE_ECHS_STRM(pos, obj)				\
 	do {								\
 		SCM_ASSERT(scm_is_echs_strm(obj), obj, pos, FUNC_NAME);	\
+	} while (0)
+
+#define SCM_VALIDATE_ECHS_FILT(pos, obj)				\
+	do {								\
+		SCM_ASSERT(scm_is_echs_filt(obj), obj, pos, FUNC_NAME);	\
 	} while (0)
 
 
