@@ -83,7 +83,9 @@ struct echs_mod_smob_s {
 
 #if defined __INTEL_COMPILER
 # pragma warning (disable:1418)
+# pragma warning (disable:1419)
 # pragma warning (disable:981)
+# pragma warning (disable:2415)
 #endif	/* __INTEL_COMPILER */
 
 MYSCM_SYNTAX(s_defstrm, "defstrm", scm_m_defstrm);
