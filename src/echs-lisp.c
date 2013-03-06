@@ -613,48 +613,27 @@ SCM_DEFINE(
 	"yep.")
 {
 #define FUNC_NAME	"stream"
-	static struct echse_clo_s x[1];
+	SCM XSTRM;
 	echs_stream_t this;
-	size_t k = 0;
+	int inhibit_tidy_p = 0;
 
 	if (scm_is_null(s)) {
 		SCM_WRONG_NUM_ARGS();
+	} else if (scm_is_null(SCM_CDR(s)) &&
+		   scm_is_echs_strm(XSTRM = SCM_CAR(s))) {
+		/* special case for just one stream
+		 * make sure we don't free the guy though */
+		inhibit_tidy_p = 1;
+	} else {
+		/* otherwise delegate the hard work to #'make-stream */
+		XSTRM = make_stream(s);
 	}
 
-	for (SCM tail = s; !scm_is_null(tail); tail = SCM_CDR(tail)) {
+	{
 		struct echs_mod_smob_s *smob;
-		SCM strm = SCM_CAR(tail);
-
-		SCM_VALIDATE_SMOB(++k, strm, echs_mod);
-		smob = (void*)SCM_SMOB_DATA(strm);
-
-		if (smob->typ != EM_TYP_STRM) {
-			SCM_WRONG_TYPE_ARG(k, strm);
-		}
-
-		if (UNLIKELY((x->nstrms % 64U) == 0U)) {
-			/* realloc the streams array */
-			size_t ol_z = (x->nstrms + 0U) * sizeof(*x->strms);
-			size_t nu_z = (x->nstrms + 64U) * sizeof(*x->strms);
-
-			x->strms = realloc(x->strms, nu_z);
-			memset(x->strms + x->nstrms, 0, nu_z - ol_z);
-		}
-
-		/* bang stream */
-		x->strms[x->nstrms].s = smob->s.s;
-		/* cache the next event */
-		x->strms[x->nstrms].ev = echs_stream_next(smob->s.s);
-		/* inc */
-		x->nstrms++;
+		smob = (void*)SCM_SMOB_DATA(XSTRM);
+		this = smob->s.s;
 	}
-
-	/* set last slot */
-	x->last = (echs_event_t){.when = 0, .what = ""};
-
-	/* set up this stream */
-	this.f = __stream;
-	this.clo = x;
 
 	/* just iterate */
 	for (echs_event_t e;
@@ -666,8 +645,9 @@ SCM_DEFINE(
 	}
 
 	/* tidy up */
-	free(x->strms);
-	memset(x, 0, sizeof(*x));
+	if (!inhibit_tidy_p) {
+		scm_smob_free(XSTRM);
+	}
 	return SCM_BOOL_T;
 #undef FUNC_NAME
 }
