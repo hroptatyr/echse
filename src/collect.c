@@ -82,7 +82,7 @@ struct clo_s {
 	hattrie_t *ht;
 
 	/* them alias */
-	const char *as;
+	char *as;
 
 	size_t nannos;
 	struct ev_anno_s *annos;
@@ -278,6 +278,9 @@ free_echs_filter(echs_filter_t f)
 		clo->annos = NULL;
 		clo->nannos = 0U;
 	}
+	if (LIKELY(clo->as != NULL)) {
+		free(clo->as);
+	}
 	fini_gq(clo->evq->pool);
 	free(clo);
 	return;
@@ -291,7 +294,7 @@ echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
 	if (!strcmp(key, ":as")) {
 		switch (v.typ) {
 		case PSET_TYP_STR:
-			clo->as = v.str;
+			clo->as = strndup(v.str, v.z);
 			break;
 		default:
 			break;
@@ -310,7 +313,7 @@ echs_filter_pset(echs_filter_t f, const char *key, struct filter_pset_s v)
 			memset(clo->annos + clo->nannos, 0, nu_z - ol_z);
 		}
 
-		x = hattrie_get(clo->ht, v.str, strlen(v.str));
+		x = hattrie_get(clo->ht, v.str, v.z);
 		*x = (value_t)(++clo->nannos);
 		break;
 	}
