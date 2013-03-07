@@ -166,8 +166,11 @@ __stream(void *clo)
 		}
 	}
 
-	/* BEST has the guy */
-	if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
+	/* BEST has the guy, or has he nought? */
+	if (UNLIKELY(bestindx == -1UL)) {
+		/* great */
+		return (echs_event_t){0};
+	} else if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
 		/* big fucking fuck */
 		return (echs_event_t){0};
 	}
