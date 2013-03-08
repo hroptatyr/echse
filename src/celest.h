@@ -70,12 +70,21 @@ struct cel_pos_s {
 	double alt;
 };
 
+struct cel_calcopt_s {
+	/* maximum number of iterations, 4 if not set */
+	size_t max_iter;
+	/* precision, DBL_EPSILON if not set */
+	double prec;
+};
+
+
 extern cel_obj_t sun;
 extern cel_obj_t moon;
 
 /**
  * Compute rise, transit and set of OBJ on day D as observed at position P. */
-extern cel_rts_t cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p);
+extern cel_rts_t
+cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s);
 
 /**
  * Return the corresponding instant from a cel day D and an hour instant H. */

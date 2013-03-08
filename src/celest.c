@@ -38,6 +38,8 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+#include <math.h>
+#include <stdbool.h>
 #include "celest.h"
 #include "float.h"
 
@@ -106,6 +108,12 @@ decomp(double x)
 	double ip;
 	double r = modf(x, &ip);
 	return (struct decomp_s){.ip = (int)ip, .r = r};
+}
+
+static inline __attribute__((pure)) bool
+prec_eq_p(double x1, double x2, double prec)
+{
+	return fabs(x1 - x2) < prec;
 }
 
 
@@ -297,17 +305,26 @@ dh_to_instant(cel_d_t d, cel_h_t h)
 }
 
 cel_rts_t
-cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p)
+cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 {
-#define MAX_ITER	(4U)
 	struct cel_rts_s res = {
 		.transit = 0.0,
 	};
 	double t;
 	double ot;
+	/* options */
+	double prec;
+	size_t max_iter;
+
+	if ((max_iter = opt.max_iter) == 0UL) {
+		max_iter = 4UL;
+	}
+	if ((prec = opt.prec) <= 0.0) {
+		prec = DBL_EPSILON;
+	}
 
 	t = ot = NAN;
-	for (size_t i = 0; !(fabs(t - ot) < DBL_EPSILON) && i < MAX_ITER; i++) {
+	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		rasc_decl_t rd;
 
 		ot = t;
@@ -318,7 +335,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p)
 
 	t = ot = NAN;
 	res.rise = res.transit;
-	for (size_t i = 0; !(fabs(t - ot) < DBL_EPSILON) && i < MAX_ITER; i++) {
+	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		rasc_decl_t rd;
 		double tmp;
 
@@ -333,7 +350,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p)
 
 	t = ot = NAN;
 	res.set = res.transit;
-	for (size_t i = 0; !(fabs(t - ot) < DBL_EPSILON) && i < MAX_ITER; i++) {
+	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		rasc_decl_t rd;
 		double tmp;
 
