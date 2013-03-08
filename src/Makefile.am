@@ -29,6 +29,8 @@ pkglib_LTLIBRARIES += weekend.la
 weekend_la_LDFLAGS = $(MOD_LDFLAGS)
 
 pkglib_LTLIBRARIES += solar.la
+solar_la_SOURCES = solar.c
+solar_la_SOURCES += celest.c celest.h
 solar_la_LDFLAGS = $(MOD_LDFLAGS)
 
 ## predef filters
