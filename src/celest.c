@@ -102,6 +102,12 @@ fmod_2pi(double x)
 	}
 }
 
+static inline __attribute__((pure, const)) double
+deg_to_d(double x)
+{
+	return x / (2 * pi);
+}
+
 static inline __attribute__((pure)) struct decomp_s
 decomp(double x)
 {
@@ -330,7 +336,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		ot = t;
 		rd = rasc_decl(obj, (double)d + res.transit);
 		t = transit(rd, p);
-		res.transit = t / (2 * pi);
+		res.transit = deg_to_d(t);
 	}
 
 	t = ot = NAN;
@@ -345,7 +351,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 			res.rise = NAN;
 			break;
 		}
-		res.rise = t = res.transit - tmp / (2 * pi);
+		res.rise = t = res.transit - deg_to_d(tmp);
 	}
 
 	t = ot = NAN;
@@ -360,7 +366,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 			res.set = NAN;
 			break;
 		}
-		res.set = t = res.transit + tmp / (2 * pi);
+		res.set = t = res.transit + deg_to_d(tmp);
 	}
 
 	return res;
