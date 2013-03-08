@@ -74,6 +74,9 @@ __sun(void *vclo)
 	DEFISTATE(SUNRISE);
 	DEFISTATE(SUNSET);
 	DEFISTATE(NOON);
+	static const struct cel_calcopt_s opt = {
+		.max_iter = 3UL,
+	};
 	struct clo_s *clo = vclo;
 	echs_event_t e;
 
@@ -82,7 +85,7 @@ __sun(void *vclo)
 		default:
 		case ST_UNK:
 			/* inc now and get ourselves a new rts */
-			clo->rts = cel_rts(sun, ++clo->now, clo->pos);
+			clo->rts = cel_rts(sun, ++clo->now, clo->pos, opt);
 			/* yield rise value next */
 			clo->state = ST_RISE;
 
