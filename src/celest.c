@@ -221,7 +221,7 @@ instant_to_d(echs_instant_t i)
 {
 	unsigned int d = 367U * i.y -
 		7U * (i.y + (i.m + 9U) / 12U) / 4U + 275U * i.m / 9U + i.d;
-	return d - 730530;
+	return d - 730529;
 }
 
 static __attribute__((unused)) cel_h_t
@@ -248,7 +248,7 @@ dh_to_instant(cel_d_t d, cel_h_t h)
 	}
 
 	/* get year first (estimate) */
-	y = --d / 365U;
+	y = d / 365U;
 	/* get jan-00 of (est.) Y */
 	j00 = y * 365U + y / 4U;
 	/* y correct? */
