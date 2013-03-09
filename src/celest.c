@@ -248,15 +248,15 @@ dh_to_instant(cel_d_t d, cel_h_t h)
 	}
 
 	/* get year first (estimate) */
-	y = d / 365U;
+	y = d / 365;
 	/* get jan-00 of (est.) Y */
-	j00 = y * 365U + y / 4U;
+	j00 = y * 365 + y / 4;
 	/* y correct? */
-	if (UNLIKELY(j00 > d)) {
+	if (UNLIKELY(j00 >= d)) {
 		/* correct y */
 		y--;
 		/* and also recompute the j00 of y */
-		j00 = y * 365U + y / 4U;
+		j00 = y * 365 + y / 4;
 	}
 	/* ass */
 	i.y = y + 2000U;
