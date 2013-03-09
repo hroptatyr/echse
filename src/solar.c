@@ -90,30 +90,27 @@ __sun(void *vclo)
 			clo->state = ST_RISE;
 
 		case ST_RISE:
+			/* after rise comes noon */
+			clo->state = ST_NOON;
 			if (LIKELY(cel_h_valid_p(clo->rts.rise))) {
 				e.when = dh_to_instant(clo->now, clo->rts.rise);
 				e.what = ITS(SUNRISE);
-				/* after rise comes noon */
-				clo->state = ST_NOON;
 				YIELD(e);
 			}
 
 		case ST_NOON:
-			e.when = dh_to_instant(clo->now, clo->rts.transit);
-			e.what = ITS(NOON);
 			/* after rise comes set */
 			clo->state = ST_SET;
+			e.when = dh_to_instant(clo->now, clo->rts.transit);
+			e.what = ITS(NOON);
 			YIELD(e);
 
 		case ST_SET:
+			/* after rise comes recalc */
+			clo->state = ST_UNK;
 			if (LIKELY(cel_h_valid_p(clo->rts.set))) {
-				if (isnan(clo->rts.set)) {
-					abort();
-				}
 				e.when = dh_to_instant(clo->now, clo->rts.set);
 				e.what = ITS(SUNSET);
-				/* after rise comes recalc */
-				clo->state = ST_UNK;
 				YIELD(e);
 			}
 		}
