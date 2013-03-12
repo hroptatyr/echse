@@ -59,23 +59,34 @@
 
 #define DEFCEL_OBJ(x)		cel_obj_t x = &(struct cel_obj_s)
 
+typedef double cel_jdd_t;
 typedef struct rasc_decl_s rasc_decl_t;
 
 struct orb_s {
+	/* longitude of the ascending node */
 	double N;
+	/* inclination */
 	double i;
-	double w;
+
+	/* semi-major axis */
 	double a;
+	/* eccentricity */
 	double e;
+
+	/* argument of periapsis */
+	double w;
+	/* mean anomaly at epoch */
 	double M;
 };
 
 struct cel_obj_s {
 	double N[2];
 	double i[2];
-	double w[2];
+
 	double a[2];
 	double e[2];
+
+	double w[2];
 	double M[2];
 };
 
@@ -124,7 +135,7 @@ prec_eq_p(double x1, double x2, double prec)
 
 
 static struct orb_s
-orb_scalprod(cel_obj_t o, double d)
+orb_scalprod(cel_obj_t o, cel_jdd_t d)
 {
 /* take the scalar product of orbit vector o and [1, d] */
 	struct orb_s res = {
@@ -139,9 +150,9 @@ orb_scalprod(cel_obj_t o, double d)
 }
 
 static double
-ecl_earth(double d)
+ecl_earth(cel_jdd_t d)
 {
-	return RAD(23.4393) - RAD(3.563E-7) * d;
+	return RAD(23.4406) - RAD(3.563E-7) * d;
 }
 
 static double
@@ -161,7 +172,7 @@ cos_lha(rasc_decl_t rd, cel_pos_t p)
 }
 
 static struct rasc_decl_s
-rasc_decl(cel_obj_t obj, double d)
+rasc_decl(cel_obj_t obj, cel_jdd_t d)
 {
 	struct orb_s o = orb_scalprod(obj, d);
 	double ecl = ecl_earth(d);
@@ -198,10 +209,10 @@ DEFCEL_OBJ(sun)
 {
 	.N[0] = 0.0,
 	.i[0] = 0.0,
-	.w[0] = RAD(282.9404), .w[1] = RAD(4.70935e-5),
 	.a[0] = 1.0,
-	.e[0] = 0.016709, .e[1] = - 1.151e-9,
-	.M[0] = RAD(356.0470), .M[1] = RAD(0.9856002585),
+	.e[0] = 0.0167133, .e[1] = -1.151e-9,
+	.w[0] = RAD(282.768500), .w[1] = RAD(4.70935e-5),
+	.M[0] = RAD(356.237121), .M[1] = RAD(360.0 / 365.259641),
 };
 
 DEFCEL_OBJ(moon)
@@ -209,9 +220,9 @@ DEFCEL_OBJ(moon)
 	.N[0] = 0.0,
 	.N[0] = RAD(125.1228), .N[1] = RAD(-0.0529538083),
 	.i[0] = 5.1454,
-	.w[0] = RAD(318.0634), .w[1] = RAD(0.1643573223),
 	.a[0] = 60.2666,
 	.e[0] = 0.054900,
+	.w[0] = RAD(318.0634), .w[1] = RAD(0.1643573223),
 	.M[0] = RAD(115.3654), .M[1] = RAD(13.0649929509),
 };
 
