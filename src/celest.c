@@ -127,7 +127,15 @@ decomp(double x)
 {
 	double ip;
 	double r = modf(x, &ip);
-	return (struct decomp_s){.ip = (int)ip, .r = r};
+	struct decomp_s res = {
+		.ip = (int)ip,
+		.r = r
+	};
+	if (UNLIKELY(res.r < 0.0)) {
+		res.ip--;
+		res.r += 1.0;
+	}
+	return res;
 }
 
 static inline __attribute__((pure)) bool
