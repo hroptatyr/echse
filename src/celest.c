@@ -88,6 +88,8 @@ struct cel_obj_s {
 
 	double w[2];
 	double M[2];
+
+	double app_d;
 };
 
 struct rasc_decl_s {
@@ -95,6 +97,7 @@ struct rasc_decl_s {
 	double decl;
 
 	double gmst0;
+	double app_diam;
 };
 
 
@@ -156,19 +159,15 @@ ecl_earth(cel_jdd_t d)
 }
 
 static double
-transit(rasc_decl_t rd, cel_pos_t p)
+app_diameter(cel_obj_t o)
 {
-	return fmod_2pi(rd.rasc - rd.gmst0 - p.lng);
+	return o->app_d / o->a[0];
 }
 
 static double
-cos_lha(rasc_decl_t rd, cel_pos_t p)
+transit(rasc_decl_t rd, cel_pos_t p)
 {
-/* cosine of sun's local hour angle */
-	const double h = RAD(-0.833);
-
-	return (sin(h) - sin(p.lat) * sin(rd.decl)) /
-		(cos(p.lat) * cos(rd.decl));
+	return fmod_2pi(rd.rasc - rd.gmst0 - p.lng);
 }
 
 static struct rasc_decl_s
@@ -187,20 +186,31 @@ rasc_decl(cel_obj_t obj, cel_jdd_t d)
 
 	double xs = r * cos(lng_sun);
 	double ys = r * sin(lng_sun);
-	double UNUSED(zs) = 0.0;
+	double zs = 0.0;
 
 	double xe = xs;
-	double ye = ys * cos(ecl);
-	double ze = ys * sin(ecl);
+	double ye = ys * cos(ecl) - zs * sin(ecl);
+	double ze = ys * sin(ecl) + zs * cos(ecl);
 
 	/* final result */
 	struct rasc_decl_s res = {
 		.rasc = atan2(ye, xe),
 		.decl = atan2(ze, sqrt(xe * xe + ye * ye)),
 		.gmst0 = o.M + o.w + pi,
+		.app_diam = app_diameter(obj),
 	};
 
 	return res;
+}
+
+static double
+cos_lha(rasc_decl_t rd, cel_pos_t p)
+{
+/* cosine of sun's local hour angle */
+	const double h = RAD(-0.833);
+
+	return (sin(h) - sin(p.lat) * sin(rd.decl)) /
+		(cos(p.lat) * cos(rd.decl));
 }
 
 
@@ -213,6 +223,8 @@ DEFCEL_OBJ(sun)
 	.e[0] = 0.0167133, .e[1] = -1.151e-9,
 	.w[0] = RAD(282.768500), .w[1] = RAD(4.70935e-5),
 	.M[0] = RAD(356.237121), .M[1] = RAD(360.0 / 365.259641),
+
+	.app_d = RAD(1919.26 / 60.0 / 60.0),
 };
 
 DEFCEL_OBJ(moon)
@@ -224,6 +236,8 @@ DEFCEL_OBJ(moon)
 	.e[0] = 0.054900,
 	.w[0] = RAD(318.0634), .w[1] = RAD(0.1643573223),
 	.M[0] = RAD(115.3654), .M[1] = RAD(13.0649929509),
+
+	.app_d = RAD(1873.70 / 60.0),
 };
 
 
