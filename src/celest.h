@@ -43,6 +43,7 @@
 
 #define pi		3.14159265358979323846
 #define RAD(x)		((x) * pi / 180.0)
+#define DEG(x)		((x) * 180.0 / pi)
 
 #define NEVER_RISE	NAN
 #define NEVER_SET	NAN
