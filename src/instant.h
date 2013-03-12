@@ -56,7 +56,7 @@ __inst_lt_p(echs_instant_t x, echs_instant_t y)
 {
 	return (x.y < y.y || x.y == y.y &&
 		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.m &&
+		 (x.d < y.d || x.d == y.d &&
 		  (x.H < y.H || x.H == y.H &&
 		   (x.M < y.M || x.M == y.M &&
 		    (x.S < y.S || x.S == y.S &&
@@ -68,7 +68,7 @@ __inst_le_p(echs_instant_t x, echs_instant_t y)
 {
 	return !(x.y > y.y || x.y == y.y &&
 		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.m &&
+		  (x.d > y.d || x.d == y.d &&
 		   (x.H > y.H || x.H == y.H &&
 		    (x.M > y.M || x.M == y.M &&
 		     (x.S > y.S || x.S == y.S &&
