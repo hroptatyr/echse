@@ -252,9 +252,18 @@ DEFCEL_OBJ(moon)
 cel_d_t
 instant_to_d(echs_instant_t i)
 {
-	unsigned int d = 367U * i.y -
-		7U * (i.y + (i.m + 9U) / 12U) / 4U + 275U * i.m / 9U + i.d;
-	return d - 730529;
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml */
+		0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+	};
+	int y = i.y - 2000;
+	int j00;
+	int doy;
+
+	j00 = y * 365 + y / 4;
+	doy = __mon_yday[i.m - 1] + i.d + (UNLIKELY((y % 4) == 0) && i.m >= 3);
+
+	return j00 + doy;
 }
 
 static __attribute__((unused)) cel_h_t
