@@ -318,7 +318,7 @@ geo_top_pos(struct cyl_pos_s geo_cnt, cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 
 	double top_ra = geo_cnt.lng -
 		par * rho * cos(gclat) * sin(ha) / cos(geo_cnt.lat);
-	double top_decl = geo_cnt.lat - \
+	double top_decl = geo_cnt.lat -
 		par * rho * sin(gclat) * sin(g - geo_cnt.lat) / sin(g);
 
 	struct cyl_pos_s res = {
