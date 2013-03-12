@@ -1,4 +1,4 @@
-/*** instant.h -- some echs_instant_t functionality
+/*** celest.h -- goodies for rise, transit, set computations
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,73 +34,72 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instant_h_
-#define INCLUDED_instant_h_
+#if !defined INCLUDED_celest_h_
+#define INCLUDED_celest_h_
 
 #include <stdbool.h>
+#include <math.h>
 #include "echse.h"
 
+#define pi		3.14159265358979323846
+#define RAD(x)		((x) * pi / 180.0)
+#define DEG(x)		((x) * 180.0 / pi)
+
+#define NEVER_RISE	NAN
+#define NEVER_SET	NAN
+
+/* days since epoch (being 2000-Jan-00) */
+typedef int cel_d_t;
+/* hours (as fraction of day) since midnight */
+typedef double cel_h_t;
+/* hours (as fraction of 2pi) since midnight */
+typedef double cel_a_t;
+
+typedef struct cel_rts_s cel_rts_t;
+typedef struct cel_pos_s cel_pos_t;
+typedef const struct cel_obj_s *cel_obj_t;
+
+struct cel_rts_s {
+	cel_h_t rise;
+	cel_h_t transit;
+	cel_h_t set;
+};
+
+struct cel_pos_s {
+	double lng;
+	double lat;
+	double alt;
+};
+
+struct cel_calcopt_s {
+	/* maximum number of iterations, 4 if not set */
+	size_t max_iter;
+	/* precision, DBL_EPSILON if not set */
+	double prec;
+};
+
+
+extern cel_obj_t sun;
+extern cel_obj_t moon;
+
 /**
- * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
-extern echs_instant_t echs_instant_fixup(echs_instant_t);
+ * Compute rise, transit and set of OBJ on day D as observed at position P. */
+extern cel_rts_t
+cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s);
+
+/**
+ * Return the corresponding instant from a cel day D and an hour instant H. */
+extern echs_instant_t dh_to_instant(cel_d_t d, cel_h_t h);
+
+/**
+ * Convert an instant I to a cel day. */
+extern cel_d_t instant_to_d(echs_instant_t i);
 
 
-static inline __attribute__((pure)) bool
-__inst_0_p(echs_instant_t x)
-{
-	return x.u == 0U;
-}
-
-static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
-{
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.d &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
-}
-
-static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
-{
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.d &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
-}
-
-static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
-{
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-
-/* convenience */
 static inline bool
-__event_0_p(echs_event_t e)
+cel_h_valid_p(cel_h_t x)
 {
-	return __inst_0_p(e.when);
+	return !isnan(x);
 }
 
-static inline bool
-__event_lt_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_lt_p(e.when, i);
-}
-
-static inline bool
-__event_le_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_le_p(e.when, i);
-}
-
-#endif	/* INCLUDED_instant_h_ */
+#endif	/* INCLUDED_celest_h_ */

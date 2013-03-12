@@ -41,8 +41,10 @@
 #include <stdint.h>
 
 #define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
+#define DEFISTATE(x)	static const char istate__ ## x [] = "!" # x
 #define ON(x)		(state__ ## x + 1U)
 #define OFF(x)		(state__ ## x + 0U)
+#define ITS(x)		(istate__ ## x + 0U)
 
 
 typedef union echs_instant_u echs_instant_t;
