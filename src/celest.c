@@ -62,7 +62,7 @@
 typedef double cel_jdd_t;
 typedef double cel_lst_t;
 typedef struct cyl_pos_s cyl_pos_t;
-typedef struct rasc_decl_s rasc_decl_t;
+typedef struct rec_pos_s rec_pos_t;
 
 struct orb_s {
 	/* longitude of the ascending node */
@@ -92,23 +92,20 @@ struct cel_obj_s {
 	double M[2];
 
 	double app_d;
-};
 
-struct rasc_decl_s {
-	double rasc;
-	double decl;
-
-	double app_diam;
-	double dist;
+	cyl_pos_t(*fixup)(cyl_pos_t, struct orb_s oo, struct orb_s os);
 };
 
 struct cyl_pos_s {
-	double x;
-	double y;
-	double z;
 	double r;
 	double lng;
 	double lat;
+};
+
+struct rec_pos_s {
+	double x;
+	double y;
+	double z;
 };
 
 
@@ -172,7 +169,7 @@ orb_scalprod(cel_obj_t o, cel_jdd_t d)
 static double
 ecl_earth(cel_jdd_t d)
 {
-	return RAD(23.4406) - RAD(3.563E-7) * d;
+	return RAD(23.4393) - RAD(3.563E-7) * d;
 }
 
 static double
@@ -184,13 +181,35 @@ parallax(double r)
 static cel_lst_t
 get_lst(cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 {
-	return gmst0 + ut * 15 + DEG(p.lng);
+	return fmod_360(gmst0 + ut * 15.0 * 24.0 + DEG(p.lng));
 }
 
 static cel_h_t
 get_lth(cel_lst_t gmst0, cel_lst_t gmst, cel_pos_t p)
 {
-	return fmod_360(gmst - gmst0 - DEG(p.lng)) / 15.04107;
+	return fmod_360(gmst - gmst0 - DEG(p.lng)) / 15.04107 / 24.0;
+}
+
+static cyl_pos_t
+rec_to_cyl(rec_pos_t p)
+{
+	struct cyl_pos_s res = {
+		.lng = atan2(p.y, p.x),
+		.lat = atan2(p.z, sqrt(p.x * p.x + p.y * p.y)),
+		.r = sqrt(p.x * p.x + p.y * p.y + p.z * p.z),
+	};
+	return res;
+}
+
+static rec_pos_t
+cyl_to_rec(cyl_pos_t p)
+{
+	struct rec_pos_s res = {
+		.x = p.r * cos(p.lng) * cos(p.lat),
+		.y = p.r * sin(p.lng) * cos(p.lat),
+		.z = p.r * sin(p.lat),
+	};
+	return res;
 }
 
 static cyl_pos_t
@@ -199,8 +218,8 @@ cyl_pos_sun(cel_jdd_t d)
 	struct orb_s o = orb_scalprod(sun, d);
 
 	double E = o.M + o.e * sin(o.M) * (1.0 + o.e * cos(o.M));
-	double xv = o.a * (cos(E) - o.e);
-	double yv = o.a * (sin(E) * sqrt(1.0 - o.e * o.e));
+	double xv = cos(E) - o.e;
+	double yv = sin(E) * sqrt(1.0 - o.e * o.e);
 
 	double v = atan2(yv, xv);
 	double r = sqrt(xv * xv + yv * yv);
@@ -208,12 +227,9 @@ cyl_pos_sun(cel_jdd_t d)
 
 	double xs = r * cos(lng_sun);
 	double ys = r * sin(lng_sun);
-	double zs = 0.0;
+	double UNUSED(zs) = 0.0;
 
 	struct cyl_pos_s res = {
-		.x = xs,
-		.y = ys,
-		.z = zs,
 		.r = r,
 		.lng = atan2(ys, xs),
 		.lat = 0.0,
@@ -221,12 +237,26 @@ cyl_pos_sun(cel_jdd_t d)
 	return res;
 }
 
+static double
+cyl_pos_E(double e, double M)
+{
+	double E;
+	double ol_E = NAN;
+
+	E = M + e * sin(M) * (1.0 + e * cos(M));
+	for (size_t i = 0; i < 20 && !prec_eq_p(E, ol_E, FLT_EPSILON); i++) {
+		ol_E = E;
+		E = E - (E - e * sin(E) - M) / (1 - e * cos(E));
+	}
+	return E;
+}
+
 static cyl_pos_t
 cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 {
 	struct orb_s o = orb_scalprod(obj, d);
 
-	double E = o.M + o.e * sin(o.M) * (1.0 + o.e * cos(o.M));
+	double E = cyl_pos_E(o.e, o.M);
 	double xv = o.a * (cos(E) - o.e);
 	double yv = o.a * (sin(E) * sqrt(1.0 - o.e * o.e));
 
@@ -234,75 +264,43 @@ cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 	double r = sqrt(xv * xv + yv * yv);
 	double lng = v + o.w;
 
-	double xh = r * (cos(o.N) * cos(lng) - sin(o.N) * sin(lng) * cos(o.i));
-	double yh = r * (sin(o.N) * cos(lng) + cos(o.N) * sin(lng) * cos(o.i));
-	double zh = sin(lng) * sin(o.i);
-
-	/* for corrections */
-	double lngecl = atan2(yh, xh);
-	double latecl = atan2(zh, sqrt(xh * xh + yh * yh));
-
-	struct cyl_pos_s res = {
-		.x = xh,
-		.y = yh,
-		.z = zh,
-		.r = r,
-		.lng = lngecl,
-		.lat = latecl,
+	struct rec_pos_s rec = {
+		.x = r * (cos(o.N) * cos(lng) - sin(o.N) * sin(lng) * cos(o.i)),
+		.y = r * (sin(o.N) * cos(lng) + cos(o.N) * sin(lng) * cos(o.i)),
+		.z = r * sin(lng) * sin(o.i),
 	};
-	return res;
+	return rec_to_cyl(rec);
 }
 
 static cyl_pos_t
 geo_cnt_pos(struct cyl_pos_s pos, struct cyl_pos_s sun)
 {
-	double xh = pos.r * cos(pos.lng) * cos(pos.lat);
-	double yh = pos.r * sin(pos.lng) * cos(pos.lat);
-	double zh = pos.r * sin(pos.lat);
+	rec_pos_t prec = cyl_to_rec(pos);
 
 	double xs = sun.r * cos(sun.lng);
 	double ys = sun.r * sin(sun.lng);
 
-	double xg = xh + xs;
-	double yg = yh + ys;
-	double zg = zh;
-
-	struct cyl_pos_s res = {
-		.x = xg,
-		.y = yg,
-		.z = zg,
-		.r = sqrt(xg * xg + yg * yg + zg * zg),
-		.lng = atan2(yg, xg),
-		.lat = atan2(zg, sqrt(xg * xg + yg * yg)),
+	struct rec_pos_s rrec = {
+		.x = prec.x + xs,
+		.y = prec.y + ys,
+		.z = prec.z,
 	};
-	return res;
+
+	return rec_to_cyl(rrec);
 }
 
 static cyl_pos_t
 geo_equ_pos(struct cyl_pos_s geo_cnt, cel_jdd_t d)
 {
 	double ecl = ecl_earth(d);
+	rec_pos_t gc = cyl_to_rec(geo_cnt);
 
-	double xe = geo_cnt.x;
-	double ye = geo_cnt.y * cos(ecl) - geo_cnt.z * sin(ecl);
-	double ze = geo_cnt.y * sin(ecl) + geo_cnt.z * cos(ecl);
-
-	/* geocentric distance */
-	double r = sqrt(xe * xe + ye * ye + ze * ze);
-	/* longitude, aka right ascension */
-	double lng = atan2(ye, xe);
-	/* latitude, aka declination */
-	double lat = atan2(ze, sqrt(xe * xe + ye * ye));
-
-	struct cyl_pos_s res = {
-		.x = xe,
-		.y = ye,
-		.z = ze,
-		.r = r,
-		.lng = lng,
-		.lat = lat,
+	struct rec_pos_s rres = {
+		.x = gc.x,
+		.y = gc.y * cos(ecl) - gc.z * sin(ecl),
+		.z = gc.y * sin(ecl) + gc.z * cos(ecl),
 	};
-	return res;
+	return rec_to_cyl(rres);
 }
 
 static cyl_pos_t
@@ -329,6 +327,47 @@ geo_top_pos(struct cyl_pos_s geo_cnt, cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 	return res;
 }
 
+static cyl_pos_t
+fixup_moon(cyl_pos_t p, struct orb_s moon, struct orb_s sun)
+{
+	double Ms = sun.M;
+	double Mm = moon.M;
+	double Ls = Ms + sun.w;
+	double F = Mm + moon.w;
+	double Lm = F + moon.N;
+	double D = Lm - Ls;
+
+	/* longitudal perbutations */
+	/* (Evection) */
+	p.lng += RAD(-1.274) * sin(Mm - 2 * D);
+	/* (Variation) */
+	p.lng += RAD(0.658) * sin(2 * D);
+	/* (Yearly equation) */
+	p.lng += RAD(-0.186) * sin(Ms);
+	p.lng += RAD(-0.059) * sin(2 * Mm - 2 * D);
+	p.lng += RAD(-0.057) * sin(Mm - 2 * D + Ms);
+	p.lng += RAD(0.053) * sin(Mm + 2 * D);
+	p.lng += RAD(0.046) * sin(2 * D - Ms);
+	p.lng += RAD(0.041) * sin(Mm - Ms);
+	/* (Parallactic equation) */
+	p.lng += RAD(-0.035) * sin(D);
+	p.lng += RAD(-0.031) * sin(Mm + Ms);
+	p.lng += RAD(-0.015) * sin(2 * F - 2 * D);
+	p.lng += RAD(0.011) * sin(Mm - 4 * D);
+
+	/* latitudal perturbations */
+	p.lat += RAD(-0.173) * sin(F - 2 * D);
+	p.lat += RAD(-0.055) * sin(Mm - F - 2 * D);
+	p.lat += RAD(-0.046) * sin(Mm + F - 2 * D);
+	p.lat += RAD(0.033) * sin(F + 2 * D);
+	p.lat += RAD(0.017) * sin(2 * Mm + F);
+
+	/* distance perturbations */
+	p.r += ER_TO_AU(-0.58) * cos(Mm - 2 * D);
+	p.r += ER_TO_AU(-0.46) * cos(2 * D);
+	return p;
+}
+
 static cel_lst_t
 get_gmst0(cel_jdd_t d)
 {
@@ -342,7 +381,7 @@ get_gmst0(cel_jdd_t d)
 	double Ls = v + o.w;
 	double gmst0 = DEG(Ls) + 180;
 
-	return fmod_360(gmst0);
+	return gmst0;
 }
 
 static cyl_pos_t
@@ -355,24 +394,35 @@ obj_geo_cnt_pos(cel_obj_t obj, cel_jdd_t d)
 		cp_obj = (struct cyl_pos_s){0};
 		cp_sun = cyl_pos_sun(d);
 	} else if (obj == moon) {
-		cp_obj = cyl_pos_obj(moon, d);
+		/* in earth-centric system already */
+		return cyl_pos_obj(moon, d);
 	} else {
 		cp_obj = cyl_pos_obj(obj, d);
 		cp_sun = cyl_pos_sun(d);
 	}
 
-	if (obj == moon) {
-		/* in earth-centric system already */
-		return cp_obj;
-	}
 	return geo_cnt_pos(cp_obj, cp_sun);
+}
+
+static cyl_pos_t
+obj_geo_equ_pos(cel_obj_t obj, cel_jdd_t d)
+{
+	cyl_pos_t cnt = obj_geo_cnt_pos(obj, d);
+
+	if (obj->fixup) {
+		struct orb_s oo = orb_scalprod(obj, d);
+		struct orb_s os = orb_scalprod(sun, d);
+
+		cnt = obj->fixup(cnt, oo, os);
+	}
+	return geo_equ_pos(cnt, d);
 }
 
 static double
 cos_lha(cyl_pos_t top, cel_pos_t p)
 {
 /* cosine of sun's local hour angle */
-	double h = RAD(-0.833);
+	const double h = RAD(-0.833);
 
 	return (sin(h) - sin(p.lat) * sin(top.lat)) /
 		(cos(p.lat) * cos(top.lat));
@@ -385,9 +435,9 @@ DEFCEL_OBJ(sun)
 	.N[0] = 0.0,
 	.i[0] = 0.0,
 	.a[0] = 1.0,
-	.e[0] = 0.0167133, .e[1] = -1.151e-9,
-	.w[0] = RAD(282.768500), .w[1] = RAD(4.70935e-5),
-	.M[0] = RAD(356.237121), .M[1] = RAD(360.0 / 365.259641),
+	.e[0] = 0.016709, .e[1] = -1.151e-9,
+	.w[0] = RAD(282.9404), .w[1] = RAD(4.70935e-5),
+	.M[0] = RAD(356.0470), .M[1] = RAD(0.9856002585),
 
 	.app_d = RAD(1919.26 / 60.0 / 60.0),
 };
@@ -395,13 +445,15 @@ DEFCEL_OBJ(sun)
 DEFCEL_OBJ(moon)
 {
 	.N[0] = RAD(125.1228), .N[1] = RAD(-0.0529538083),
-	.i[0] = 5.1454,
+	.i[0] = RAD(5.1454),
 	.a[0] = ER_TO_AU(60.2666),
 	.e[0] = 0.054900,
 	.w[0] = RAD(318.0634), .w[1] = RAD(0.1643573223),
 	.M[0] = RAD(115.3654), .M[1] = RAD(13.0649929509),
 
 	.app_d = RAD(1873.70 / 60.0 / 60.0),
+
+	.fixup = fixup_moon,
 };
 
 
@@ -532,77 +584,65 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
+		dh = (cel_jdd_t)d + t;
 		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		equ = obj_geo_equ_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		t = get_lth(gmst0, DEG(top.lng), p);
-		res.transit = t / 24.0;
+		t = get_lth(gmst0, DEG(equ.lng), p);
+		res.transit = t;
 	}
 
-	t = (res.rise = res.transit) * 24.0;
+	t = res.rise = res.transit;
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 		double tmp;
-		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
-		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		dh = (cel_jdd_t)d + res.rise;
+		equ = obj_geo_equ_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			gmst0 = get_gmst0(dh);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(top, p)))) {
+		if (isnan(tmp = acos(cos_lha(equ, p)))) {
 			res.rise = NAN;
 			break;
 		}
-		t = get_lth(gmst0, DEG(tmp), p);
-		res.rise = (res.transit * 24.0 - t) / 24.0;
+		t = tmp / (2 * pi);
+		res.rise = res.transit - t;
 	}
 
-	t = (res.set = res.transit) * 24.0;
+	t = res.set = res.transit;
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 		double tmp;
-		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
-		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		dh = (cel_jdd_t)d + res.set;
+		equ = obj_geo_equ_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			gmst0 = get_gmst0(dh);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(top, p)))) {
+		if (isnan(tmp = acos(cos_lha(equ, p)))) {
 			res.set = NAN;
 			break;
 		}
-		t = get_lth(gmst0, DEG(tmp), p);
-		res.set = (res.transit * 24.0 + t) / 24.0;
+		t = tmp / (2 * pi);
+		res.set = res.transit + t;
 	}
-
 	return res;
 }
 
