@@ -416,16 +416,13 @@ obj_geo_cnt_pos(cel_obj_t obj, cel_jdd_t d)
 		cp_obj = (struct cyl_pos_s){0};
 		cp_sun = cyl_pos_sun(d);
 	} else if (obj == moon) {
-		cp_obj = cyl_pos_obj(moon, d);
+		/* in earth-centric system already */
+		return cyl_pos_obj(moon, d);
 	} else {
 		cp_obj = cyl_pos_obj(obj, d);
 		cp_sun = cyl_pos_sun(d);
 	}
 
-	if (obj == moon) {
-		/* in earth-centric system already */
-		return cp_obj;
-	}
 	return geo_cnt_pos(cp_obj, cp_sun);
 }
 
