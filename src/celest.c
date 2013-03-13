@@ -96,14 +96,6 @@ struct cel_obj_s {
 	cyl_pos_t(*fixup)(cyl_pos_t, struct orb_s oo, struct orb_s os);
 };
 
-struct rasc_decl_s {
-	double rasc;
-	double decl;
-
-	double app_diam;
-	double dist;
-};
-
 struct cyl_pos_s {
 	double x;
 	double y;
