@@ -92,6 +92,8 @@ struct cel_obj_s {
 	double M[2];
 
 	double app_d;
+
+	cyl_pos_t(*fixup)(cyl_pos_t, struct orb_s oo, struct orb_s os);
 };
 
 struct rasc_decl_s {
@@ -333,6 +335,47 @@ geo_top_pos(struct cyl_pos_s geo_cnt, cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 	return res;
 }
 
+static cyl_pos_t
+fixup_moon(cyl_pos_t p, struct orb_s moon, struct orb_s sun)
+{
+	double Ms = sun.M;
+	double Mm = moon.M;
+	double Ls = Ms + sun.w;
+	double F = Mm + moon.w;
+	double Lm = F + moon.N;
+	double D = Lm - Ls;
+
+	/* longitudal perbutations */
+	/* (Evection) */
+	p.lng += RAD(-1.274) * sin(Mm - 2 * D);
+	/* (Variation) */
+	p.lng += RAD(0.658) * sin(2 * D);
+	/* (Yearly equation) */
+	p.lng += RAD(-0.186) * sin(Ms);
+	p.lng += RAD(-0.059) * sin(2 * Mm - 2 * D);
+	p.lng += RAD(-0.057) * sin(Mm - 2 * D + Ms);
+	p.lng += RAD(0.053) * sin(Mm + 2 * D);
+	p.lng += RAD(0.046) * sin(2 * D - Ms);
+	p.lng += RAD(0.041) * sin(Mm - Ms);
+	/* (Parallactic equation) */
+	p.lng += RAD(-0.035) * sin(D);
+	p.lng += RAD(-0.031) * sin(Mm + Ms);
+	p.lng += RAD(-0.015) * sin(2 * F - 2 * D);
+	p.lng += RAD(0.011) * sin(Mm - 4 * D);
+
+	/* latitudal perturbations */
+	p.lat += RAD(-0.173) * sin(F - 2 * D);
+	p.lat += RAD(-0.055) * sin(Mm - F - 2 * D);
+	p.lat += RAD(-0.046) * sin(Mm + F - 2 * D);
+	p.lat += RAD(0.033) * sin(F + 2 * D);
+	p.lat += RAD(0.017) * sin(2 * Mm + F);
+
+	/* distance perturbations */
+	p.r += ER_TO_AU(-0.58) * cos(Mm - 2 * D);
+	p.r += ER_TO_AU(-0.46) * cos(2 * D);
+	return p;
+}
+
 static cel_lst_t
 get_gmst0(cel_jdd_t d)
 {
@@ -406,6 +449,8 @@ DEFCEL_OBJ(moon)
 	.M[0] = RAD(115.3654), .M[1] = RAD(13.0649929509),
 
 	.app_d = RAD(1873.70 / 60.0 / 60.0),
+
+	.fixup = fixup_moon,
 };
 
 
