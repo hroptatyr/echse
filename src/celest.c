@@ -186,7 +186,7 @@ parallax(double r)
 static cel_lst_t
 get_lst(cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 {
-	return gmst0 + ut * 15 + DEG(p.lng);
+	return fmod_360(gmst0 + ut * 15 + DEG(p.lng));
 }
 
 static cel_h_t
