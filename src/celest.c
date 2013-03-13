@@ -607,10 +607,10 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 
 		ot = t;
 		dh = (cel_jdd_t)d + res.rise;
-		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
 			/* moon needs topocentric coords */
+			gmst0 = get_gmst0(dh);
 			equ = geo_top_pos(equ, gmst0, t, p);
 		}
 		if (isnan(tmp = acos(cos_lha(equ, p)))) {
@@ -630,10 +630,10 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 
 		ot = t;
 		dh = (cel_jdd_t)d + res.set;
-		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
 			/* moon needs topocentric coords */
+			gmst0 = get_gmst0(dh);
 			equ = geo_top_pos(equ, gmst0, t, p);
 		}
 		if (isnan(tmp = acos(cos_lha(equ, p)))) {
