@@ -143,11 +143,11 @@ echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
 
 	switch (v.typ) {
 	case ECHS_PSET_DBL:
-		if (!strcmp(key, "long") || !strcmp(key, "longitude")) {
+		if (!strcmp(key, ":long") || !strcmp(key, ":longitude")) {
 			clo->pos.lng = RAD(v.dval);
-		} else if (!strcmp(key, "lat") || !strcmp(key, "latitude")) {
+		} else if (!strcmp(key, ":lat") || !strcmp(key, ":latitude")) {
 			clo->pos.lat = RAD(v.dval);
-		} else if (!strcmp(key, "alt") || !strcmp(key, "altitude")) {
+		} else if (!strcmp(key, ":alt") || !strcmp(key, ":altitude")) {
 			clo->pos.alt = v.dval;
 		}
 		break;
