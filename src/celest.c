@@ -175,13 +175,13 @@ parallax(double r)
 static cel_lst_t
 get_lst(cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 {
-	return fmod_360(gmst0 + ut * 15 + DEG(p.lng));
+	return gmst0 + ut * 15.0 * 24.0 + DEG(p.lng);
 }
 
 static cel_h_t
 get_lth(cel_lst_t gmst0, cel_lst_t gmst, cel_pos_t p)
 {
-	return fmod_360(gmst - gmst0 - DEG(p.lng)) / 15.04107;
+	return fmod_360(gmst - gmst0 - DEG(p.lng)) / 15.04107 / 24.0;
 }
 
 static cyl_pos_t
@@ -586,7 +586,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		cyl_pos_t equ;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
+		dh = (cel_jdd_t)d + t;
 		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
@@ -594,11 +594,11 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 			equ = geo_top_pos(equ, gmst0, t, p);
 		}
 		t = get_lth(gmst0, DEG(equ.lng), p);
-		res.transit = t / 24.0;
+		res.transit = t;
 		break;
 	}
 
-	t = (res.rise = res.transit) * 24.0;
+	t = res.rise = res.transit;
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
@@ -607,7 +607,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
+		dh = (cel_jdd_t)d + t;
 		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
@@ -619,10 +619,10 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 			break;
 		}
 		t = get_lth(gmst0, DEG(tmp), p);
-		res.rise = (res.transit * 24.0 - t) / 24.0;
+		res.rise = res.transit - t;
 	}
 
-	t = (res.set = res.transit) * 24.0;
+	t = res.set = res.transit;
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
@@ -631,7 +631,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t / 24.0;
+		dh = (cel_jdd_t)d + t;
 		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
@@ -643,7 +643,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 			break;
 		}
 		t = get_lth(gmst0, DEG(tmp), p);
-		res.set = (res.transit * 24.0 + t) / 24.0;
+		res.set = res.transit + t;
 	}
 	return res;
 }
