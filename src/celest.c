@@ -97,9 +97,6 @@ struct cel_obj_s {
 };
 
 struct cyl_pos_s {
-	double x;
-	double y;
-	double z;
 	double r;
 	double lng;
 	double lat;
@@ -202,12 +199,9 @@ cyl_pos_sun(cel_jdd_t d)
 
 	double xs = r * cos(lng_sun);
 	double ys = r * sin(lng_sun);
-	double zs = 0.0;
+	double UNUSED(zs) = 0.0;
 
 	struct cyl_pos_s res = {
-		.x = xs,
-		.y = ys,
-		.z = zs,
 		.r = r,
 		.lng = atan2(ys, xs),
 		.lat = 0.0,
@@ -251,12 +245,9 @@ cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 	double latecl = atan2(zh, sqrt(xh * xh + yh * yh));
 
 	struct cyl_pos_s res = {
-		.x = xh,
-		.y = yh,
-		.z = zh,
-		.r = r,
 		.lng = lngecl,
 		.lat = latecl,
+		.r = r,
 	};
 	return res;
 }
@@ -276,12 +267,9 @@ geo_cnt_pos(struct cyl_pos_s pos, struct cyl_pos_s sun)
 	double zg = zh;
 
 	struct cyl_pos_s res = {
-		.x = xg,
-		.y = yg,
-		.z = zg,
-		.r = sqrt(xg * xg + yg * yg + zg * zg),
 		.lng = atan2(yg, xg),
 		.lat = atan2(zg, sqrt(xg * xg + yg * yg)),
+		.r = sqrt(xg * xg + yg * yg + zg * zg),
 	};
 	return res;
 }
@@ -307,12 +295,9 @@ geo_equ_pos(struct cyl_pos_s geo_cnt, cel_jdd_t d)
 	double lat = atan2(ze, sqrt(xe * xe + ye * ye));
 
 	struct cyl_pos_s res = {
-		.x = xe,
-		.y = ye,
-		.z = ze,
-		.r = r,
 		.lng = lng,
 		.lat = lat,
+		.r = r,
 	};
 	return res;
 }
