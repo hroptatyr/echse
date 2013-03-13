@@ -596,7 +596,6 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		}
 		t = get_lth(gmst0, DEG(equ.lng), p);
 		res.transit = t;
-		break;
 	}
 
 	t = res.rise = res.transit;
