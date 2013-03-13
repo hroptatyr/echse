@@ -169,7 +169,7 @@ orb_scalprod(cel_obj_t o, cel_jdd_t d)
 static double
 ecl_earth(cel_jdd_t d)
 {
-	return RAD(23.4406) - RAD(3.563E-7) * d;
+	return RAD(23.4393) - RAD(3.563E-7) * d;
 }
 
 static double
@@ -218,8 +218,8 @@ cyl_pos_sun(cel_jdd_t d)
 	struct orb_s o = orb_scalprod(sun, d);
 
 	double E = o.M + o.e * sin(o.M) * (1.0 + o.e * cos(o.M));
-	double xv = o.a * (cos(E) - o.e);
-	double yv = o.a * (sin(E) * sqrt(1.0 - o.e * o.e));
+	double xv = cos(E) - o.e;
+	double yv = sin(E) * sqrt(1.0 - o.e * o.e);
 
 	double v = atan2(yv, xv);
 	double r = sqrt(xv * xv + yv * yv);
@@ -435,9 +435,9 @@ DEFCEL_OBJ(sun)
 	.N[0] = 0.0,
 	.i[0] = 0.0,
 	.a[0] = 1.0,
-	.e[0] = 0.0167133, .e[1] = -1.151e-9,
-	.w[0] = RAD(282.768500), .w[1] = RAD(4.70935e-5),
-	.M[0] = RAD(356.237121), .M[1] = RAD(360.0 / 365.259641),
+	.e[0] = 0.016709, .e[1] = -1.151e-9,
+	.w[0] = RAD(282.9404), .w[1] = RAD(4.70935e-5),
+	.M[0] = RAD(356.0470), .M[1] = RAD(0.9856002585),
 
 	.app_d = RAD(1919.26 / 60.0 / 60.0),
 };
