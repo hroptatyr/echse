@@ -152,6 +152,10 @@ __load_strm_ass_kv(strm_pset_f pset, echs_stream_t s, const char *key, SCM val)
 		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
 			__load_strm_ass_kv(pset, s, key, SCM_CAR(h));
 		}
+	} else if (scm_is_real(val)) {
+		double v = scm_to_double(val);
+
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
 	}
 	return;
 }
@@ -169,6 +173,10 @@ __load_filt_ass_kv(filt_pset_f pset, echs_filter_t f, const char *key, SCM val)
 		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
 			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
 		}
+	} else if (scm_is_real(val)) {
+		double v = scm_to_double(val);
+
+		pset(f, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
 	}
 	return;
 }
