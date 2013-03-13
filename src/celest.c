@@ -297,8 +297,8 @@ geo_equ_pos(struct cyl_pos_s geo_cnt, cel_jdd_t d)
 
 	struct rec_pos_s rres = {
 		.x = gc.x,
-		.y = gc.y * cos(ecl) - gc.y * sin(ecl),
-		.z = gc.y * sin(ecl) + gc.y * cos(ecl),
+		.y = gc.y * cos(ecl) - gc.z * sin(ecl),
+		.z = gc.y * sin(ecl) + gc.z * cos(ecl),
 	};
 	return rec_to_cyl(rres);
 }
