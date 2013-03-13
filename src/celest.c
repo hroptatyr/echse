@@ -236,7 +236,7 @@ cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 
 	double xh = r * (cos(o.N) * cos(lng) - sin(o.N) * sin(lng) * cos(o.i));
 	double yh = r * (sin(o.N) * cos(lng) + cos(o.N) * sin(lng) * cos(o.i));
-	double zh = sin(lng) * sin(o.i);
+	double zh = r * sin(lng) * sin(o.i);
 
 	/* for corrections */
 	double lngecl = atan2(yh, xh);
