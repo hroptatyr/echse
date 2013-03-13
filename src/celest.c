@@ -62,7 +62,7 @@
 typedef double cel_jdd_t;
 typedef double cel_lst_t;
 typedef struct cyl_pos_s cyl_pos_t;
-typedef struct rasc_decl_s rasc_decl_t;
+typedef struct rec_pos_s rec_pos_t;
 
 struct orb_s {
 	/* longitude of the ascending node */
@@ -100,6 +100,12 @@ struct cyl_pos_s {
 	double r;
 	double lng;
 	double lat;
+};
+
+struct rec_pos_s {
+	double x;
+	double y;
+	double z;
 };
 
 
@@ -185,6 +191,28 @@ get_lth(cel_lst_t gmst0, cel_lst_t gmst, cel_pos_t p)
 }
 
 static cyl_pos_t
+rec_to_cyl(rec_pos_t p)
+{
+	struct cyl_pos_s res = {
+		.lng = atan2(p.y, p.x),
+		.lat = atan2(p.z, sqrt(p.x * p.x + p.y * p.y)),
+		.r = sqrt(p.x * p.x + p.y * p.y + p.z * p.z),
+	};
+	return res;
+}
+
+static rec_pos_t
+cyl_to_rec(cyl_pos_t p)
+{
+	struct rec_pos_s res = {
+		.x = p.r * cos(p.lng) * cos(p.lat),
+		.y = p.r * sin(p.lng) * cos(p.lat),
+		.z = p.r * sin(p.lat),
+	};
+	return res;
+}
+
+static cyl_pos_t
 cyl_pos_sun(cel_jdd_t d)
 {
 	struct orb_s o = orb_scalprod(sun, d);
@@ -236,70 +264,43 @@ cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 	double r = sqrt(xv * xv + yv * yv);
 	double lng = v + o.w;
 
-	double xh = r * (cos(o.N) * cos(lng) - sin(o.N) * sin(lng) * cos(o.i));
-	double yh = r * (sin(o.N) * cos(lng) + cos(o.N) * sin(lng) * cos(o.i));
-	double zh = r * sin(lng) * sin(o.i);
-
-	/* for corrections */
-	double lngecl = atan2(yh, xh);
-	double latecl = atan2(zh, sqrt(xh * xh + yh * yh));
-
-	struct cyl_pos_s res = {
-		.lng = lngecl,
-		.lat = latecl,
-		.r = r,
+	struct rec_pos_s rec = {
+		.x = r * (cos(o.N) * cos(lng) - sin(o.N) * sin(lng) * cos(o.i)),
+		.y = r * (sin(o.N) * cos(lng) + cos(o.N) * sin(lng) * cos(o.i)),
+		.z = r * sin(lng) * sin(o.i),
 	};
-	return res;
+	return rec_to_cyl(rec);
 }
 
 static cyl_pos_t
 geo_cnt_pos(struct cyl_pos_s pos, struct cyl_pos_s sun)
 {
-	double xh = pos.r * cos(pos.lng) * cos(pos.lat);
-	double yh = pos.r * sin(pos.lng) * cos(pos.lat);
-	double zh = pos.r * sin(pos.lat);
+	rec_pos_t prec = cyl_to_rec(pos);
 
 	double xs = sun.r * cos(sun.lng);
 	double ys = sun.r * sin(sun.lng);
 
-	double xg = xh + xs;
-	double yg = yh + ys;
-	double zg = zh;
-
-	struct cyl_pos_s res = {
-		.lng = atan2(yg, xg),
-		.lat = atan2(zg, sqrt(xg * xg + yg * yg)),
-		.r = sqrt(xg * xg + yg * yg + zg * zg),
+	struct rec_pos_s rrec = {
+		.x = prec.x + xs,
+		.y = prec.y + ys,
+		.z = prec.z,
 	};
-	return res;
+
+	return rec_to_cyl(rrec);
 }
 
 static cyl_pos_t
 geo_equ_pos(struct cyl_pos_s geo_cnt, cel_jdd_t d)
 {
 	double ecl = ecl_earth(d);
+	rec_pos_t gc = cyl_to_rec(geo_cnt);
 
-	double xh = geo_cnt.r * cos(geo_cnt.lng) * cos(geo_cnt.lat);
-	double yh = geo_cnt.r * sin(geo_cnt.lng) * cos(geo_cnt.lat);
-	double zh = geo_cnt.r * sin(geo_cnt.lat);
-
-	double xe = xh;
-	double ye = yh * cos(ecl) - zh * sin(ecl);
-	double ze = yh * sin(ecl) + zh * cos(ecl);
-
-	/* geocentric distance */
-	double r = sqrt(xe * xe + ye * ye + ze * ze);
-	/* longitude, aka right ascension */
-	double lng = atan2(ye, xe);
-	/* latitude, aka declination */
-	double lat = atan2(ze, sqrt(xe * xe + ye * ye));
-
-	struct cyl_pos_s res = {
-		.lng = lng,
-		.lat = lat,
-		.r = r,
+	struct rec_pos_s rres = {
+		.x = gc.x,
+		.y = gc.y * cos(ecl) - gc.y * sin(ecl),
+		.z = gc.y * sin(ecl) + gc.y * cos(ecl),
 	};
-	return res;
+	return rec_to_cyl(rres);
 }
 
 static cyl_pos_t
