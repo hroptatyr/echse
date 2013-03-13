@@ -283,9 +283,13 @@ geo_equ_pos(struct cyl_pos_s geo_cnt, cel_jdd_t d)
 {
 	double ecl = ecl_earth(d);
 
-	double xe = geo_cnt.x;
-	double ye = geo_cnt.y * cos(ecl) - geo_cnt.z * sin(ecl);
-	double ze = geo_cnt.y * sin(ecl) + geo_cnt.z * cos(ecl);
+	double xh = geo_cnt.r * cos(geo_cnt.lng) * cos(geo_cnt.lat);
+	double yh = geo_cnt.r * sin(geo_cnt.lng) * cos(geo_cnt.lat);
+	double zh = geo_cnt.r * sin(geo_cnt.lat);
+
+	double xe = xh;
+	double ye = yh * cos(ecl) - zh * sin(ecl);
+	double ze = yh * sin(ecl) + zh * cos(ecl);
 
 	/* geocentric distance */
 	double r = sqrt(xe * xe + ye * ye + ze * ze);
