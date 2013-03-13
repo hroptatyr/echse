@@ -223,12 +223,26 @@ cyl_pos_sun(cel_jdd_t d)
 	return res;
 }
 
+static double
+cyl_pos_E(double e, double M)
+{
+	double E;
+	double ol_E = NAN;
+
+	E = M + e * sin(M) * (1.0 + e * cos(M));
+	for (size_t i = 0; i < 20 && !prec_eq_p(E, ol_E, FLT_EPSILON); i++) {
+		ol_E = E;
+		E = E - (E - e * sin(E) - M) / (1 - e * cos(E));
+	}
+	return E;
+}
+
 static cyl_pos_t
 cyl_pos_obj(cel_obj_t obj, cel_jdd_t d)
 {
 	struct orb_s o = orb_scalprod(obj, d);
 
-	double E = o.M + o.e * sin(o.M) * (1.0 + o.e * cos(o.M));
+	double E = cyl_pos_E(o.e, o.M);
 	double xv = o.a * (cos(E) - o.e);
 	double yv = o.a * (sin(E) * sqrt(1.0 - o.e * o.e));
 
