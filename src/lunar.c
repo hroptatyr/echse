@@ -36,6 +36,7 @@
  ***/
 /* These computations follow: http://www.stjarnhimlen.se/comp/riset.html */
 #include <math.h>
+#include <string.h>
 #include "echse.h"
 #include "instant.h"
 #include "celest.h"
@@ -121,13 +122,38 @@ __moon(void *vclo)
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
-	static struct clo_s clo = {
-		.pos.lng = RAD(8.7667),
-		.pos.lat = RAD(50.8167),
-		.pos.alt = 0,
-	};
-	clo.now = instant_to_d(i) - 1;
-	return (echs_stream_t){__moon, &clo};
+	struct clo_s *clo = calloc(1, sizeof(*clo));
+	clo->now = instant_to_d(i) - 1;
+	return (echs_stream_t){__moon, clo};
+}
+
+void
+free_echs_stream(echs_stream_t s)
+{
+	struct clo_s *clo = s.clo;
+
+	free(clo);
+	return;
+}
+
+void
+echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
+{
+	struct clo_s *clo = s.clo;
+
+	switch (v.typ) {
+	case ECHS_PSET_DBL:
+		if (!strcmp(key, "long") || !strcmp(key, "longitude")) {
+			clo->pos.lng = RAD(v.dval);
+		} else if (!strcmp(key, "lat") || !strcmp(key, "latitude")) {
+			clo->pos.lat = RAD(v.dval);
+		} else if (!strcmp(key, "alt") || !strcmp(key, "altitude")) {
+			clo->pos.alt = v.dval;
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 /* lunar.c ends here */
