@@ -426,6 +426,20 @@ obj_geo_cnt_pos(cel_obj_t obj, cel_jdd_t d)
 	return geo_cnt_pos(cp_obj, cp_sun);
 }
 
+static cyl_pos_t
+obj_geo_equ_pos(cel_obj_t obj, cel_jdd_t d)
+{
+	cyl_pos_t cnt = obj_geo_cnt_pos(obj, d);
+
+	if (obj->fixup) {
+		struct orb_s oo = orb_scalprod(obj, d);
+		struct orb_s os = orb_scalprod(sun, d);
+
+		cnt = obj->fixup(cnt, oo, os);
+	}
+	return geo_equ_pos(cnt, d);
+}
+
 static double
 cos_lha(cyl_pos_t top, cel_pos_t p)
 {
@@ -592,43 +606,38 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 
 		ot = t;
 		dh = (cel_jdd_t)d + t / 24.0;
 		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		equ = obj_geo_equ_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		t = get_lth(gmst0, DEG(top.lng), p);
+		t = get_lth(gmst0, DEG(equ.lng), p);
 		res.transit = t / 24.0;
+		break;
 	}
 
 	t = (res.rise = res.transit) * 24.0;
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 		double tmp;
 		double clha;
 
 		ot = t;
 		dh = (cel_jdd_t)d + t / 24.0;
 		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		equ = obj_geo_equ_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(top, p)))) {
+		if (isnan(tmp = acos(clha = cos_lha(equ, p)))) {
 			res.rise = NAN;
 			break;
 		}
@@ -640,29 +649,25 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 	ot = NAN;
 	for (size_t i = 0; !prec_eq_p(t, ot, prec) && i < max_iter; i++) {
 		cel_jdd_t dh;
-		cyl_pos_t cnt;
-		cyl_pos_t top;
+		cyl_pos_t equ;
 		double tmp;
 		double clha;
 
 		ot = t;
 		dh = (cel_jdd_t)d + t / 24.0;
 		gmst0 = get_gmst0(dh);
-		cnt = obj_geo_cnt_pos(obj, dh);
-		if (obj != moon) {
-			top = geo_equ_pos(cnt, dh);
-		} else {
+		equ = obj_geo_cnt_pos(obj, dh);
+		if (obj == moon) {
 			/* moon needs topocentric coords */
-			top = geo_top_pos(cnt, gmst0, t, p);
+			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(top, p)))) {
+		if (isnan(tmp = acos(clha = cos_lha(equ, p)))) {
 			res.set = NAN;
 			break;
 		}
 		t = get_lth(gmst0, DEG(tmp), p);
 		res.set = (res.transit * 24.0 + t) / 24.0;
 	}
-
 	return res;
 }
 
