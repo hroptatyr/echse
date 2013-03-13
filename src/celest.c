@@ -175,7 +175,7 @@ parallax(double r)
 static cel_lst_t
 get_lst(cel_lst_t gmst0, cel_h_t ut, cel_pos_t p)
 {
-	return gmst0 + ut * 15.0 * 24.0 + DEG(p.lng);
+	return fmod_360(gmst0 + ut * 15.0 * 24.0 + DEG(p.lng));
 }
 
 static cel_h_t
@@ -380,7 +380,7 @@ get_gmst0(cel_jdd_t d)
 	double Ls = v + o.w;
 	double gmst0 = DEG(Ls) + 180;
 
-	return fmod_360(gmst0);
+	return gmst0;
 }
 
 static cyl_pos_t
@@ -421,7 +421,7 @@ static double
 cos_lha(cyl_pos_t top, cel_pos_t p)
 {
 /* cosine of sun's local hour angle */
-	double h = RAD(-0.833);
+	const double h = RAD(-0.833);
 
 	return (sin(h) - sin(p.lat) * sin(top.lat)) /
 		(cos(p.lat) * cos(top.lat));
@@ -604,21 +604,20 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		cel_jdd_t dh;
 		cyl_pos_t equ;
 		double tmp;
-		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t;
+		dh = (cel_jdd_t)d + res.rise;
 		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
 			/* moon needs topocentric coords */
 			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(equ, p)))) {
+		if (isnan(tmp = acos(cos_lha(equ, p)))) {
 			res.rise = NAN;
 			break;
 		}
-		t = get_lth(gmst0, DEG(tmp), p);
+		t = tmp / (2 * pi);
 		res.rise = res.transit - t;
 	}
 
@@ -628,21 +627,20 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		cel_jdd_t dh;
 		cyl_pos_t equ;
 		double tmp;
-		double clha;
 
 		ot = t;
-		dh = (cel_jdd_t)d + t;
+		dh = (cel_jdd_t)d + res.set;
 		gmst0 = get_gmst0(dh);
 		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
 			/* moon needs topocentric coords */
 			equ = geo_top_pos(equ, gmst0, t, p);
 		}
-		if (isnan(tmp = acos(clha = cos_lha(equ, p)))) {
+		if (isnan(tmp = acos(cos_lha(equ, p)))) {
 			res.set = NAN;
 			break;
 		}
-		t = get_lth(gmst0, DEG(tmp), p);
+		t = tmp / (2 * pi);
 		res.set = res.transit + t;
 	}
 	return res;
