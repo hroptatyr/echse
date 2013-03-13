@@ -633,7 +633,7 @@ cel_rts(cel_obj_t obj, cel_d_t d, cel_pos_t p, struct cel_calcopt_s opt)
 		ot = t;
 		dh = (cel_jdd_t)d + t / 24.0;
 		gmst0 = get_gmst0(dh);
-		equ = obj_geo_cnt_pos(obj, dh);
+		equ = obj_geo_equ_pos(obj, dh);
 		if (obj == moon) {
 			/* moon needs topocentric coords */
 			equ = geo_top_pos(equ, gmst0, t, p);
