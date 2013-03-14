@@ -246,7 +246,7 @@ zif_nchars(zif_t z)
 
 /**
  * Return the transition details after the N-th transition in Z. */
-static inline struct ztrdtl_s
+static inline __attribute__((unused)) struct ztrdtl_s
 zif_trdtl(zif_t z, int n)
 {
 /* no bound check! */
@@ -259,7 +259,7 @@ zif_trdtl(zif_t z, int n)
 
 /**
  * Return the gmt offset the N-th transition in Z. */
-static inline int32_t
+static inline __attribute__((unused)) int32_t
 zif_troffs(zif_t z, int n)
 {
 /* no bound check! */
@@ -269,7 +269,7 @@ zif_troffs(zif_t z, int n)
 
 /**
  * Return the total number of leap second transitions. */
-static inline size_t
+static inline __attribute__((unused)) size_t
 zif_nleaps(zif_t z)
 {
 	return z->hdr->tzh_leapcnt;
@@ -277,7 +277,7 @@ zif_nleaps(zif_t z)
 
 /**
  * Return the zonename after the N-th transition in Z. */
-static inline znam_t
+static inline __attribute__((unused)) znam_t
 zif_trname(zif_t z, int n)
 {
 /* no bound check! */
