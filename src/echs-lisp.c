@@ -158,6 +158,7 @@ __load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 		size_t z;
 		char *v = scm_to_locale_stringn(val, &z);
 
+		v[z] = '\0';
 		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
 		free(v);
 	} else if (scm_is_pair(val)) {
