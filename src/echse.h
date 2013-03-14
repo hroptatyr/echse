@@ -52,6 +52,7 @@ typedef const char *echs_state_t;
 typedef struct echs_event_s echs_event_t;
 typedef struct echs_stream_s echs_stream_t;
 typedef struct echs_filter_s echs_filter_t;
+typedef const struct echs_prop_s *echs_prop_t;
 
 union echs_instant_u {
 	struct {
@@ -101,6 +102,11 @@ struct echs_pset_s {
 		const char *str;
 	};
 	size_t z;
+};
+
+struct echs_prop_s {
+	const char *key;
+	struct echs_pset_s pset;
 };
 
 
