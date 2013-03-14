@@ -43,6 +43,7 @@
 #include <limits.h>
 #include "echse.h"
 #include "instant.h"
+#include "yd.h"
 #include "boobs.h"
 
 #if !defined LIKELY
@@ -142,13 +143,62 @@ struct clo_s {
 static int32_t
 __inst_to_unix(echs_instant_t i)
 {
-	return 0;
+	struct yd_s yd = __md_to_yd(i.y, (struct md_s){.m = i.m, .d = i.d});
+	int y = i.y - 1970;
+	int j00 = y * 365 + (y - 2) / 4;
+
+	return ((((j00 + yd.d) * 24 + i.H) * 60 + i.M) * 60 + i.S);
 }
 
 static echs_instant_t
 __unix_to_inst(int32_t ts)
 {
-	return (echs_instant_t){0};
+/* stolen from dateutils' daisy.c */
+	echs_instant_t i;
+	int y;
+	int j00;
+	unsigned int doy;
+	int d;
+	int h;
+
+	/* decompose */
+	d = ts / 86400;
+	h = ts % 86400;
+	if (UNLIKELY(ts < 0)) {
+		d--;
+		h += 86400;
+	}
+
+	/* get year first (estimate) */
+	y = d / 365;
+	/* get jan-00 of (est.) Y */
+	j00 = y * 365 + y / 4;
+	/* y correct? */
+	if (UNLIKELY(j00 >= d)) {
+		/* correct y */
+		y--;
+		/* and also recompute the j00 of y */
+		j00 = y * 365 + y / 4;
+	}
+	/* ass */
+	i.y = y + 1970U;
+	/* this one must be positive now */
+	doy = d - j00;
+
+	/* get month and day from doy */
+	{
+		struct md_s md = __yd_to_md((struct yd_s){i.y, doy});
+		i.m = md.m;
+		i.d = md.d;
+	}
+
+	/* account for H M S now */
+	i.S = h % 60;
+	h /= 60;
+	i.M = h % 60;
+	h /= 60;
+	i.H = h;
+	return i;
 }
 
 
