@@ -1,11 +1,11 @@
-/*** fltdef.h -- filter modules, files, sockets, etc.
+/*** yd.h -- helpers for year-doy representation
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2010-2013 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
  * This file is part of echse.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -33,50 +33,73 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- ***/
-#if !defined INCLUDED_fltdef_h_
-#define INCLUDED_fltdef_h_
+ **/
+#if !defined INCLUDED_yd_h_
+#define INCLUDED_yd_h_
 
 #include <stdint.h>
-#include "echse.h"
 
-typedef struct echs_fltdef_s echs_fltdef_t;
-typedef void *echs_flthdl_t;
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 
-struct echs_fltdef_s {
-	echs_filter_t f;
-	echs_flthdl_t m;
+struct yd_s {
+	unsigned int y;
+	unsigned int d;
+};
+
+struct md_s {
+	unsigned int m;
+	unsigned int d;
 };
 
 
-/**
- * Open a filter according to FLTDEF and fast forward to instant I.
- * If FLTDEF points to a DSO, load and initialise it. */
-extern echs_fltdef_t echs_open_filter(echs_instant_t i, const char *fltdef);
+static inline struct md_s
+__yd_to_md(struct yd_s yd)
+{
+/* stolen from dateutils */
+#define GET_REM(x)	(rem[x])
+	static const uint8_t rem[] = {
+		19U, 19U, 18U, 14U, 13U, 11U, 10U, 8U, 7U, 6U, 4U, 3U, 1U, 0U,
+	};
+	unsigned int m;
+	unsigned int d;
+	unsigned int beef;
+	unsigned int cake;
 
-/**
- * Close a filter and free associated resources. */
-extern void echs_close_filter(echs_fltdef_t);
+	/* get 32-adic doys */
+	m = (yd.d + 19U) / 32U;
+	d = (yd.d + 19U) % 32U;
+	beef = GET_REM(m);
+	cake = GET_REM(m + 1);
 
-/**
- * Pass property (k, v) to filter definition F. */
-extern void
-echs_pset_filter(echs_fltdef_t f, const char *k, struct echs_pset_s v);
+	/* put leap years into cake */
+	if (UNLIKELY((yd.y % 4) == 0U && cake < 16U)) {
+		/* note how all leap-affected cakes are < 16 */
+		beef += beef < 16U;
+		cake++;
+	}
 
-/**
- * Return the psetter of filter definition F. */
-extern void(*
-	    echs_fltdef_psetter(echs_fltdef_t)
-	)(echs_filter_t, const char*, struct echs_pset_s);
+	if (d <= cake) {
+		d = yd.d - ((m - 1) * 32U - 19U + beef);
+	} else {
+		d = yd.d - (m++ * 32U - 19U + cake);
+	}
+	return (struct md_s){.m = m, .d = d};
+#undef GET_REM
+}
 
-/**
- * Plug a stream S into a filter F and return the result stream. */
-extern echs_stream_t
-make_echs_filtstrm(echs_filter_t f, echs_stream_t s);
+static inline struct yd_s
+__md_to_yd(unsigned int y, struct md_s md)
+{
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml */
+		0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+	};
+	unsigned int doy = __mon_yday[md.m - 1] + md.d +
+		(UNLIKELY((y % 4U) == 0) && md.m >= 3U);
 
-/**
- * Rid a filter-stream, as in separate its input stream from the filter.
- * This will not free the input stream nor the filter. */
-extern void free_echs_filtstrm(echs_stream_t);
+	return (struct yd_s){.y = y, .d = doy};
+}
 
-#endif	/* INCLUDED_fltdef_h_ */
+#endif	/* INCLUDED_yd_h_ */

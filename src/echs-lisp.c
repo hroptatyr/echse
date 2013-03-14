@@ -71,8 +71,14 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 # error unsupported guile version
 #endif	/* GUILE_VERSION */
 
-typedef void(*strm_pset_f)(echs_stream_t, const char*, struct echs_pset_s);
-typedef void(*filt_pset_f)(echs_filter_t, const char*, struct echs_pset_s);
+typedef union echs_strflt_u echs_strflt_t;
+typedef void(*pset_f)(echs_strflt_t, const char*, struct echs_pset_s);
+
+/* this is how both streams and filters look to us */
+union echs_strflt_u {
+	echs_stream_t s;
+	echs_filter_t f;
+} __attribute__((transparent_union));
 
 struct echs_mod_smob_s {
 	enum {
@@ -140,43 +146,38 @@ __stringify(SCM kw)
 }
 
 static void
-__load_strm_ass_kv(strm_pset_f pset, echs_stream_t s, const char *key, SCM val)
+__load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 {
 	if (scm_is_string(val)) {
 		size_t z;
 		char *v = scm_to_locale_stringn(val, &z);
 
+		v[z] = '\0';
 		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
 		free(v);
+
 	} else if (scm_is_pair(val)) {
 		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
-			__load_strm_ass_kv(pset, s, key, SCM_CAR(h));
+			__load_ass_kv(pset, s, key, SCM_CAR(h));
 		}
+
 	} else if (scm_is_real(val)) {
 		double v = scm_to_double(val);
 
 		pset(s, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
-	}
-	return;
-}
 
-static void
-__load_filt_ass_kv(filt_pset_f pset, echs_filter_t f, const char *key, SCM val)
-{
-	if (scm_is_string(val)) {
+	} else if (scm_is_symbol(val)) {
 		size_t z;
-		char *s = scm_to_locale_stringn(val, &z);
+		char *v = scm_to_locale_stringn(scm_symbol_to_string(val), &z);
 
-		pset(f, key, (struct echs_pset_s){ECHS_PSET_STR, s, z});
-		free(s);
-	} else if (scm_is_pair(val)) {
-		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
-			__load_filt_ass_kv(pset, f, key, SCM_CAR(h));
-		}
-	} else if (scm_is_real(val)) {
-		double v = scm_to_double(val);
+		v[z] = '\0';
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
+		free(v);
 
-		pset(f, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
+	} else if (scm_is_bool(val)) {
+		int v = scm_to_bool(val);
+
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_INT, .ival = v});
 	}
 	return;
 }
@@ -190,7 +191,7 @@ SCM_DEFINE(
 #define FUNC_NAME	"load-strm"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
-	strm_pset_f pset;
+	pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -200,14 +201,14 @@ SCM_DEFINE(
 	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
 	/* init */
 	smob->typ = EM_TYP_STRM;
-	smob->s = echs_open(from, fn);
+	smob->s = echs_open_stream(from, fn);
 	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
 	free(fn);
 
 	/* have we got a pset fun in our filter? */
-	if ((pset = echs_strdef_psetter(smob->s)) == NULL) {
+	if ((pset = (pset_f)echs_strdef_psetter(smob->s)) == NULL) {
 		goto skip;
 	}
 
@@ -221,7 +222,7 @@ SCM_DEFINE(
 		v = SCM_CDR(v);
 
 		key = __stringify(k);
-		__load_strm_ass_kv(pset, smob->s.s, key, SCM_CAR(v));
+		__load_ass_kv(pset, (echs_strflt_t)smob->s.s, key, SCM_CAR(v));
 	}
 skip:
 	return XSMOB;
@@ -237,7 +238,7 @@ SCM_DEFINE(
 #define FUNC_NAME	"load-filt"
 	SCM XSMOB;
 	struct echs_mod_smob_s *smob;
-	filt_pset_f pset;
+	pset_f pset;
 	char *fn;
 
 	SCM_VALIDATE_STRING(1, dso);
@@ -247,7 +248,7 @@ SCM_DEFINE(
 	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
 	/* init */
 	smob->typ = EM_TYP_FILT;
-	smob->f = echs_open_fltdef(from, fn);
+	smob->f = echs_open_filter(from, fn);
 	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
@@ -268,7 +269,7 @@ SCM_DEFINE(
 		v = SCM_CDR(v);
 
 		key = __stringify(k);
-		__load_filt_ass_kv(pset, smob->f.f, key, SCM_CAR(v));
+		__load_ass_kv(pset, (echs_strflt_t)smob->f.f, key, SCM_CAR(v));
 	}
 skip:
 	return XSMOB;
@@ -317,7 +318,7 @@ free_echs_mod(SCM obj)
 	case EM_TYP_STRM:
 		if (smob->s.m != NULL) {
 			/* probably a DSO */
-			echs_close(smob->s);
+			echs_close_stream(smob->s);
 		} else {
 			/* probably our shit */
 			void *sc = smob->s.s.clo;
@@ -326,9 +327,21 @@ free_echs_mod(SCM obj)
 			smob->s.s = (echs_stream_t){NULL, NULL};;
 		}
 		break;
+	case EM_TYP_FILT:
+		if (smob->f.m != NULL) {
+			/* probably a DSO */
+			echs_close_filter(smob->f);
+		} else {
+			/* probably our shit */
+			void *sc = smob->f.f.clo;
+
+			scm_gc_free(sc, sizeof(struct echse_clo_s), "echs-mod");
+			smob->f.f = (echs_filter_t){NULL, NULL};;
+		}
+		break;
 	default:
 		/* bad sign */
-		echs_close_fltdef(smob->f);
+		fprintf(stderr, "freeing unknown smob typ %u\n", smob->typ);
 		break;
 	}
 	scm_gc_free(smob, sizeof(*smob), "echs-mod");

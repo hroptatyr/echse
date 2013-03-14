@@ -48,13 +48,19 @@ struct echs_strdef_s {
 };
 
 
-extern echs_strdef_t echs_open(echs_instant_t i, const char *strdef);
-extern void echs_close(echs_strdef_t);
+/**
+ * Open a stream according to STRDEF and fast forward to instant I.
+ * If STRDEF points to a DSO, load and initialise it, if it's a file. */
+extern echs_strdef_t echs_open_stream(echs_instant_t i, const char *strdef);
+
+/**
+ * Close a stream and free associated resources. */
+extern void echs_close_stream(echs_strdef_t);
 
 /**
  * Pass property (k, v) to stream definition S. */
 extern void
-echs_strdef_pset(echs_strdef_t s, const char *k, struct echs_pset_s v);
+echs_pset_stream(echs_strdef_t s, const char *k, struct echs_pset_s v);
 
 /**
  * Return the psetter of stream definition S. */
