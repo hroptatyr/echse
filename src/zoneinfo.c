@@ -37,7 +37,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
-#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -578,13 +577,39 @@ typedef enum {
 } prop_t;
 
 static prop_t
-__prop(struct echs_prop_s prop)
+__prop(const char *key, struct echs_pset_s pset)
 {
-	if (prop.pset.typ == ECHS_PSET_STR &&
-	    (!strcmp(prop.key, ":file") || !strcmp(prop.key, ":zone"))) {
+	if (pset.typ == ECHS_PSET_STR &&
+	    (!strcmp(key, ":file") || !strcmp(key, ":zone"))) {
 		return PROP_ZIFN;
 	}
 	return PROP_UNK;
+}
+
+void
+echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
+{
+	struct clo_s *clo = s.clo;
+	zif_t zi;
+
+	if (UNLIKELY(clo->zi != NULL)) {
+		/* there's a zone file there already, fuck right off */
+		return;
+	}
+
+	switch (__prop(key, v)) {
+	case PROP_ZIFN:
+		if ((zi = zif_open(v.str)) != NULL) {
+			/* yay */
+			break;
+		}
+	default:
+		return;
+	}
+
+	clo->tri = zif_find_trans(zi, clo->now);
+	clo->zi = zi;
+	return;
 }
 
 
@@ -598,7 +623,10 @@ __zi(void *vclo)
 
 	/* since zoneinfo is sort of like an echse stream
 	 * all that needs doing is to advance the transition index */
-	if ((clo->tri++, (size_t)clo->tri >= zif_ntrans(clo->zi))) {
+	if (UNLIKELY(clo->zi == NULL)) {
+		/* bugger off */
+		return (echs_event_t){0};
+	} else if ((clo->tri++, (size_t)clo->tri >= zif_ntrans(clo->zi))) {
 		return (echs_event_t){0};
 	}
 	/* everything in order, proceed normally */
@@ -611,46 +639,16 @@ __zi(void *vclo)
 echs_stream_t
 make_echs_stream(echs_instant_t inst, ...)
 {
-#define PROP(i)		(prop[i].pset)
-	va_list ap;
 	struct clo_s *clo;
-	zif_t zi;
 	int32_t its;
-	int tri;
-	size_t nprop;
-	echs_prop_t prop;
 
-	va_start(ap, inst);
-	if ((nprop = va_arg(ap, size_t))) {
-		prop = va_arg(ap, echs_prop_t);
-	}
-	va_end(ap);
-
-	for (size_t i = 0; i < nprop; i++) {
-		switch (__prop(prop[i])) {
-		case PROP_ZIFN:
-			if ((zi = zif_open(PROP(i).str)) != NULL) {
-				goto yay;
-			}
-		default:
-			break;
-		}
-	}
-	/* no success innit */
-	return (echs_stream_t){NULL};
-
-yay:
 	/* roll forward to the transition in question */
 	its = __inst_to_unix(inst);
-	tri = zif_find_trans(zi, its);
 
 	/* everything seems in order, prep the closure */
 	clo = calloc(1, sizeof(*clo));
 	clo->now = its;
-	clo->tri = tri;
-	clo->zi = zi;
 	return (echs_stream_t){__zi, clo};
-#undef PROP
 }
 
 void
