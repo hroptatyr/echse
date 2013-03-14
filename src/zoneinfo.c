@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -129,6 +130,12 @@ struct zif_s {
 	int fd;
 };
 
+typedef enum {
+	USE_DEFLT,
+	USE_ZNAME,
+	USE_UOFFS,
+} flavour_t;
+
 struct clo_s {
 	/* the zoneinfo file handle */
 	zif_t zi;
@@ -136,6 +143,15 @@ struct clo_s {
 	int32_t now;
 	/* transition index of/before now */
 	int tri;
+
+	/* what WHAT to use */
+	flavour_t flav:8;
+
+	/* for our own state keeping */
+	unsigned int anncdp:1;
+
+	/* buffer for the last WHAT including the ~ upfront */
+	char last[64];
 };
 
 
@@ -574,14 +590,22 @@ zif_find_trans(zif_t z, int32_t t)
 typedef enum {
 	PROP_UNK,
 	PROP_ZIFN,
+	PROP_OUTPUT,
 } prop_t;
 
 static prop_t
 __prop(const char *key, struct echs_pset_s pset)
 {
-	if (pset.typ == ECHS_PSET_STR &&
-	    (!strcmp(key, ":file") || !strcmp(key, ":zone"))) {
-		return PROP_ZIFN;
+	switch (pset.typ) {
+	case ECHS_PSET_STR:
+		if (!strcmp(key, ":file") || !strcmp(key, ":zone")) {
+			return PROP_ZIFN;
+		} else if (!strcmp(key, ":output")) {
+			return PROP_OUTPUT;
+		}
+		break;
+	default:
+		break;
 	}
 	return PROP_UNK;
 }
@@ -592,23 +616,31 @@ echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
 	struct clo_s *clo = s.clo;
 	zif_t zi;
 
-	if (UNLIKELY(clo->zi != NULL)) {
-		/* there's a zone file there already, fuck right off */
-		return;
-	}
-
 	switch (__prop(key, v)) {
 	case PROP_ZIFN:
-		if ((zi = zif_open(v.str)) != NULL) {
+		if (UNLIKELY(clo->zi != NULL)) {
+			/* there's a zone file there already, fuck right off */
+			;
+		} else if (LIKELY((zi = zif_open(v.str)) != NULL)) {
 			/* yay */
-			break;
+			clo->zi = zi;
+			clo->tri = zif_find_trans(zi, clo->now);
+			if ((clo->tri++, (size_t)clo->tri >= zif_ntrans(zi))) {
+				/* no states at all then? */
+				;
+			}
 		}
+		break;
+	case PROP_OUTPUT:
+		if (!strcmp(v.str, "zone")) {
+			clo->flav = USE_ZNAME;
+		} else if (!strcmp(v.str, "offset")) {
+			clo->flav = USE_UOFFS;
+		}
+		break;
 	default:
-		return;
+		break;
 	}
-
-	clo->tri = zif_find_trans(zi, clo->now);
-	clo->zi = zi;
 	return;
 }
 
@@ -626,13 +658,47 @@ __zi(void *vclo)
 	if (UNLIKELY(clo->zi == NULL)) {
 		/* bugger off */
 		return (echs_event_t){0};
-	} else if ((clo->tri++, (size_t)clo->tri >= zif_ntrans(clo->zi))) {
+	} else if ((!clo->anncdp || clo->tri++,
+		    (size_t)clo->tri >= zif_ntrans(clo->zi))) {
 		return (echs_event_t){0};
 	}
 	/* everything in order, proceed normally */
 	dtl = zif_spec(clo->zi, clo->tri);
 	e.when = __unix_to_inst(dtl.since);
-	e.what = dtl.dstp ? ON(DST) : OFF(DST);
+	switch (clo->flav) {
+	default:
+	case USE_DEFLT:
+		if (dtl.dstp) {
+			e.what = ON(DST);
+		} else {
+			e.what = OFF(DST);
+		}
+		clo->anncdp = 1;
+		break;
+
+	case USE_ZNAME:
+		e.what = clo->last;
+		if (!clo->anncdp++) {
+			const char *what = dtl.name;
+			size_t whaz = strlen(what);
+
+			memcpy(clo->last + 1, what, whaz);
+			clo->last[1 + whaz] = '\0';
+			e.what++;
+		}
+		break;
+
+	case USE_UOFFS:
+		e.what = clo->last;
+		if (!clo->anncdp++) {
+			char *p = clo->last + 1;
+			size_t z = sizeof(clo->last) - 1;
+
+			snprintf(p, z, "OFFSET=%d", dtl.offs);
+			e.what++;
+		}
+		break;
+	}
 	return e;
 }
 
@@ -648,6 +714,7 @@ make_echs_stream(echs_instant_t inst, ...)
 	/* everything seems in order, prep the closure */
 	clo = calloc(1, sizeof(*clo));
 	clo->now = its;
+	clo->last[0] = '~';
 	return (echs_stream_t){__zi, clo};
 }
 

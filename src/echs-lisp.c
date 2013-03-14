@@ -161,14 +161,29 @@ __load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 		v[z] = '\0';
 		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
 		free(v);
+
 	} else if (scm_is_pair(val)) {
 		for (SCM h = val; !scm_is_null(h); h = SCM_CDR(h)) {
 			__load_ass_kv(pset, s, key, SCM_CAR(h));
 		}
+
 	} else if (scm_is_real(val)) {
 		double v = scm_to_double(val);
 
 		pset(s, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
+
+	} else if (scm_is_symbol(val)) {
+		size_t z;
+		char *v = scm_to_locale_stringn(scm_symbol_to_string(val), &z);
+
+		v[z] = '\0';
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
+		free(v);
+
+	} else if (scm_is_bool(val)) {
+		int v = scm_to_bool(val);
+
+		pset(s, key, (struct echs_pset_s){ECHS_PSET_INT, .ival = v});
 	}
 	return;
 }
