@@ -260,7 +260,7 @@ make_echs_filter(echs_instant_t from, ...)
 	fn = va_arg(ap, const char *);
 	va_end(ap);
 
-	if ((x.fd = echs_open_fltdef(from, fn)).m == NULL) {
+	if ((x.fd = echs_open_filter(from, fn)).m == NULL) {
 		logger(LOG_ERR, "cannot use stream DSO %s", fn);
 	}
 	return (echs_filter_t){__filter, &x};
@@ -272,7 +272,7 @@ free_echs_filter(echs_filter_t f)
 	struct echsf_clo_s *clo = f.clo;
 
 	if (LIKELY(clo != NULL)) {
-		echs_close_fltdef(clo->fd);
+		echs_close_filter(clo->fd);
 	}
 	return;
 }

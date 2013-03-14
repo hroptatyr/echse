@@ -54,7 +54,7 @@
 
 
 echs_fltdef_t
-echs_open_fltdef(echs_instant_t i, const char *fltdef)
+echs_open_filter(echs_instant_t i, const char *fltdef)
 {
 	typedef echs_filter_t(*make_filter_f)(echs_instant_t, ...);
 	struct echs_fltdef_s res;
@@ -69,7 +69,7 @@ echs_open_fltdef(echs_instant_t i, const char *fltdef)
 			goto fuckup;
 		} else if ((res.f = ((make_filter_f)f)(i)).f == NULL) {
 			/* no filters returned */
-			echs_close_fltdef(res);
+			echs_close_filter(res);
 			goto fuckup;
 		}
 	} else {
@@ -81,7 +81,7 @@ echs_open_fltdef(echs_instant_t i, const char *fltdef)
 }
 
 void
-echs_close_fltdef(echs_fltdef_t sd)
+echs_close_filter(echs_fltdef_t sd)
 {
 	typedef void(*free_filter_f)(echs_filter_t);
 
@@ -117,7 +117,7 @@ void(*
 }
 
 void
-echs_fltdef_pset(echs_fltdef_t sf, const char *k, struct echs_pset_s v)
+echs_pset_filter(echs_fltdef_t sf, const char *k, struct echs_pset_s v)
 {
 	void(*f)(echs_filter_t, const char*, struct echs_pset_s);
 
