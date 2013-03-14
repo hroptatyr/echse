@@ -333,9 +333,21 @@ free_echs_mod(SCM obj)
 			smob->s.s = (echs_stream_t){NULL, NULL};;
 		}
 		break;
+	case EM_TYP_FILT:
+		if (smob->f.m != NULL) {
+			/* probably a DSO */
+			echs_close_fltdef(smob->f);
+		} else {
+			/* probably our shit */
+			void *sc = smob->f.f.clo;
+
+			scm_gc_free(sc, sizeof(struct echse_clo_s), "echs-mod");
+			smob->f.f = (echs_filter_t){NULL, NULL};;
+		}
+		break;
 	default:
 		/* bad sign */
-		echs_close_fltdef(smob->f);
+		fprintf(stderr, "freeing unknown smob typ %u\n", smob->typ);
 		break;
 	}
 	scm_gc_free(smob, sizeof(*smob), "echs-mod");
