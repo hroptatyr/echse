@@ -42,6 +42,7 @@
 #include <stdbool.h>
 #include "celest.h"
 #include "float.h"
+#include "yd.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -460,18 +461,11 @@ DEFCEL_OBJ(moon)
 cel_d_t
 instant_to_d(echs_instant_t i)
 {
-	static uint16_t __mon_yday[] = {
-		/* this is \sum ml */
-		0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
-	};
+	struct yd_s yd = __md_to_yd(i.y, (struct md_s){.m = i.m, .d = i.d});
 	int y = i.y - 2000;
-	int j00;
-	int doy;
+	int j00 = y * 365 + y / 4;
 
-	j00 = y * 365 + y / 4;
-	doy = __mon_yday[i.m - 1] + i.d + (UNLIKELY((y % 4) == 0) && i.m >= 3);
-
-	return j00 + doy;
+	return j00 + yd.d;
 }
 
 static __attribute__((unused)) cel_h_t
@@ -515,37 +509,9 @@ dh_to_instant(cel_d_t d, cel_h_t h)
 
 	/* get month and day from doy */
 	{
-#define GET_REM(x)	(rem[x])
-		static const uint8_t rem[] = {
-			19, 19, 18, 14, 13, 11, 10, 8, 7, 6, 4, 3, 1, 0
-
-		};
-		unsigned int mdm;
-		unsigned int mdd;
-		unsigned int beef;
-		unsigned int cake;
-
-		/* get 32-adic doys */
-		mdm = (doy + 19) / 32U;
-		mdd = (doy + 19) % 32U;
-		beef = GET_REM(mdm);
-		cake = GET_REM(mdm + 1);
-
-		/* put leap years into cake */
-		if (UNLIKELY((y % 4) == 0U && cake < 16U)) {
-			/* note how all leap-affected cakes are < 16 */
-			beef += beef < 16U;
-			cake++;
-		}
-
-		if (mdd <= cake) {
-			mdd = doy - ((mdm - 1) * 32 - 19 + beef);
-		} else {
-			mdd = doy - (mdm++ * 32 - 19 + cake);
-		}
-		i.m = mdm;
-		i.d = mdd;
-#undef GET_REM
+		struct md_s md = __yd_to_md((struct yd_s){i.y, doy});
+		i.m = md.m;
+		i.d = md.d;
 	}
 
 	/* account for H M S now */
