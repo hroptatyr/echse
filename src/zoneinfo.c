@@ -136,6 +136,8 @@ struct clo_s {
 	int32_t now;
 	/* transition index of/before now */
 	int tri;
+	/* name to use */
+	unsigned int znamep:1;
 };
 
 
@@ -574,6 +576,7 @@ zif_find_trans(zif_t z, int32_t t)
 typedef enum {
 	PROP_UNK,
 	PROP_ZIFN,
+	PROP_INCZN,
 } prop_t;
 
 static prop_t
@@ -582,6 +585,9 @@ __prop(const char *key, struct echs_pset_s pset)
 	if (pset.typ == ECHS_PSET_STR &&
 	    (!strcmp(key, ":file") || !strcmp(key, ":zone"))) {
 		return PROP_ZIFN;
+	} else if (pset.typ == ECHS_PSET_INT &&
+		   (!strcmp(key, ":include-name"))) {
+		return PROP_INCZN;
 	}
 	return PROP_UNK;
 }
@@ -592,23 +598,23 @@ echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
 	struct clo_s *clo = s.clo;
 	zif_t zi;
 
-	if (UNLIKELY(clo->zi != NULL)) {
-		/* there's a zone file there already, fuck right off */
-		return;
-	}
-
 	switch (__prop(key, v)) {
 	case PROP_ZIFN:
-		if ((zi = zif_open(v.str)) != NULL) {
+		if (UNLIKELY(clo->zi != NULL)) {
+			/* there's a zone file there already, fuck right off */
+			;
+		} else if (LIKELY((zi = zif_open(v.str)) != NULL)) {
 			/* yay */
-			break;
+			clo->tri = zif_find_trans(zi, clo->now);
+			clo->zi = zi;
 		}
+		break;
+	case PROP_INCZN:
+		clo->znamep = v.ival;
+		break;
 	default:
-		return;
+		break;
 	}
-
-	clo->tri = zif_find_trans(zi, clo->now);
-	clo->zi = zi;
 	return;
 }
 
@@ -632,7 +638,11 @@ __zi(void *vclo)
 	/* everything in order, proceed normally */
 	dtl = zif_spec(clo->zi, clo->tri);
 	e.when = __unix_to_inst(dtl.since);
-	e.what = dtl.dstp ? ON(DST) : OFF(DST);
+	if (clo->znamep == 0) {
+		e.what = dtl.dstp ? ON(DST) : OFF(DST);
+	} else {
+		e.what = dtl.name;
+	}
 	return e;
 }
 
