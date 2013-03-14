@@ -49,13 +49,19 @@ struct echs_fltdef_s {
 };
 
 
-extern echs_fltdef_t echs_open_fltdef(echs_instant_t i, const char *fltdef);
-extern void echs_close_fltdef(echs_fltdef_t);
+/**
+ * Open a filter according to FLTDEF and fast forward to instant I.
+ * If FLTDEF points to a DSO, load and initialise it. */
+extern echs_fltdef_t echs_open_filter(echs_instant_t i, const char *fltdef);
+
+/**
+ * Close a filter and free associated resources. */
+extern void echs_close_filter(echs_fltdef_t);
 
 /**
  * Pass property (k, v) to filter definition F. */
 extern void
-echs_fltdef_pset(echs_fltdef_t f, const char *k, struct echs_pset_s v);
+echs_pset_filter(echs_fltdef_t f, const char *k, struct echs_pset_s v);
 
 /**
  * Return the psetter of filter definition F. */
