@@ -590,8 +590,7 @@ zif_find_trans(zif_t z, int32_t t)
 typedef enum {
 	PROP_UNK,
 	PROP_ZIFN,
-	PROP_USEZN,
-	PROP_USEOF,
+	PROP_OUTPUT,
 } prop_t;
 
 static prop_t
@@ -601,13 +600,8 @@ __prop(const char *key, struct echs_pset_s pset)
 	case ECHS_PSET_STR:
 		if (!strcmp(key, ":file") || !strcmp(key, ":zone")) {
 			return PROP_ZIFN;
-		}
-		break;
-	case ECHS_PSET_INT:
-		if (!strcmp(key, ":use-zone-name")) {
-			return PROP_USEZN;
-		} else if (!strcmp(key, ":use-utc-offset")) {
-			return PROP_USEOF;
+		} else if (!strcmp(key, ":output")) {
+			return PROP_OUTPUT;
 		}
 		break;
 	default:
@@ -637,11 +631,12 @@ echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
 			}
 		}
 		break;
-	case PROP_USEZN:
-		clo->flav = USE_ZNAME;
-		break;
-	case PROP_USEOF:
-		clo->flav = USE_UOFFS;
+	case PROP_OUTPUT:
+		if (!strcmp(v.str, "zone")) {
+			clo->flav = USE_ZNAME;
+		} else if (!strcmp(v.str, "offset")) {
+			clo->flav = USE_UOFFS;
+		}
 		break;
 	default:
 		break;
