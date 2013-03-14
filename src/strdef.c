@@ -53,7 +53,7 @@
 
 
 echs_strdef_t
-echs_open(echs_instant_t i, const char *strdef)
+echs_open_stream(echs_instant_t i, const char *strdef)
 {
 	typedef echs_stream_t(*make_stream_f)(echs_instant_t, ...);
 	struct echs_strdef_s res;
@@ -69,7 +69,7 @@ echs_open(echs_instant_t i, const char *strdef)
 			goto fuckup;
 		} else if ((res.s = ((make_stream_f)f)(i, 0UL)).f == NULL) {
 			/* no stream returned */
-			echs_close(res);
+			echs_close_stream(res);
 			goto fuckup;
 		}
 	} else if (stat(strdef, &st) >= 0 &&
@@ -86,7 +86,7 @@ echs_open(echs_instant_t i, const char *strdef)
 			goto fuckup;
 		} else if ((res.s = ((make_stream_f)f)(i, strdef)).f == NULL) {
 			/* no stream returned */
-			echs_close(res);
+			echs_close_stream(res);
 			goto fuckup;
 		}
 	} else {
@@ -98,7 +98,7 @@ echs_open(echs_instant_t i, const char *strdef)
 }
 
 void
-echs_close(echs_strdef_t sd)
+echs_close_stream(echs_strdef_t sd)
 {
 	typedef void(*free_stream_f)(echs_stream_t);
 
@@ -134,7 +134,7 @@ void(*
 }
 
 void
-echs_strdef_pset(echs_strdef_t sf, const char *k, struct echs_pset_s v)
+echs_pset_stream(echs_strdef_t sf, const char *k, struct echs_pset_s v)
 {
 	void(*f)(echs_stream_t, const char*, struct echs_pset_s);
 
