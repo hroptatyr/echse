@@ -38,6 +38,11 @@ lunar_la_SOURCES = lunar.c
 lunar_la_SOURCES += celest.c celest.h
 lunar_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += zoneinfo.la
+zoneinfo_la_SOURCES = zoneinfo.c
+zoneinfo_la_SOURCES += boobs.h
+zoneinfo_la_LDFLAGS = $(MOD_LDFLAGS)
+
 ## predef filters
 pkglib_LTLIBRARIES += collect.la
 collect_la_SOURCES = collect.c
