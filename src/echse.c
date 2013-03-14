@@ -142,7 +142,7 @@ __stream(void *clo)
 			continue;
 		} else if (__inst_0_p(inst)) {
 		clos_0:
-			echs_close(x->strms[i].sd);
+			echs_close_stream(x->strms[i].sd);
 			memset(x->strms + i, 0, sizeof(*x->strms));
 			continue;
 		} else if (__inst_lt_p(inst, x->last.when) ||
@@ -195,7 +195,7 @@ make_echs_stream(echs_instant_t inst, ...)
 		const char *strm = fn[i];
 		echs_strdef_t sd;
 
-		if ((sd = echs_open(inst, strm)).m == NULL) {
+		if ((sd = echs_open_stream(inst, strm)).m == NULL) {
 			logger(LOG_ERR, "cannot use stream DSO %s", strm);
 			continue;
 		}
@@ -227,7 +227,7 @@ free_echs_stream(echs_stream_t s)
 
 	if (LIKELY(x->strms != NULL)) {
 		for (size_t i = 0; i < x->nstrms; i++) {
-			echs_close(x->strms[i].sd);
+			echs_close_stream(x->strms[i].sd);
 		}
 		free(x->strms);
 	}

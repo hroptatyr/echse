@@ -1,11 +1,11 @@
-/*** strdef.h -- stream modules, files, sockets, etc.
+/*** yd.h -- helpers for year-doy representation
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2010-2013 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
  * This file is part of echse.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -33,39 +33,73 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- ***/
-#if !defined INCLUDED_strdef_h_
-#define INCLUDED_strdef_h_
+ **/
+#if !defined INCLUDED_yd_h_
+#define INCLUDED_yd_h_
 
-#include "echse.h"
+#include <stdint.h>
 
-typedef struct echs_strdef_s echs_strdef_t;
-typedef void *echs_strhdl_t;
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 
-struct echs_strdef_s {
-	echs_stream_t s;
-	echs_strhdl_t m;
+struct yd_s {
+	unsigned int y;
+	unsigned int d;
+};
+
+struct md_s {
+	unsigned int m;
+	unsigned int d;
 };
 
 
-/**
- * Open a stream according to STRDEF and fast forward to instant I.
- * If STRDEF points to a DSO, load and initialise it, if it's a file. */
-extern echs_strdef_t echs_open_stream(echs_instant_t i, const char *strdef);
+static inline struct md_s
+__yd_to_md(struct yd_s yd)
+{
+/* stolen from dateutils */
+#define GET_REM(x)	(rem[x])
+	static const uint8_t rem[] = {
+		19U, 19U, 18U, 14U, 13U, 11U, 10U, 8U, 7U, 6U, 4U, 3U, 1U, 0U,
+	};
+	unsigned int m;
+	unsigned int d;
+	unsigned int beef;
+	unsigned int cake;
 
-/**
- * Close a stream and free associated resources. */
-extern void echs_close_stream(echs_strdef_t);
+	/* get 32-adic doys */
+	m = (yd.d + 19U) / 32U;
+	d = (yd.d + 19U) % 32U;
+	beef = GET_REM(m);
+	cake = GET_REM(m + 1);
 
-/**
- * Pass property (k, v) to stream definition S. */
-extern void
-echs_pset_stream(echs_strdef_t s, const char *k, struct echs_pset_s v);
+	/* put leap years into cake */
+	if (UNLIKELY((yd.y % 4) == 0U && cake < 16U)) {
+		/* note how all leap-affected cakes are < 16 */
+		beef += beef < 16U;
+		cake++;
+	}
 
-/**
- * Return the psetter of stream definition S. */
-extern void(*
-	    echs_strdef_psetter(echs_strdef_t S)
-	)(echs_stream_t, const char*, struct echs_pset_s);
+	if (d <= cake) {
+		d = yd.d - ((m - 1) * 32U - 19U + beef);
+	} else {
+		d = yd.d - (m++ * 32U - 19U + cake);
+	}
+	return (struct md_s){.m = m, .d = d};
+#undef GET_REM
+}
 
-#endif	/* INCLUDED_strdef_h_ */
+static inline struct yd_s
+__md_to_yd(unsigned int y, struct md_s md)
+{
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml */
+		0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+	};
+	unsigned int doy = __mon_yday[md.m - 1] + md.d +
+		(UNLIKELY((y % 4U) == 0) && md.m >= 3U);
+
+	return (struct yd_s){.y = y, .d = doy};
+}
+
+#endif	/* INCLUDED_yd_h_ */
