@@ -575,6 +575,7 @@ __zi(void *vclo)
 {
 	DEFSTATE(DST);
 	struct clo_s *clo = vclo;
+	struct zspec_s dtl;
 	echs_event_t e;
 
 	/* since zoneinfo is sort of like an echse stream
@@ -582,9 +583,10 @@ __zi(void *vclo)
 	if ((clo->tri++, (size_t)clo->tri >= zif_ntrans(clo->zi))) {
 		return (echs_event_t){0};
 	}
-	
-	e.when = __unix_to_inst(clo->zi->trs[clo->tri]);
-	e.what = ON(DST);
+	/* everything in order, proceed normally */
+	dtl = zif_spec(clo->zi, clo->tri);
+	e.when = __unix_to_inst(dtl.since);
+	e.what = dtl.dstp ? ON(DST) : OFF(DST);
 	return e;
 }
 
