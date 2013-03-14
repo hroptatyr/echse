@@ -31,16 +31,19 @@ weekend_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += solar.la
 solar_la_SOURCES = solar.c
 solar_la_SOURCES += celest.c celest.h
+solar_la_SOURCES += yd.h
 solar_la_LDFLAGS = $(MOD_LDFLAGS)
 
 pkglib_LTLIBRARIES += lunar.la
 lunar_la_SOURCES = lunar.c
 lunar_la_SOURCES += celest.c celest.h
+lunar_la_SOURCES += yd.h
 lunar_la_LDFLAGS = $(MOD_LDFLAGS)
 
 pkglib_LTLIBRARIES += zoneinfo.la
 zoneinfo_la_SOURCES = zoneinfo.c
 zoneinfo_la_SOURCES += boobs.h
+zoneinfo_la_SOURCES += yd.h
 zoneinfo_la_LDFLAGS = $(MOD_LDFLAGS)
 
 ## predef filters
