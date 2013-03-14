@@ -200,7 +200,7 @@ SCM_DEFINE(
 	smob = scm_gc_malloc(sizeof(*smob), "echs-mod");
 	/* init */
 	smob->typ = EM_TYP_STRM;
-	smob->s = echs_open(from, fn);
+	smob->s = echs_open_stream(from, fn);
 	smob->fn = dso;
 	SCM_NEWSMOB(XSMOB, scm_tc16_echs_mod, smob);
 
@@ -317,7 +317,7 @@ free_echs_mod(SCM obj)
 	case EM_TYP_STRM:
 		if (smob->s.m != NULL) {
 			/* probably a DSO */
-			echs_close(smob->s);
+			echs_close_stream(smob->s);
 		} else {
 			/* probably our shit */
 			void *sc = smob->s.s.clo;
