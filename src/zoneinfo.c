@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -570,6 +571,23 @@ zif_find_trans(zif_t z, int32_t t)
 }
 
 
+/* properties */
+typedef enum {
+	PROP_UNK,
+	PROP_ZIFN,
+} prop_t;
+
+static prop_t
+__prop(struct echs_prop_s prop)
+{
+	if (prop.pset.typ == ECHS_PSET_STR &&
+	    (!strcmp(prop.key, ":file") || !strcmp(prop.key, ":zone"))) {
+		return PROP_ZIFN;
+	}
+	return PROP_UNK;
+}
+
+
 static echs_event_t
 __zi(void *vclo)
 {
@@ -591,18 +609,39 @@ __zi(void *vclo)
 }
 
 echs_stream_t
-make_echs_stream(echs_instant_t i, ...)
+make_echs_stream(echs_instant_t inst, ...)
 {
+#define PROP(i)		(prop[i].pset)
+	va_list ap;
 	struct clo_s *clo;
 	zif_t zi;
 	int32_t its;
 	int tri;
+	size_t nprop;
+	echs_prop_t prop;
 
-	if ((zi = zif_open("Europe/Berlin")) == NULL) {
-		return (echs_stream_t){NULL};
+	va_start(ap, inst);
+	if ((nprop = va_arg(ap, size_t))) {
+		prop = va_arg(ap, echs_prop_t);
 	}
+	va_end(ap);
+
+	for (size_t i = 0; i < nprop; i++) {
+		switch (__prop(prop[i])) {
+		case PROP_ZIFN:
+			if ((zi = zif_open(PROP(i).str)) != NULL) {
+				goto yay;
+			}
+		default:
+			break;
+		}
+	}
+	/* no success innit */
+	return (echs_stream_t){NULL};
+
+yay:
 	/* roll forward to the transition in question */
-	its = __inst_to_unix(i);
+	its = __inst_to_unix(inst);
 	tri = zif_find_trans(zi, its);
 
 	/* everything seems in order, prep the closure */
@@ -611,6 +650,7 @@ make_echs_stream(echs_instant_t i, ...)
 	clo->tri = tri;
 	clo->zi = zi;
 	return (echs_stream_t){__zi, clo};
+#undef PROP
 }
 
 void
@@ -618,25 +658,14 @@ free_echs_stream(echs_stream_t s)
 {
 	struct clo_s *clo = s.clo;
 
-	if (clo->zi != NULL) {
+	if (UNLIKELY(clo == NULL)) {
+		return;
+	} else if (clo->zi != NULL) {
 		zif_close(clo->zi);
 		clo->zi = NULL;
 	}
 	free(clo);
 	return;
-}
-
-void
-echs_stream_pset(echs_stream_t s, const char *key, struct echs_pset_s v)
-{
-	zif_t zi = s.clo;
-
-	switch (v.typ) {
-	case ECHS_PSET_STR:
-		break;
-	default:
-		break;
-	}
 }
 
 /* zoneinfo.c ends here */
