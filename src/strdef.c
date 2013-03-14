@@ -67,7 +67,7 @@ echs_open(echs_instant_t i, const char *strdef)
 			/* nope, unsuitable */
 			echs_mod_close(res.m);
 			goto fuckup;
-		} else if ((res.s = ((make_stream_f)f)(i)).f == NULL) {
+		} else if ((res.s = ((make_stream_f)f)(i, 0UL)).f == NULL) {
 			/* no stream returned */
 			echs_close(res);
 			goto fuckup;
