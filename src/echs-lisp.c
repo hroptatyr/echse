@@ -72,15 +72,10 @@ SCM_SNARF_INIT(scm_make_synt(RANAME, scm_i_makbimacro, CFN))
 #endif	/* GUILE_VERSION */
 
 typedef union echs_strflt_u echs_strflt_t;
-
 typedef void(*pset_f)(echs_strflt_t, const char*, struct echs_pset_s);
 
 /* this is how both streams and filters look to us */
 union echs_strflt_u {
-	struct {
-		echs_event_t(*fn)();
-		void *clo;
-	};
 	echs_stream_t s;
 	echs_filter_t f;
 } __attribute__((transparent_union));
@@ -92,7 +87,6 @@ struct echs_mod_smob_s {
 		EM_TYP_FILT,
 	} typ;
 	union {
-		echs_strflt_t x;
 		echs_strdef_t s;
 		echs_fltdef_t f;
 	};
@@ -228,7 +222,7 @@ SCM_DEFINE(
 		v = SCM_CDR(v);
 
 		key = __stringify(k);
-		__load_ass_kv(pset, smob->s.s, key, SCM_CAR(v));
+		__load_ass_kv(pset, (echs_strflt_t)smob->s.s, key, SCM_CAR(v));
 	}
 skip:
 	return XSMOB;
@@ -275,7 +269,7 @@ SCM_DEFINE(
 		v = SCM_CDR(v);
 
 		key = __stringify(k);
-		__load_ass_kv(pset, smob->f.f, key, SCM_CAR(v));
+		__load_ass_kv(pset, (echs_strflt_t)smob->f.f, key, SCM_CAR(v));
 	}
 skip:
 	return XSMOB;
