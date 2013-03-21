@@ -112,7 +112,7 @@ init_gq(gq_t q, size_t nnew_members, size_t mbsz)
 
 #if defined MREMAP_MAYMOVE
 	if (ol_items) {
-		nu_items = mremap(ol_items, olsz, nusz, 0);
+		nu_items = mremap(ol_items, olsz, nusz, MREMAP_MAYMOVE);
 	} else
 #endif	/* MREMAP_MAYMOVE */
 	{
