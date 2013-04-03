@@ -289,10 +289,6 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 		SXE_CHECK_COMPILER_FLAG([-wd 10237], [dnl
 			warnflags="${warnflags} -wd 10237"])])
 
-	dnl SXE_CHECK_COMPILER_FLAG([-diag-disable 2259], [dnl
-	dnl 	warnflags="${warnflags} -diag-disable 2259"], [
-	dnl 	SXE_CHECK_COMPILER_FLAG([-wd 2259], [dnl
-	dnl 		warnflags="${warnflags} -wd 2259"])])
 
 
 	AC_MSG_CHECKING([for preferred warning flags])
