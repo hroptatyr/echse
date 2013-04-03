@@ -80,13 +80,15 @@ materialise(echs_event_t e)
 
 		/* bang date and round off buffer with a nice \n for writing */
 		dt_strf(st - 24U, 24U, last);
-		st[-1] = '\t';
 
+		st[-1] = '\t';
 		st[si - 1U] = '\n';
 		st[si] = '\0';
 		if (write(STDOUT_FILENO, st - 24U, si + 24U) < 0) {
 			return -1;
 		}
+		/* reset the stuff that we turned into \t's and \n's */
+		st[-1] = ' ';
 		st[si - 1U] = ' ';
 	}
 	if (__inst_0_p(e.when)) {
@@ -123,7 +125,9 @@ materialise(echs_event_t e)
 	}
 
 	/* let's find that key in the buffer first */
-	for (kp = st; (kp = strstr(kp, key)) && kp[kz] != ' '; kp += kz + 1U);
+	for (kp = st;
+	     (kp = strstr(kp, key)) && (kp[kz] != ' ' || kp[-1] != ' ');
+	     kp += kz + 1U);
 
 	if (kp != NULL && e.what[0] == '~') {
 		/* wipe it from the state string */
