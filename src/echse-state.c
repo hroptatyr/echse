@@ -74,6 +74,35 @@ materialise(echs_event_t e)
 	static size_t sz = sizeof(buf) - 24U;
 	static echs_instant_t last;
 
+	/* let's aggregate several state changes at an instant into one */
+	if (si > 0U && __inst_lt_p(last, e.when) || __inst_0_p(e.when)) {
+		/* safely print whatever has been prepared */
+
+		/* bang date and round off buffer with a nice \n for writing */
+		dt_strf(st - 24U, 24U, last);
+		st[-1] = '\t';
+
+		st[si - 1U] = '\n';
+		st[si] = '\0';
+		if (write(STDOUT_FILENO, st - 24U, si + 24U) < 0) {
+			return -1;
+		}
+		st[si - 1U] = ' ';
+	}
+	if (__inst_0_p(e.when)) {
+		/* that was the last ever call to materialise()
+		 * clear up resources and shit*/
+		if (st - 24U != buf) {
+			free(st - 24U);
+			st = buf + 24U;
+			sz = sizeof(buf) - 24U;
+		}
+		/* indicate resource freedom */
+		return -2;
+	}
+	/* record e.when */
+	last = e.when;
+
 	const char *key = e.what + (e.what[0] == '~');
 	size_t kz = strlen(key);
 	size_t e_whaz = kz + (e.what[0] == '~');
@@ -112,23 +141,6 @@ materialise(echs_event_t e)
 		memcpy(st + si, e.what, e_whaz);
 		si += e_whaz + 1U;
 	}
-
-	/* quick check if we ought to print anything */
-	if (si == 0U) {
-		goto out;
-	}
-
-	/* bang date and round off buffer with a nice \n for writing */
-	dt_strf(st - 24U, 24U, e.when);
-	st[-1] = '\t';
-
-	st[si - 1U] = '\n';
-	st[si] = '\0';
-	if (write(STDOUT_FILENO, st - 24U, si + 24U) < 0) {
-		return -1;
-	}
-	st[si - 1U] = ' ';
-out:
 	return 0;
 }
 #endif	/* STANDALONE */
