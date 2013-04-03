@@ -292,6 +292,8 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 	SXE_CHECK_COMPILER_FLAG([-debug inline-debug-info], [
 		warnflags="${warnflags} -debug inline-debug-info"])
 
+	SXE_CHECK_COMPILER_FLAG([-diag-enable remark,vec,par], [
+		warnflags="${warnflags} -diag-enable remark,vec,par"])
 
 	AC_MSG_CHECKING([for preferred warning flags])
 	AC_MSG_RESULT([${warnflags}])
