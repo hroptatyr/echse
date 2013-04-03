@@ -120,6 +120,18 @@ echs_lisp_LDFLAGS += $(libechse_la_LDFLAGS)
 echs_lisp_LDADD = libechse.la
 BUILT_SOURCES += echs-lisp.x
 
+## transform edge files into states
+noinst_PROGRAMS += echse-state
+echse_state_SOURCES = echse-state.c
+echse_state_SOURCES += echse-state-clo.ggo
+echse_state_SOURCES += boobs.h
+echse_state_SOURCES += $(libechse_la_SOURCES)
+echse_state_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
+echse_state_CPPFLAGS += $(INCLTDL)
+echse_state_LDFLAGS = $(AM_LDFLAGS)
+echse_state_LDFLAGS += $(LIBLTDL) -export-dynamic
+BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
+
 
 ## gperf rule
 %.c: %.gperf
