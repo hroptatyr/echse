@@ -64,6 +64,73 @@
 
 
 #if defined STANDALONE
+struct evkey_s {
+	const char *orig;
+	uint32_t oriz;
+	/* offset and size of actual key */
+	uint16_t ko;
+	uint16_t kz;
+};
+
+static struct evkey_s
+dissect_key(const char *k)
+{
+	size_t z = strlen(k);
+	const char *renm;
+
+	switch (k[0]) {
+	case '~':
+		return (struct evkey_s){k, z, 1U, (uint16_t)(z - 1U)};
+	default:
+		break;
+	}
+	/* check if it's a renaming state A->B which is short for ~A B */
+	if (UNLIKELY((renm = strstr(k, "->")) != NULL)) {
+		const char *nu = renm + 2U;
+		return (struct evkey_s){k, renm - k,
+				(uint16_t)(nu - k), (uint16_t)(z - (nu - k))};
+	}
+	return (struct evkey_s){k, z, 0U, (uint16_t)z};
+}
+
+static size_t
+wipe_st(char *st, size_t si, const char *k, size_t z)
+{
+	char *kp;
+	char *rest;
+
+	for (kp = st;
+	     (kp = strstr(kp, k)) != NULL && (kp[z] != ' ' || kp[-1] != ' ');
+	     kp += z + 1U);
+
+	if (kp == NULL) {
+		/* nothing to wipe */
+		return si;
+	}
+
+	rest = kp + z + 1U;
+	memmove(kp, rest, si - (rest - st));
+	return si - z - 1U;
+}
+
+static size_t
+add_st(char *st, size_t si, const char *k, size_t z)
+{
+	char *kp;
+
+	for (kp = st;
+	     (kp = strstr(kp, k)) != NULL && (kp[z] != ' ' || kp[-1] != ' ');
+	     kp += z + 1U);
+
+	if (kp != NULL) {
+		/* nothing to add, key already there */
+		return si;
+	}
+
+	memcpy(st + si, k, z);
+	return si + z + 1U;
+}
+
 static int
 materialise(echs_event_t e)
 {
@@ -73,6 +140,7 @@ materialise(echs_event_t e)
 	static size_t si = 0U;
 	static size_t sz = sizeof(buf) - 24U;
 	static echs_instant_t last;
+	struct evkey_s k;
 
 	/* let's aggregate several state changes at an instant into one */
 	if (si > 0U && __inst_lt_p(last, e.when) || __inst_0_p(e.when)) {
@@ -105,14 +173,12 @@ materialise(echs_event_t e)
 	/* record e.when */
 	last = e.when;
 
-	const char *key = e.what + (e.what[0] == '~');
-	size_t kz = strlen(key);
-	size_t e_whaz = kz + (e.what[0] == '~');
-	char *kp;
+	/* dissect the key */
+	k = dissect_key(e.what);
 
-	/* assume we need to insert e_whaz many bytes, check for buffer size */
-	if (si + kz + 1U >= sz) {
-		size_t nz = ((si + kz + 1U + 24U) / INITIALZ + 1U) * INITIALZ;
+	/* assume we need to insert k.kz many bytes, check for buffer size */
+	if (si + k.kz + 1U >= sz) {
+		size_t nz = ((si + k.kz + 1U + 24U) / INITIALZ + 1U) * INITIALZ;
 
 		if (st - 24U != buf) {
 			char *nu = realloc(st - 24U, nz);
@@ -124,26 +190,15 @@ materialise(echs_event_t e)
 		}
 	}
 
-	/* let's find that key in the buffer first */
-	for (kp = st;
-	     (kp = strstr(kp, key)) && (kp[kz] != ' ' || kp[-1] != ' ');
-	     kp += kz + 1U);
-
-	if (kp != NULL && e.what[0] == '~') {
-		/* wipe it from the state string */
-		char *rest = kp + kz + 1U;
-
-		memmove(kp, rest, si - (rest - st));
-		si -= kz + 1U;
-	} else if (kp != NULL) {
-		/* don't worry as the state is already recorded */
-		;
-	} else if (e.what[0] == '~') {
-		/* don't worry about it, it's state deletion */
-		;
+	if (LIKELY(k.ko == 0U)) {
+		/* just add it */
+		si = add_st(st, si, k.orig, k.oriz);
+	} else if (k.ko == 1U) {
+		/* wipe orig */
+		si = wipe_st(st, si, k.orig + k.ko, k.kz);
 	} else {
-		memcpy(st + si, e.what, e_whaz);
-		si += e_whaz + 1U;
+		si = wipe_st(st, si, k.orig, k.oriz);
+		si = add_st(st, si, k.orig + k.ko, k.kz);
 	}
 	return 0;
 }
