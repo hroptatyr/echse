@@ -76,7 +76,7 @@ static struct evkey_s
 dissect_key(const char *k)
 {
 	size_t z = strlen(k);
-	const char *renm;
+	char *renm;
 
 	switch (k[0]) {
 	case '~':
@@ -87,6 +87,11 @@ dissect_key(const char *k)
 	/* check if it's a renaming state A->B which is short for ~A B */
 	if (UNLIKELY((renm = strstr(k, "->")) != NULL)) {
 		const char *nu = renm + 2U;
+
+		/* we break the const promise here to allow for strstr()
+		 * in wipe_st() below, otherwise we'd have to resort to
+		 * GNU extension memmem() */
+		renm[0] = '\0';
 		return (struct evkey_s){k, renm - k,
 				(uint16_t)(nu - k), (uint16_t)(z - (nu - k))};
 	}
