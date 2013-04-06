@@ -59,6 +59,14 @@ echs_instant_fixup(echs_instant_t e)
 	};
 	unsigned int md;
 
+	if (UNLIKELY(echs_instant_all_day_p(e))) {
+		/* just fix up the day, dom and year portion */
+		goto fixup_d;
+	} else if (UNLIKELY(echs_instant_all_day_p(e))) {
+		/* just fix up the sec, min, ... portions */
+		goto fixup_S;
+	}
+
 	if (UNLIKELY(e.ms >= 1000U)) {
 		unsigned int dS = e.ms / 1000U;
 		unsigned int ms = e.ms % 1000U;
@@ -66,6 +74,8 @@ echs_instant_fixup(echs_instant_t e)
 		e.ms = ms;
 		e.S += dS;
 	}
+
+fixup_S:
 	if (UNLIKELY(e.S >= 60U)) {
 		/* leap seconds? */
 		unsigned int dM = e.S / 60U;
@@ -89,6 +99,7 @@ echs_instant_fixup(echs_instant_t e)
 		e.d += dd;
 	}
 
+fixup_d:
 refix_ym:
 	if (UNLIKELY(e.m > 12U)) {
 		unsigned int dy = (e.m - 1) / 12U;

@@ -73,9 +73,10 @@ materialise(echs_event_t e)
 
 	/* BEST has the guy */
 	bp += dt_strf(buf, sizeof(buf), e.when);
-	*bp++ = '\t';
-	{
+	if (e.what != NULL) {
 		size_t e_whaz = strlen(e.what);
+
+		*bp++ = '\t';
 		memcpy(bp, e.what, e_whaz);
 		bp += e_whaz;
 	}

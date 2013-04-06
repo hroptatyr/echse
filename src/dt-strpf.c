@@ -155,7 +155,8 @@ dt_strp(const char *str)
 		break;
 	case '\0':
 	default:
-		/* just the date */
+		/* just the date, make it ECHS_ALL_DAY then aye */
+		res.H = ECHS_ALL_DAY;
 		return res;
 	}
 
@@ -178,7 +179,10 @@ dt_strp(const char *str)
 	res.S = tmp;
 
 	/* millisecond part */
-	if (*sp++ != '.' && (tmp = strtoi_lim(sp, &sp, 0, 999)) < 0) {
+	if (*sp++ != '.') {
+		/* make it ALL_SEC then */
+		tmp = ECHS_ALL_SEC;
+	} else if ((tmp = strtoi_lim(sp, &sp, 0, 999)) < 0) {
 		return nul;
 	}
 	res.ms = tmp;
@@ -196,14 +200,19 @@ dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst)
 	bp += ui32tostr(bp, bz, inst.m, 2);
 	*bp++ = '-';
 	bp += ui32tostr(bp, bz, inst.d, 2);
-	*bp++ = 'T';
-	bp += ui32tostr(bp, bz, inst.H, 2);
-	*bp++ = ':';
-	bp += ui32tostr(bp, bz, inst.M, 2);
-	*bp++ = ':';
-	bp += ui32tostr(bp, bz, inst.S, 2);
-	*bp++ = '.';
-	bp += ui32tostr(bp, bz, inst.ms, 3);
+
+	if (LIKELY(!echs_instant_all_day_p(inst))) {
+		*bp++ = 'T';
+		bp += ui32tostr(bp, bz, inst.H, 2);
+		*bp++ = ':';
+		bp += ui32tostr(bp, bz, inst.M, 2);
+		*bp++ = ':';
+		bp += ui32tostr(bp, bz, inst.S, 2);
+		if (LIKELY(!echs_instant_all_sec_p(inst))) {
+			*bp++ = '.';
+			bp += ui32tostr(bp, bz, inst.ms, 3);
+		}
+	}
 	*bp = '\0';
 	return bp - buf;
 }
