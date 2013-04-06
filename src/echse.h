@@ -158,11 +158,18 @@ echs_filter_drain(echs_filter_t f)
 
 
 #define ECHS_ALL_DAY	(0xffU)
+#define ECHS_ALL_SEC	(0x3ffU)
 
 static inline bool
 echs_instant_all_day_p(echs_instant_t i)
 {
 	return i.H == ECHS_ALL_DAY;
+}
+
+static inline bool
+echs_instant_all_sec_p(echs_instant_t i)
+{
+	return i.ms == ECHS_ALL_SEC;
 }
 
 #endif	/* INCLUDED_echse_h_ */
