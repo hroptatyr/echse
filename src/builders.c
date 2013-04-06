@@ -121,10 +121,11 @@ echs_wday_before(echs_stream_t s, echs_wday_t wd)
 	return (echs_stream_t){__wday_before, clo};
 }
 
-DEFUN void
+DEFUN echs_stream_t
 echs_free_wday(echs_stream_t s)
 {
 	struct wday_clo_s *clo = s.clo;
+	echs_stream_t res = clo->s;
 
 	if (clo->state != NULL) {
 		/* prob strdup'd */
@@ -132,7 +133,7 @@ echs_free_wday(echs_stream_t s)
 		clo->state = NULL;
 	}
 	free(clo);
-	return;
+	return res;
 }
 
 

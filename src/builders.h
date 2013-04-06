@@ -87,8 +87,10 @@ typedef enum {
 DECLF echs_stream_t echs_wday_after(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_before(echs_stream_t s, echs_wday_t wd);
 
-/* dtor for both echs_wday_after() and echs_wday_before() */
-DECLF void echs_free_wday(echs_stream_t);
+/**
+ * dtor for both echs_wday_after() and echs_wday_before()
+ * Return the stream S passed to the respective ctor. */
+DECLF echs_stream_t echs_free_wday(echs_stream_t);
 
 /**
  * Set the state name for any builder stream S. */
