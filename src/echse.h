@@ -39,6 +39,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define DEFSTATE(x)	static const char state__ ## x [] = "~" # x
 #define DEFISTATE(x)	static const char istate__ ## x [] = "!" # x
@@ -153,6 +154,15 @@ static inline echs_event_t
 echs_filter_drain(echs_filter_t f)
 {
 	return f.f((echs_event_t){0}, f.clo);
+}
+
+
+#define ECHS_ALL_DAY	(0xffU)
+
+static inline bool
+echs_instant_all_day_p(echs_instant_t i)
+{
+	return i.H == ECHS_ALL_DAY;
 }
 
 #endif	/* INCLUDED_echse_h_ */
