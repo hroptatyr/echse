@@ -19,6 +19,9 @@ CLEANFILES = $(BUILT_SOURCES)
 pkglib_LTLIBRARIES += xmas.la
 xmas_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += xmas2.la
+xmas2_la_LDFLAGS = $(MOD_LDFLAGS)
+
 pkglib_LTLIBRARIES += easter.la
 easter_la_LDFLAGS = $(MOD_LDFLAGS)
 
@@ -75,6 +78,7 @@ libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += strdef.c strdef.h
 libechse_la_SOURCES += fltdef.c fltdef.h
 libechse_la_SOURCES += module.c module.h
+libechse_la_SOURCES += builders.c builders.h
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 
