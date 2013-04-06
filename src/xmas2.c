@@ -42,7 +42,7 @@ echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
 	echs_stream_t xmas = echs_every_year(i, DEC, 25);
-	echs_set_state(xmas, "XMAS");
+	echs_every_set_state(xmas, "XMAS");
 	return xmas;
 }
 
