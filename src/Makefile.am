@@ -19,6 +19,9 @@ CLEANFILES = $(BUILT_SOURCES)
 pkglib_LTLIBRARIES += xmas.la
 xmas_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += xmas2.la
+xmas2_la_LDFLAGS = $(MOD_LDFLAGS)
+
 pkglib_LTLIBRARIES += easter.la
 easter_la_LDFLAGS = $(MOD_LDFLAGS)
 
