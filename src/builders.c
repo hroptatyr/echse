@@ -37,6 +37,7 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+#include <string.h>
 #include "echse.h"
 #include "instant.h"
 #include "builders.h"
@@ -57,6 +58,7 @@ __get_wday(echs_instant_t i)
 
 
 struct wday_clo_s {
+	char *state;
 	echs_wday_t wd;
 	echs_stream_t s;
 };
@@ -124,12 +126,18 @@ echs_free_wday(echs_stream_t s)
 {
 	struct wday_clo_s *clo = s.clo;
 
+	if (clo->state != NULL) {
+		/* prob strdup'd */
+		free(clo->state);
+		clo->state = NULL;
+	}
 	free(clo);
 	return;
 }
 
 
 struct every_clo_s {
+	char *state;
 	echs_instant_t next;
 };
 
@@ -140,7 +148,7 @@ __every_year(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.y++;
-	return (echs_event_t){echs_instant_fixup(next), NULL};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
 }
 
 DEFUN echs_stream_t
@@ -165,7 +173,7 @@ __every_month(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.m++;
-	return (echs_event_t){echs_instant_fixup(next), NULL};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
 }
 
 DEFUN echs_stream_t
@@ -188,8 +196,42 @@ echs_free_every(echs_stream_t s)
 {
 	struct every_clo_s *clo = s.clo;
 
+	if (clo->state != NULL) {
+		/* prob strdup'd */
+		free(clo->state);
+		clo->state = NULL;
+	}
 	free(clo);
 	return;
+}
+
+
+struct any_clo_s {
+	char *state;
+};
+
+static void
+__any_set_state(echs_stream_t s, const char *state)
+{
+	struct any_clo_s *any = s.clo;
+	size_t z = strlen(state);
+
+	any->state = malloc(1U + z + 1U/*for \nul*/);
+	any->state[0] = '~';
+	memcpy(any->state + 1U, state, z + 1U);
+	return;
+}
+
+DEFUN void
+echs_every_set_state(echs_stream_t s, const char *state)
+{
+	return __any_set_state(s, state);
+}
+
+DEFUN void
+echs_wday_set_state(echs_stream_t s, const char *state)
+{
+	return __any_set_state(s, state);
 }
 
 /* builders.c ends here */

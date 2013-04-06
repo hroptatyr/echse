@@ -90,6 +90,10 @@ DECLF echs_stream_t echs_wday_before(echs_stream_t s, echs_wday_t wd);
 /* dtor for both echs_wday_after() and echs_wday_before() */
 DECLF void echs_free_wday(echs_stream_t);
 
+/**
+ * Set the state name for any builder stream S. */
+DECLF void echs_wday_set_state(echs_stream_t s, const char *state);
+
 DECLF echs_stream_t
 echs_every_year(echs_instant_t, echs_mon_t mon, unsigned int dom);
 
@@ -97,5 +101,9 @@ DECLF echs_stream_t
 echs_every_month(echs_instant_t, unsigned int dom);
 
 DECLF void echs_free_every(echs_stream_t);
+
+/**
+ * Set the state name for any builder stream S. */
+DECLF void echs_every_set_state(echs_stream_t s, const char *state);
 
 #endif	/* INCLUDED_builders_h_ */
