@@ -150,9 +150,9 @@ echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
 	if (i.m < mon || i.m == mon && i.d <= dom) {
-		i = (echs_instant_t){i.y, mon, dom};
+		i = (echs_instant_t){i.y, mon, dom, ECHS_ALL_DAY};
 	} else {
-		i = (echs_instant_t){i.y + 1, mon, dom};
+		i = (echs_instant_t){i.y + 1, mon, dom, ECHS_ALL_DAY};
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_year, clo};
@@ -175,9 +175,9 @@ echs_every_month(echs_instant_t i, unsigned int dom)
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
 	if (i.d <= dom) {
-		i = (echs_instant_t){i.y, i.m, dom};
+		i = (echs_instant_t){i.y, i.m, dom, ECHS_ALL_DAY};
 	} else {
-		i = (echs_instant_t){i.y, i.m + 1, dom};
+		i = (echs_instant_t){i.y, i.m + 1, dom, ECHS_ALL_DAY};
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_month, clo};
