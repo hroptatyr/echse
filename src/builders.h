@@ -67,21 +67,21 @@ typedef enum {
 	DEC = (12U),
 } echs_mon_t;
 
-#define MON_AFTER(x)	__wday_after(x, MON)
-#define TUE_AFTER(x)	__wday_after(x, TUE)
-#define WED_AFTER(x)	__wday_after(x, WED)
-#define THU_AFTER(x)	__wday_after(x, THU)
-#define FRI_AFTER(x)	__wday_after(x, FRI)
-#define SAT_AFTER(x)	__wday_after(x, SAT)
-#define SUN_AFTER(x)	__wday_after(x, SUN)
+#define MON_AFTER(x)	echs_wday_after(x, MON)
+#define TUE_AFTER(x)	echs_wday_after(x, TUE)
+#define WED_AFTER(x)	echs_wday_after(x, WED)
+#define THU_AFTER(x)	echs_wday_after(x, THU)
+#define FRI_AFTER(x)	echs_wday_after(x, FRI)
+#define SAT_AFTER(x)	echs_wday_after(x, SAT)
+#define SUN_AFTER(x)	echs_wday_after(x, SUN)
 
-#define MON_BEFORE(x)	__wday_before(x, MON)
-#define TUE_BEFORE(x)	__wday_before(x, TUE)
-#define WED_BEFORE(x)	__wday_before(x, WED)
-#define THU_BEFORE(x)	__wday_before(x, THU)
-#define FRI_BEFORE(x)	__wday_before(x, FRI)
-#define SAT_BEFORE(x)	__wday_before(x, SAT)
-#define SUN_BEFORE(x)	__wday_before(x, SUN)
+#define MON_BEFORE(x)	echs_wday_before(x, MON)
+#define TUE_BEFORE(x)	echs_wday_before(x, TUE)
+#define WED_BEFORE(x)	echs_wday_before(x, WED)
+#define THU_BEFORE(x)	echs_wday_before(x, THU)
+#define FRI_BEFORE(x)	echs_wday_before(x, FRI)
+#define SAT_BEFORE(x)	echs_wday_before(x, SAT)
+#define SUN_BEFORE(x)	echs_wday_before(x, SUN)
 
 
 DECLF echs_stream_t echs_wday_after(echs_stream_t s, echs_wday_t wd);
