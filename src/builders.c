@@ -80,6 +80,9 @@ __wday_after(void *clo)
 	 * the same weekday next week (after as in strictly-after) */
 	e.when.d += add ?: wdclo->in_lieu;
 	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
 	return e;
 }
 
@@ -120,6 +123,9 @@ __wday_before(void *clo)
 	 * the same weekday next week (after as in strictly-after) */
 	e.when.d -= add ?: wdclo->in_lieu;
 	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
 	return e;
 }
 
