@@ -60,6 +60,7 @@ __get_wday(echs_instant_t i)
 struct wday_clo_s {
 	char *state;
 	echs_wday_t wd;
+	int in_lieu;
 	echs_stream_t s;
 };
 
@@ -73,17 +74,31 @@ __wday_after(void *clo)
 	int add;
 
 	/* now the magic bit, we want the number of days to add so that
-	 * wd(e.when + X) == WD above, this is a simple modulo subtraction
-	 * however if the difference is naught add 7 days so we truly get
+	 * wd(e.when + X) == WD above, this is a simple modulo subtraction */
+	add = ((unsigned int)ref_wd + 7U - (unsigned int)when_wd) % 7;
+	/* however if the difference is naught add 7 days so we truly get
 	 * the same weekday next week (after as in strictly-after) */
-	add = (((unsigned int)ref_wd + 7U - (unsigned int)when_wd) % 7) ?: 7;
-	e.when.d += add;
+	e.when.d += add ?: wdclo->in_lieu;
 	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
 	return e;
 }
 
 DEFUN echs_stream_t
 echs_wday_after(echs_stream_t s, echs_wday_t wd)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->wd = wd;
+	clo->in_lieu = 7;
+	clo->s = s;
+	return (echs_stream_t){__wday_after, clo};
+}
+
+DEFUN echs_stream_t
+echs_wday_after_or_on(echs_stream_t s, echs_wday_t wd)
 {
 	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
 
@@ -102,12 +117,15 @@ __wday_before(void *clo)
 	int add;
 
 	/* now the magic bit, we want the number of days to add so that
-	 * wd(e.when + X) == WD above, this is a simple modulo subtraction
-	 * however if the difference is naught add 7 days so we truly get
+	 * wd(e.when + X) == WD above, this is a simple modulo subtraction */
+	add = ((unsigned int)when_wd + 7U - (unsigned int)ref_wd) % 7;
+	/* however if the difference is naught add 7 days so we truly get
 	 * the same weekday next week (after as in strictly-after) */
-	add = (((unsigned int)when_wd + 7U - (unsigned int)ref_wd) % 7) ?: 7;
-	e.when.d -= add;
+	e.when.d -= add ?: wdclo->in_lieu;
 	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
 	return e;
 }
 
@@ -117,14 +135,26 @@ echs_wday_before(echs_stream_t s, echs_wday_t wd)
 	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
 
 	clo->wd = wd;
+	clo->in_lieu = 7;
 	clo->s = s;
 	return (echs_stream_t){__wday_before, clo};
 }
 
-DEFUN void
+DEFUN echs_stream_t
+echs_wday_before_or_on(echs_stream_t s, echs_wday_t wd)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->wd = wd;
+	clo->s = s;
+	return (echs_stream_t){__wday_before, clo};
+}
+
+DEFUN echs_stream_t
 echs_free_wday(echs_stream_t s)
 {
 	struct wday_clo_s *clo = s.clo;
+	echs_stream_t res = clo->s;
 
 	if (clo->state != NULL) {
 		/* prob strdup'd */
@@ -132,7 +162,7 @@ echs_free_wday(echs_stream_t s)
 		clo->state = NULL;
 	}
 	free(clo);
-	return;
+	return res;
 }
 
 
@@ -148,7 +178,7 @@ __every_year(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.y++;
-	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
 DEFUN echs_stream_t
@@ -173,7 +203,7 @@ __every_month(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.m++;
-	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
 DEFUN echs_stream_t
@@ -216,8 +246,9 @@ __any_set_state(echs_stream_t s, const char *state)
 	struct any_clo_s *any = s.clo;
 	size_t z = strlen(state);
 
+	/* most builders are atomic so use the BANG */
 	any->state = malloc(1U + z + 1U/*for \nul*/);
-	any->state[0] = '~';
+	any->state[0] = '!';
 	memcpy(any->state + 1U, state, z + 1U);
 	return;
 }
