@@ -149,7 +149,7 @@ __every_year(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.y++;
-	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
 DEFUN echs_stream_t
@@ -174,7 +174,7 @@ __every_month(void *clo)
 	echs_instant_t next = eclo->next;
 
 	eclo->next.m++;
-	return (echs_event_t){echs_instant_fixup(next), eclo->state + 1U};
+	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
 DEFUN echs_stream_t
@@ -217,8 +217,9 @@ __any_set_state(echs_stream_t s, const char *state)
 	struct any_clo_s *any = s.clo;
 	size_t z = strlen(state);
 
+	/* most builders are atomic so use the BANG */
 	any->state = malloc(1U + z + 1U/*for \nul*/);
-	any->state[0] = '~';
+	any->state[0] = '!';
 	memcpy(any->state + 1U, state, z + 1U);
 	return;
 }
