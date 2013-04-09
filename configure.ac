@@ -58,7 +58,7 @@ PKG_CHECK_MODULES([guile], [guile-1.8])
 ## libtool goddess^Wgoodness
 SXE_CHECK_LIBTOOL
 LT_CONFIG_LTDL_DIR([libltdl])
-LTDL_INIT([convenience])
+LTDL_INIT([recursive])
 AM_CONDITIONAL([DESCEND_LIBLTDL], [test "${with_included_ltdl}" = "yes"])
 
 ## mimic automake on this one
@@ -73,5 +73,6 @@ dnl -------------------------------------------------------------------------
 dnl final output
 dnl -------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([libltdl/Makefile])
 AC_CONFIG_FILES([src/Makefile])
 AC_OUTPUT
