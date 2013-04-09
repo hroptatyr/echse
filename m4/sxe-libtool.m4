@@ -36,4 +36,19 @@ AC_DEFUN([SXE_CHECK_LIBTOOL], [dnl
 	XCCFLAG="-XCClinker"
 ])dnl SXE_CHECK_LIBTOOL
 
+AC_DEFUN([SXE_CHECK_LIBLTDL], [dnl
+	## make sure the libtool stuff has been run before
+	AC_REQUIRE([SXE_CHECK_LIBTOOL])
+
+	## This can't be here because older versions of libtool
+	## seem to overlook the argument to LTDL_INIT
+	## put the next two lines into c.ac instead and then call this macro
+	dnl LT_CONFIG_LTDL_DIR([libltdl])
+	dnl LTDL_INIT([recursive])
+
+	# workaround libtool LT_CONFIG_H bug #12262
+	AC_CONFIG_COMMANDS_PRE([LT_CONFIG_H=`expr "$LT_CONFIG_H" : '.*/\(.*\)'`])
+	AM_CONDITIONAL([DESCEND_LIBLTDL], [test "${with_included_ltdl}" = "yes"])
+])dnl SXE_CHECK_LIBLTDL
+
 dnl sxe-libtool.m4 ends here
