@@ -36,15 +36,4 @@ AC_DEFUN([SXE_CHECK_LIBTOOL], [dnl
 	XCCFLAG="-XCClinker"
 ])dnl SXE_CHECK_LIBTOOL
 
-AC_DEFUN([SXE_CHECK_LIBLTDL], [dnl
-	## make sure the libtool stuff has been run before
-	AC_REQUIRE([SXE_CHECK_LIBTOOL])
-
-	LT_CONFIG_LTDL_DIR([libltdl])
-	LTDL_INIT([convenience])
-
-	AM_CONDITIONAL([DESCEND_LIBLTDL], [dnl
-		test "${with_included_ltdl}" = "yes"])
-])dnl SXE_CHECK_LIBLTDL
-
 dnl sxe-libtool.m4 ends here
