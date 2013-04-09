@@ -42,14 +42,16 @@ echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
 	echs_stream_t xmas = echs_every_year(i, DEC, 25);
-	echs_every_set_state(xmas, "XMAS");
-	return xmas;
+	echs_stream_t that = MON_AFTER_OR_ON(xmas);
+	echs_wday_set_state(that, "MON>XMAS");
+	return that;
 }
 
 void
 free_echs_stream(echs_stream_t s)
 {
-	echs_free_every(s);
+	echs_stream_t xmas = echs_free_wday(s);
+	echs_free_every(xmas);
 	return;
 }
 

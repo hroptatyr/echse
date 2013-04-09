@@ -10,8 +10,8 @@ popdef([version])dnl
 ])
 AC_INIT([echse], [GIT_VERSION_GEN], [https://github.com/hroptatyr/echse])
 AC_CONFIG_AUX_DIR([.])
-AC_CONFIG_HEADER([src/config.h])
 AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_SRCDIR([src/])
 
 dnl -------------------------------------------------------------------------
@@ -55,7 +55,10 @@ AC_ARG_VAR([GPERF], [full path to the gperf tool])
 PKG_CHECK_MODULES([guile], [guile-1.8])
 
 
+## libtool goddess^Wgoodness
 SXE_CHECK_LIBTOOL
+LT_CONFIG_LTDL_DIR([libltdl])
+LTDL_INIT([recursive])
 SXE_CHECK_LIBLTDL
 
 ## mimic automake on this one
@@ -70,5 +73,6 @@ dnl -------------------------------------------------------------------------
 dnl final output
 dnl -------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([libltdl/Makefile])
 AC_CONFIG_FILES([src/Makefile])
 AC_OUTPUT
