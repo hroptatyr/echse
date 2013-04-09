@@ -79,8 +79,11 @@ libechse_la_SOURCES += strdef.c strdef.h
 libechse_la_SOURCES += fltdef.c fltdef.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += builders.c builders.h
+libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
+libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
+libechse_la_DEPENDENCIES = $(LTDLDEPS)
 
 
 noinst_PROGRAMS += echse
@@ -89,9 +92,10 @@ echse_SOURCES += echse-clo.ggo
 echse_SOURCES += boobs.h
 echse_SOURCES += $(libechse_la_SOURCES)
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
-echse_CPPFLAGS += $(INCLTDL)
+echse_CPPFLAGS += $(LTDLINCL)
 echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
 noinst_LTLIBRARIES += echse.la
@@ -131,9 +135,10 @@ echse_state_SOURCES += echse-state-clo.ggo
 echse_state_SOURCES += boobs.h
 echse_state_SOURCES += $(libechse_la_SOURCES)
 echse_state_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
-echse_state_CPPFLAGS += $(INCLTDL)
+echse_state_CPPFLAGS += $(LTDLINCL)
 echse_state_LDFLAGS = $(AM_LDFLAGS)
 echse_state_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_state_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
 
 
