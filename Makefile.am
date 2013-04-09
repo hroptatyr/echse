@@ -3,7 +3,11 @@ LC_ALL = C
 
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = src
+SUBDIRS =
+if DESCEND_LIBLTDL
+SUBDIRS += libltdl
+endif  DESCEND_LIBLTDL
+SUBDIRS += src
 
 EXTRA_DIST =
 EXTRA_DIST += .version git-version-gen
