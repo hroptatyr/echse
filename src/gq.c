@@ -110,11 +110,6 @@ init_gq(gq_t q, size_t nnew_members, size_t mbsz)
 	olsz = gq_nmemb(mbsz, q->nitems);
 	nusz = gq_nmemb(mbsz, q->nitems + nnew_members);
 
-#if defined MREMAP_MAYMOVE
-	if (ol_items) {
-		nu_items = mremap(ol_items, olsz, nusz, MREMAP_MAYMOVE);
-	} else
-#endif	/* MREMAP_MAYMOVE */
 	{
 		/* get some new items */
 		nu_items = mmap(ol_items, nusz, PROT_MEM, MAP_MEM, -1, 0);
