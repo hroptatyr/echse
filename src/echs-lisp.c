@@ -34,6 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#if defined HAVE_CONFIG_H && !defined SCM_MAGIC_SNARFER
+# include "config.h"
+#endif	/* HAVE_CONFIG_H && !SCM_MAGIC_SNARFER */
 #define HAVE_INTTYPES_H	1
 #define HAVE_STDINT_H	1
 #include <libguile.h>
@@ -145,6 +148,46 @@ __stringify(SCM kw)
 	return buf;
 }
 
+/* pset STR ctor */
+#if defined HAVE_ANON_STRUCTS_INIT && 0
+# define PSET_STR(s, z)		(struct echs_pset_s){ECHS_PSET_STR, s, z}
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+static inline struct echs_pset_s
+PSET_STR(const char *s, size_t z)
+{
+	struct echs_pset_s __tmp__ = {ECHS_PSET_STR};
+
+	__tmp__.str = s, __tmp__.z = z;
+	return __tmp__;
+}
+#endif	/* HAVE_ANON_STRUCTS_INIT */
+
+/* pset INT ctor */
+#if defined HAVE_ANON_STRUCTS_INIT
+# define PSET_INT(i)		(struct echs_pset_s){ECHS_PSET_INT, .ival = i}
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+static inline struct echs_pset_s
+PSET_INT(intmax_t i)
+{
+	struct echs_pset_s __tmp__ = {ECHS_PSET_INT};
+	__tmp__.ival = i;
+	return __tmp__;
+}
+#endif	/* HAVE_ANON_STRUCTS_INIT */
+
+/* pset DBL ctor */
+#if defined HAVE_ANON_STRUCTS_INIT
+# define PSET_DBL(d)		(struct echs_pset_s){ECHS_PSET_DBL, .dval = d}
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+static inline struct echs_pset_s
+PSET_DBL(double d)
+{
+	struct echs_pset_s __tmp__ = {ECHS_PSET_DBL};
+	__tmp__.dval = d;
+	return __tmp__;
+}
+#endif	/* HAVE_ANON_STRUCTS_INIT */
+
 static void
 __load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 {
@@ -153,7 +196,7 @@ __load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 		char *v = scm_to_locale_stringn(val, &z);
 
 		v[z] = '\0';
-		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
+		pset(s, key, PSET_STR(v, z));
 		free(v);
 
 	} else if (scm_is_pair(val)) {
@@ -164,20 +207,20 @@ __load_ass_kv(pset_f pset, echs_strflt_t s, const char *key, SCM val)
 	} else if (scm_is_real(val)) {
 		double v = scm_to_double(val);
 
-		pset(s, key, (struct echs_pset_s){ECHS_PSET_DBL, .dval = v, 0});
+		pset(s, key, PSET_DBL(v));
 
 	} else if (scm_is_symbol(val)) {
 		size_t z;
 		char *v = scm_to_locale_stringn(scm_symbol_to_string(val), &z);
 
 		v[z] = '\0';
-		pset(s, key, (struct echs_pset_s){ECHS_PSET_STR, v, z});
+		pset(s, key, PSET_STR(v, z));
 		free(v);
 
 	} else if (scm_is_bool(val)) {
 		int v = scm_to_bool(val);
 
-		pset(s, key, (struct echs_pset_s){ECHS_PSET_INT, .ival = v});
+		pset(s, key, PSET_INT(v));
 	}
 	return;
 }
