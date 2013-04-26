@@ -12,4 +12,8 @@ noinst_LTLIBRARIES =
 pkglib_LTLIBRARIES =
 EXTRA_DIST =
 
+## country holiday streams
+pkglib_LTLIBRARIES += de.la
+de_la_LDFLAGS = $(MOD_LDFLAGS)
+
 ## Makefile.am ends here
