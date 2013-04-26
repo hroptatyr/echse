@@ -7,6 +7,9 @@ dnl This file is part of unserding
 AC_DEFUN([SXE_CHECK_LIBTOOL], [dnl
 	AC_MSG_RESULT([starting libtool investigation...])
 
+	## turn off -Werror'ing
+	ac_[]_AC_LANG_ABBREV[]_werror_flag=
+
 	LT_PREREQ([2.1])
 	LT_INIT([dlopen])
 
