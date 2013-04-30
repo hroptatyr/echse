@@ -42,6 +42,16 @@
 #include "instant.h"
 #include "builders.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
+#if !defined UNUSED
+# define UNUSED(x)	__attribute__((unused)) x
+#endif	/* UNUSED */
+
 static echs_wday_t
 __get_wday(echs_instant_t i)
 {
@@ -263,6 +273,127 @@ DEFUN void
 echs_wday_set_state(echs_stream_t s, const char *state)
 {
 	return __any_set_state(s, state);
+}
+
+
+/* just testing */
+struct echs_mux_clo_s {
+	size_t nstrms;
+	struct {
+		echs_stream_t st;
+		echs_event_t ev;
+	} *strms;
+	/* last event served */
+	echs_event_t last;
+};
+
+static inline bool
+__events_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return __inst_eq_p(e1.when, e2.when) &&
+		(e1.what == e2.what || strcmp(e1.what, e2.what) == 0);
+}
+
+static echs_event_t
+__refill(echs_stream_t s, echs_instant_t last)
+{
+	echs_event_t e;
+
+	do {
+		if (__event_0_p(e = echs_stream_next(s))) {
+			break;
+		}
+	} while (__event_lt_p(e, last));
+	return e;
+}
+
+static echs_event_t
+__stream(void *clo)
+{
+	struct echs_mux_clo_s *x = clo;
+	echs_instant_t bestinst;
+	size_t bestindx;
+
+	if (UNLIKELY(x->strms == NULL)) {
+		return (echs_event_t){0};
+	}
+	/* start out with the best, non-0 index */
+	bestindx = -1UL;
+	bestinst = (echs_instant_t){.u = (uint64_t)-1};
+
+	/* try and find the very next event out of all instants */
+	for (size_t i = 0; i < x->nstrms; i++) {
+		echs_instant_t inst = x->strms[i].ev.when;
+
+		if (x->strms[i].st.f == NULL) {
+			continue;
+		} else if (__inst_0_p(inst)) {
+		clos_0:
+			memset(x->strms + i, 0, sizeof(*x->strms));
+			continue;
+		} else if (__inst_lt_p(inst, x->last.when) ||
+			   __events_eq_p(x->strms[i].ev, x->last)) {
+			echs_stream_t s = x->strms[i].st;
+			echs_event_t e;
+
+			if (__event_0_p(e = __refill(s, x->last.when))) {
+				goto clos_0;
+			}
+
+			/* cache E */
+			x->strms[i].ev = e;
+			inst = e.when;
+		}
+
+		/* do the actual check */
+		if (__inst_lt_p(inst, bestinst) || __inst_0_p(bestinst)) {
+			bestindx = i;
+			bestinst = x->strms[bestindx].ev.when;
+		}
+	}
+
+	/* BEST has the guy, or has he nought? */
+	if (UNLIKELY(bestindx == -1UL)) {
+		/* great */
+		return (echs_event_t){0};
+	} else if (UNLIKELY(__event_0_p(x->last = x->strms[bestindx].ev))) {
+		/* big fucking fuck */
+		return (echs_event_t){0};
+	}
+	/* otherwise just use the cache */
+	return x->strms[bestindx].ev;
+}
+
+DEFUN echs_stream_t
+echs_mux(size_t nstrm, echs_stream_t strm[])
+{
+	static struct echs_mux_clo_s x;
+	size_t st_sz = nstrm * sizeof(*x.strms);
+
+	x.strms = malloc(st_sz);
+	memset(x.strms, 0, st_sz);
+
+	for (size_t i = 0; i < nstrm; i++) {
+		/* bang strdef */
+		x.strms[i].st = strm[i];
+		/* cache the next event */
+		x.strms[i].ev = echs_stream_next(strm[i]);
+	}
+	/* set last slot */
+	x.last = (echs_event_t){.when = 0, .what = ""};
+	return (echs_stream_t){__stream, &x};
+}
+
+DEFUN void
+echs_free_mux(echs_stream_t mux_strm)
+{
+	struct echs_mux_clo_s *x = mux_strm.clo;
+
+	if (LIKELY(x->strms != NULL)) {
+		free(x->strms);
+	}
+	memset(x, 0, sizeof(*x));
+	return;
 }
 
 /* builders.c ends here */
