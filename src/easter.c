@@ -34,8 +34,11 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#include <stdlib.h>
+#include <string.h>
 #include "echse.h"
 #include "instant.h"
+#include "strctl.h"
 
 #if !defined UNUSED
 # define UNUSED(x)	__attribute__((unused)) x
