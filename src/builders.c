@@ -368,8 +368,9 @@ DEFUN echs_stream_t
 echs_mux(size_t nstrm, echs_stream_t strm[])
 {
 	static struct echs_mux_clo_s x;
-	size_t st_sz = nstrm * sizeof(*x.strms);
+	size_t st_sz;
 
+	st_sz = (x.nstrms = nstrm) * sizeof(*x.strms);
 	x.strms = malloc(st_sz);
 	memset(x.strms, 0, st_sz);
 
