@@ -208,6 +208,25 @@ __stream(void *clo)
 	return e;
 }
 
+static void*
+__ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct easter_clo_s *ec = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE:
+		clo = malloc(sizeof(*ec));
+		memcpy(clo, ec, sizeof(*ec));
+		return clo;
+	case ECHS_STRCTL_UNCLONE:
+		free(ec);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
@@ -248,7 +267,7 @@ make_echs_stream(echs_instant_t i, ...)
 	}
 #undef state
 #undef easter
-	return (echs_stream_t){__stream, clo};
+	return (echs_stream_t){__stream, clo, __ctl};
 }
 
 void
