@@ -45,20 +45,25 @@
 
 
 /* christmas stream */
-static enum {
-	BEFORE_XMAS,
-	ON_XMAS,
-	BEFORE_BOXD,
-	ON_BOXD,
-} state;
-static unsigned int y;
+struct xmas_clo_s {
+	enum {
+		BEFORE_XMAS,
+		ON_XMAS,
+		BEFORE_BOXD,
+		ON_BOXD,
+	} state;
+	unsigned int y;
+};
 
 static echs_event_t
-__xmas(void *UNUSED(clo))
+__xmas(void *clo)
 {
 	DEFSTATE(XMAS);
 	DEFSTATE(BOXD);
+	struct xmas_clo_s *xc = clo;
 	echs_event_t e;
+#define state		(xc->state)
+#define y		(xc->y)
 
 	switch (state) {
 	case BEFORE_XMAS:
@@ -85,12 +90,20 @@ __xmas(void *UNUSED(clo))
 	default:
 		abort();
 	}
+#undef state
+#undef y
 	return e;
 }
 
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
+	struct xmas_clo_s *clo;
+#define state		(clo->state)
+	unsigned int y;
+
+	clo = malloc(sizeof(*clo));
+
 	if (i.m < 12U || i.d <= 25U) {
 		y = i.y;
 		state = BEFORE_XMAS;
@@ -104,7 +117,20 @@ make_echs_stream(echs_instant_t i, ...)
 		y = i.y + 1;
 		state = BEFORE_XMAS;
 	}
-	return (echs_stream_t){__xmas, NULL};
+	clo->y = y;
+#undef state
+	return (echs_stream_t){__xmas, clo};
+}
+
+void
+free_echs_stream(echs_stream_t xmas_strm)
+{
+	struct xmas_clo_s *clo = xmas_strm.clo;
+
+	if (clo != NULL) {
+		free(clo);
+	}
+	return;
 }
 
 /* xmas.c ends here */
