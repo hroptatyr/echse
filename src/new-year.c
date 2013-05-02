@@ -34,6 +34,7 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#include <stdlib.h>
 #include "echse.h"
 
 #if !defined UNUSED
@@ -42,17 +43,22 @@
 
 
 /* new-year stream */
-static enum {
-	BEFORE_NEWYEAR,
-	ON_NEWYEAR,
-} state;
-static unsigned int y;
+struct newy_clo_s {
+	enum {
+		BEFORE_NEWYEAR,
+		ON_NEWYEAR,
+	} state;
+	unsigned int y;
+};
 
 static echs_event_t
-__stream(void *UNUSED(clo))
+__stream(void *clo)
 {
 	DEFSTATE(NEWYEAR);
+	struct newy_clo_s *nyc = clo;
 	struct echs_event_s e;
+#define state		(nyc->state)
+#define y		(nyc->y)
 
 	switch (state) {
 	case BEFORE_NEWYEAR:
@@ -69,23 +75,40 @@ __stream(void *UNUSED(clo))
 	default:
 		abort();
 	}
+#undef state
+#undef y
 	return e;
 }
 
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
+	struct newy_clo_s *clo;
+
+	clo = malloc(sizeof(*clo));
+
 	if (i.m > 1U || i.d > 2U) {
-		y = i.y + 1;
-		state = BEFORE_NEWYEAR;
+		clo->y = i.y + 1;
+		clo->state = BEFORE_NEWYEAR;
 	} else if (i.d < 2U) {
-		y = i.y;
-		state = BEFORE_NEWYEAR;
+		clo->y = i.y;
+		clo->state = BEFORE_NEWYEAR;
 	} else {
-		y = i.y;
-		state = ON_NEWYEAR;
+		clo->y = i.y;
+		clo->state = ON_NEWYEAR;
 	}
-	return (echs_stream_t){__stream, NULL};
+	return (echs_stream_t){__stream, clo};
+}
+
+void
+free_echs_stream(echs_stream_t newy_strm)
+{
+	struct newy_clo_s *clo = newy_strm.clo;
+
+	if (clo != NULL) {
+		free(clo);
+	}
+	return;
 }
 
 /* new-year.c ends here */
