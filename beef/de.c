@@ -11,7 +11,10 @@ echs_stream_t oct3;
 echs_stream_t may1;
 echs_stream_t xmas;
 echs_stream_t boxd;
-echs_strdef_t east;
+echs_stream_t easter_sel;
+echs_stream_t ascension_sel;
+echs_strdef_t east1;
+echs_strdef_t east2;
 
 
 echs_stream_t
@@ -23,9 +26,17 @@ make_echs_stream(echs_instant_t i, ...)
 		oct3 = echs_every_year(i, OCT, 3),
 		xmas = echs_every_year(i, DEC, 25),
 		boxd = echs_every_year(i, DEC, 26),
-		(east = echs_open_stream(i, "easter")).s,
+		easter_sel = echs_select(
+			(east1 = echs_open_stream(i, "easter")).s, "EASTER"),
+		ascension_sel = echs_select(
+			(east2 = echs_open_stream(i, "easter")).s, "ASCENSION"),
 	};
 
+	echs_every_set_state(newy, "Neujahr");
+	echs_every_set_state(may1, "Tag_der_Arbeit");
+	echs_every_set_state(oct3, "Tag_der_Einheit");
+	echs_every_set_state(xmas, "1._Weihnachtsfeiertag");
+	echs_every_set_state(boxd, "2._Weihnachtsfeiertag");
 	return echs_mux(countof(all), all);
 }
 
@@ -38,7 +49,10 @@ free_echs_stream(echs_stream_t s)
 	echs_free_every(oct3);
 	echs_free_every(xmas);
 	echs_free_every(boxd);
-	echs_close_stream(east);
+	echs_free_select(easter_sel);
+	echs_free_select(ascension_sel);
+	echs_close_stream(east1);
+	echs_close_stream(east2);
 	return;
 }
 
