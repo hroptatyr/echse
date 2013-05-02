@@ -73,14 +73,20 @@ struct echs_event_s {
 	echs_state_t what;
 };
 
+typedef enum echs_strctl_e echs_strctl_t;
+
 struct echs_stream_s {
 	echs_event_t(*f)(void*);
 	void *clo;
+	/* for strctl */
+	void *(*ctl)(echs_strctl_t, void*, ...);
 };
 
 struct echs_filter_s {
 	echs_event_t(*f)(echs_event_t, void*);
 	void *clo;
+	/* for fltctl */
+	void(*ctl)(echs_strctl_t, void*, ...);
 };
 
 struct echs_pset_s {
@@ -118,6 +124,14 @@ extern echs_stream_t make_echs_stream(echs_instant_t, ...);
 /**
  * Stream dtor. */
 extern void free_echs_stream(echs_stream_t);
+
+/**
+ * Stream clone-tor. */
+extern echs_stream_t clone_echs_stream(echs_stream_t);
+
+/**
+ * Stream clone-dtor. */
+extern void unclone_echs_stream(echs_stream_t);
 
 /**
  * Set property of S with key K to V. */

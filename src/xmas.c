@@ -34,7 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#include <stdlib.h>
 #include "echse.h"
+#include "strctl.h"
 
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
@@ -45,20 +47,25 @@
 
 
 /* christmas stream */
-static enum {
-	BEFORE_XMAS,
-	ON_XMAS,
-	BEFORE_BOXD,
-	ON_BOXD,
-} state;
-static unsigned int y;
+struct xmas_clo_s {
+	enum {
+		BEFORE_XMAS,
+		ON_XMAS,
+		BEFORE_BOXD,
+		ON_BOXD,
+	} state;
+	unsigned int y;
+};
 
 static echs_event_t
-__xmas(void *UNUSED(clo))
+__xmas(void *clo)
 {
 	DEFSTATE(XMAS);
 	DEFSTATE(BOXD);
+	struct xmas_clo_s *xc = clo;
 	echs_event_t e;
+#define state		(xc->state)
+#define y		(xc->y)
 
 	switch (state) {
 	case BEFORE_XMAS:
@@ -85,12 +92,41 @@ __xmas(void *UNUSED(clo))
 	default:
 		abort();
 	}
+#undef state
+#undef y
 	return e;
+}
+
+static void*
+__ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct xmas_clo_s *xc = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		struct xmas_clo_s *clone = malloc(sizeof(*xc));
+
+		*clone = *xc;
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		free(xc);
+		break;
+	default:
+		break;
+	}
+	return NULL;
 }
 
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
+	struct xmas_clo_s *clo;
+#define state		(clo->state)
+	unsigned int y;
+
+	clo = malloc(sizeof(*clo));
+
 	if (i.m < 12U || i.d <= 25U) {
 		y = i.y;
 		state = BEFORE_XMAS;
@@ -104,7 +140,20 @@ make_echs_stream(echs_instant_t i, ...)
 		y = i.y + 1;
 		state = BEFORE_XMAS;
 	}
-	return (echs_stream_t){__xmas, NULL};
+	clo->y = y;
+#undef state
+	return (echs_stream_t){__xmas, clo, __ctl};
+}
+
+void
+free_echs_stream(echs_stream_t xmas_strm)
+{
+	struct xmas_clo_s *clo = xmas_strm.clo;
+
+	if (clo != NULL) {
+		free(clo);
+	}
+	return;
 }
 
 /* xmas.c ends here */

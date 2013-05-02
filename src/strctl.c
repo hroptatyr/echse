@@ -1,4 +1,4 @@
-/*** new-year.c -- new-year's stream
+/*** strctl.c -- stream and filter controls
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,103 +34,58 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#include <stdlib.h>
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include <stdarg.h>
 #include "echse.h"
 #include "strctl.h"
 
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 #if !defined UNUSED
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
 
-/* new-year stream */
-struct newy_clo_s {
-	enum {
-		BEFORE_NEWYEAR,
-		ON_NEWYEAR,
-	} state;
-	unsigned int y;
-};
-
-static echs_event_t
-__stream(void *clo)
+/* our API */
+void*
+echs_strctl(echs_stream_t s, echs_strctl_t ctl, ...)
 {
-	DEFSTATE(NEWYEAR);
-	struct newy_clo_s *nyc = clo;
-	struct echs_event_s e;
-#define state		(nyc->state)
-#define y		(nyc->y)
+	va_list ap;
+	void *res;
 
-	switch (state) {
-	case BEFORE_NEWYEAR:
-		e.when = (echs_instant_t){y, 1U, 1U};
-		e.what = ON(NEWYEAR);
-		state = ON_NEWYEAR;
-		break;
-	case ON_NEWYEAR:
-		e.when = (echs_instant_t){y, 1U, 2U};
-		e.what = OFF(NEWYEAR);
-		state = BEFORE_NEWYEAR;
-		y++;
-		break;
-	default:
-		abort();
+	if (UNLIKELY(s.ctl == NULL)) {
+		return NULL;
 	}
-#undef state
-#undef y
-	return e;
+
+	va_start(ap, ctl);
+	res = s.ctl(ctl, s.clo, ap);
+	va_end(ap);
+	return res;
 }
 
-static void*
-__ctl(echs_strctl_t ctl, void *clo, ...)
-{
-	struct newy_clo_s *nyc = clo;
-
-	switch (ctl) {
-	case ECHS_STRCTL_CLONE: {
-		struct newy_clo_s *clone = malloc(sizeof(*nyc));
-
-		*clone = *nyc;
-		return clone;
-	}
-	case ECHS_STRCTL_UNCLONE:
-		free(nyc);
-		break;
-	default:
-		break;
-	}
-	return NULL;
-}
-
+
+/* special services, defined in echse.h and whatnot */
 echs_stream_t
-make_echs_stream(echs_instant_t i, ...)
+clone_echs_stream(echs_stream_t s)
 {
-	struct newy_clo_s *clo;
-
-	clo = malloc(sizeof(*clo));
-
-	if (i.m > 1U || i.d > 2U) {
-		clo->y = i.y + 1;
-		clo->state = BEFORE_NEWYEAR;
-	} else if (i.d < 2U) {
-		clo->y = i.y;
-		clo->state = BEFORE_NEWYEAR;
-	} else {
-		clo->y = i.y;
-		clo->state = ON_NEWYEAR;
+	if (s.clo != NULL &&
+	    (UNLIKELY((s.clo = echs_strctl(s, ECHS_STRCTL_CLONE)) == NULL))) {
+		return (echs_stream_t){NULL};
 	}
-	return (echs_stream_t){__stream, clo, __ctl};
+	return s;
 }
 
 void
-free_echs_stream(echs_stream_t newy_strm)
+unclone_echs_stream(echs_stream_t s)
 {
-	struct newy_clo_s *clo = newy_strm.clo;
-
-	if (clo != NULL) {
-		free(clo);
-	}
+	echs_strctl(s, ECHS_STRCTL_UNCLONE);
 	return;
 }
 
-/* new-year.c ends here */
+/* strctl.c ends here */

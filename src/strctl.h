@@ -1,4 +1,4 @@
-/*** new-year.c -- new-year's stream
+/*** strctl.h -- stream and filter controls
  *
  * Copyright (C) 2013 Sebastian Freundt
  *
@@ -34,103 +34,19 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#include <stdlib.h>
+#if !defined INCLUDED_strctl_h_
+#define INCLUDED_strctl_h_
+
 #include "echse.h"
-#include "strctl.h"
 
-#if !defined UNUSED
-# define UNUSED(x)	__attribute__((unused)) x
-#endif	/* UNUSED */
-
-
-/* new-year stream */
-struct newy_clo_s {
-	enum {
-		BEFORE_NEWYEAR,
-		ON_NEWYEAR,
-	} state;
-	unsigned int y;
+enum echs_strctl_e {
+	ECHS_STRCTL_UNK,
+	ECHS_STRCTL_CLONE,
+	ECHS_STRCTL_UNCLONE,
 };
 
-static echs_event_t
-__stream(void *clo)
-{
-	DEFSTATE(NEWYEAR);
-	struct newy_clo_s *nyc = clo;
-	struct echs_event_s e;
-#define state		(nyc->state)
-#define y		(nyc->y)
+/**
+ * Call controller CTL on stream S. */
+extern void *echs_strctl(echs_stream_t, echs_strctl_t, ...);
 
-	switch (state) {
-	case BEFORE_NEWYEAR:
-		e.when = (echs_instant_t){y, 1U, 1U};
-		e.what = ON(NEWYEAR);
-		state = ON_NEWYEAR;
-		break;
-	case ON_NEWYEAR:
-		e.when = (echs_instant_t){y, 1U, 2U};
-		e.what = OFF(NEWYEAR);
-		state = BEFORE_NEWYEAR;
-		y++;
-		break;
-	default:
-		abort();
-	}
-#undef state
-#undef y
-	return e;
-}
-
-static void*
-__ctl(echs_strctl_t ctl, void *clo, ...)
-{
-	struct newy_clo_s *nyc = clo;
-
-	switch (ctl) {
-	case ECHS_STRCTL_CLONE: {
-		struct newy_clo_s *clone = malloc(sizeof(*nyc));
-
-		*clone = *nyc;
-		return clone;
-	}
-	case ECHS_STRCTL_UNCLONE:
-		free(nyc);
-		break;
-	default:
-		break;
-	}
-	return NULL;
-}
-
-echs_stream_t
-make_echs_stream(echs_instant_t i, ...)
-{
-	struct newy_clo_s *clo;
-
-	clo = malloc(sizeof(*clo));
-
-	if (i.m > 1U || i.d > 2U) {
-		clo->y = i.y + 1;
-		clo->state = BEFORE_NEWYEAR;
-	} else if (i.d < 2U) {
-		clo->y = i.y;
-		clo->state = BEFORE_NEWYEAR;
-	} else {
-		clo->y = i.y;
-		clo->state = ON_NEWYEAR;
-	}
-	return (echs_stream_t){__stream, clo, __ctl};
-}
-
-void
-free_echs_stream(echs_stream_t newy_strm)
-{
-	struct newy_clo_s *clo = newy_strm.clo;
-
-	if (clo != NULL) {
-		free(clo);
-	}
-	return;
-}
-
-/* new-year.c ends here */
+#endif	/* INCLUDED_strctl_h_ */

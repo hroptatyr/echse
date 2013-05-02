@@ -7,7 +7,7 @@ SUBDIRS =
 if DESCEND_LIBLTDL
 SUBDIRS += libltdl
 endif  DESCEND_LIBLTDL
-SUBDIRS += src
+SUBDIRS += src beef
 
 EXTRA_DIST =
 EXTRA_DIST += .version git-version-gen
