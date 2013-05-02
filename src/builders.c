@@ -459,12 +459,14 @@ echs_select(echs_stream_t strm, const char *what)
 	return (echs_stream_t){__sel_stream, x};
 }
 
-DEFUN void
+DEFUN echs_stream_t
 echs_free_select(echs_stream_t sel_strm)
 {
 	struct echs_sel_clo_s *x = sel_strm.clo;
+	echs_stream_t res = {NULL};
 
 	if (LIKELY(x != NULL)) {
+		res = x->strm;
 		for (size_t i = 0; i < x->nsels; i++) {
 			/* we strdup'd them guys */
 			free(x->sels[i]);
@@ -472,7 +474,7 @@ echs_free_select(echs_stream_t sel_strm)
 		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
 		free(x);
 	}
-	return;
+	return res;
 }
 
 /* builders.c ends here */
