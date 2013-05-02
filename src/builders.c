@@ -309,7 +309,7 @@ __refill(echs_stream_t s, echs_instant_t last)
 }
 
 static echs_event_t
-__stream(void *clo)
+__mux_stream(void *clo)
 {
 	struct echs_mux_clo_s *x = clo;
 	echs_instant_t bestinst;
@@ -383,7 +383,7 @@ echs_mux(size_t nstrm, echs_stream_t strm[])
 	}
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
-	return (echs_stream_t){__stream, x};
+	return (echs_stream_t){__mux_stream, x};
 }
 
 DEFUN void
@@ -393,6 +393,83 @@ echs_free_mux(echs_stream_t mux_strm)
 
 	if (LIKELY(x != NULL)) {
 		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
+		free(x);
+	}
+	return;
+}
+
+
+/* simple content filter */
+struct echs_sel_clo_s {
+	/* last event served */
+	echs_event_t last;
+	/* the stream to select from */
+	echs_stream_t strm;
+	/* total number of selectors */
+	size_t nsels;
+	char *sels[];
+};
+
+static echs_event_t
+__sel_stream(void *clo)
+{
+	struct echs_sel_clo_s *x = clo;
+	echs_event_t e;
+
+	while ((e = echs_stream_next(x->strm), !__event_0_p(e))) {
+		const char *what = e.what;
+
+		if (UNLIKELY(what == NULL)) {
+			continue;
+		}
+
+		switch (*what) {
+		case '~':
+		case '!':
+			what++;
+		default:
+			break;
+		}
+
+		for (size_t i = 0; i < x->nsels; i++) {
+			if (!strcmp(what, x->sels[i])) {
+				goto out;
+			}
+		}
+	}
+out:
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_select(echs_stream_t strm, const char *what)
+{
+	struct echs_sel_clo_s *x;
+	size_t st_sz;
+
+	st_sz = 1U * sizeof(*x->sels) + sizeof(*x);
+	x = malloc(st_sz);
+	x->nsels = 1U;
+	x->sels[0] = strdup(what);
+
+	/* set the stream */
+	x->strm = strm;
+	/* set last slot */
+	x->last = (echs_event_t){.when = 0, .what = ""};
+	return (echs_stream_t){__sel_stream, x};
+}
+
+DEFUN void
+echs_free_select(echs_stream_t sel_strm)
+{
+	struct echs_sel_clo_s *x = sel_strm.clo;
+
+	if (LIKELY(x != NULL)) {
+		for (size_t i = 0; i < x->nsels; i++) {
+			/* we strdup'd them guys */
+			free(x->sels[i]);
+		}
+		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
 		free(x);
 	}
 	return;

@@ -131,4 +131,7 @@ DECLF void echs_every_set_state(echs_stream_t s, const char *state);
 DECLF echs_stream_t echs_mux(size_t nstrm, echs_stream_t strm[]);
 DECLF void echs_free_mux(echs_stream_t mux_strm);
 
+DECLF echs_stream_t echs_select(echs_stream_t st, const char *what);
+DECLF void echs_free_select(echs_stream_t sel_strm);
+
 #endif	/* INCLUDED_builders_h_ */
