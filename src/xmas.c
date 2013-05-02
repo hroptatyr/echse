@@ -34,7 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
+#include <stdlib.h>
 #include "echse.h"
+#include "strctl.h"
 
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
@@ -95,6 +97,27 @@ __xmas(void *clo)
 	return e;
 }
 
+static void*
+__ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct xmas_clo_s *xc = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		struct xmas_clo_s *clone = malloc(sizeof(*xc));
+
+		*clone = *xc;
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		free(xc);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
@@ -119,7 +142,7 @@ make_echs_stream(echs_instant_t i, ...)
 	}
 	clo->y = y;
 #undef state
-	return (echs_stream_t){__xmas, clo};
+	return (echs_stream_t){__xmas, clo, __ctl};
 }
 
 void
