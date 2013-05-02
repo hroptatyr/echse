@@ -59,29 +59,31 @@ __easter(unsigned int y)
 	return (echs_instant_t){y, e <= 31 ? 3U : 4U, e <= 31U ? e : e - 31U};
 }
 
-static enum {
-	BEFORE_GOODFRI,
-	START_OVER = BEFORE_GOODFRI,
-	ON_GOODFRI,
-	BEFORE_EASTER,
-	ON_EASTER,
-	BEFORE_EASTERMON,
-	ON_EASTERMON,
-	BEFORE_ASCENSION,
-	ON_ASCENSION,
-	BEFORE_WHITSUN,
-	ON_WHITSUN,
-	BEFORE_WHITMON,
-	ON_WHITMON,
-	BEFORE_TRINITY,
-	ON_TRINITY,
-	BEFORE_CORPUSCHR,
-	ON_CORPUSCHR,
-} state;
-static echs_instant_t easter;
+struct easter_clo_s {
+	enum {
+		BEFORE_GOODFRI,
+		START_OVER = BEFORE_GOODFRI,
+		ON_GOODFRI,
+		BEFORE_EASTER,
+		ON_EASTER,
+		BEFORE_EASTERMON,
+		ON_EASTERMON,
+		BEFORE_ASCENSION,
+		ON_ASCENSION,
+		BEFORE_WHITSUN,
+		ON_WHITSUN,
+		BEFORE_WHITMON,
+		ON_WHITMON,
+		BEFORE_TRINITY,
+		ON_TRINITY,
+		BEFORE_CORPUSCHR,
+		ON_CORPUSCHR,
+	} state;
+	echs_instant_t easter;
+};
 
 static echs_event_t
-__stream(void *UNUSED(clo))
+__stream(void *clo)
 {
 	DEFSTATE(GOODFRI);
 	DEFSTATE(EASTER);
@@ -91,7 +93,10 @@ __stream(void *UNUSED(clo))
 	DEFSTATE(WHITMON);
 	DEFSTATE(TRINITY);
 	DEFSTATE(CORPUSCHR);
+	struct easter_clo_s *x = clo;
 	struct echs_event_s e = {0};
+#define state		(x->state)
+#define easter		(x->easter)
 
 	switch (state) {
 		echs_instant_t tmp;
@@ -195,15 +200,22 @@ __stream(void *UNUSED(clo))
 		easter = __easter(easter.y + 1);
 		break;
 	}
+#undef state
+#undef easter
 	return e;
 }
 
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
+	struct easter_clo_s *clo;
 	echs_instant_t tmp;
+#define state		(clo->state)
+#define easter		(clo->easter)
 
+	clo = calloc(1, sizeof(*clo));
 	easter = __easter(i.y);
+
 	if ((tmp = easter, tmp.d -= 2,
 	     __inst_le_p(i, echs_instant_fixup(tmp)))) {
 		state = BEFORE_GOODFRI;
@@ -231,7 +243,20 @@ make_echs_stream(echs_instant_t i, ...)
 		easter = __easter(i.y + 1);
 		state = START_OVER;
 	}
-	return (echs_stream_t){__stream, NULL};
+#undef state
+#undef easter
+	return (echs_stream_t){__stream, clo};
+}
+
+void
+free_echs_stream(echs_stream_t myself)
+{
+	struct easter_clo_s *clo = myself.clo;
+
+	if (clo != NULL) {
+		free(clo);
+	}
+	return;
 }
 
 /* easter.c ends here */
