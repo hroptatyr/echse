@@ -278,13 +278,14 @@ echs_wday_set_state(echs_stream_t s, const char *state)
 
 /* just testing */
 struct echs_mux_clo_s {
+	/* last event served */
+	echs_event_t last;
+	/* total number of streams and the stream themselves */
 	size_t nstrms;
 	struct {
 		echs_stream_t st;
 		echs_event_t ev;
-	} *strms;
-	/* last event served */
-	echs_event_t last;
+	} strms[];
 };
 
 static inline bool
@@ -367,22 +368,22 @@ __stream(void *clo)
 DEFUN echs_stream_t
 echs_mux(size_t nstrm, echs_stream_t strm[])
 {
-	static struct echs_mux_clo_s x;
+	struct echs_mux_clo_s *x;
 	size_t st_sz;
 
-	st_sz = (x.nstrms = nstrm) * sizeof(*x.strms);
-	x.strms = malloc(st_sz);
-	memset(x.strms, 0, st_sz);
+	st_sz = nstrm * sizeof(*x->strms) + sizeof(*x);
+	x = malloc(st_sz);
+	x->nstrms = nstrm;
 
 	for (size_t i = 0; i < nstrm; i++) {
 		/* bang strdef */
-		x.strms[i].st = strm[i];
+		x->strms[i].st = strm[i];
 		/* cache the next event */
-		x.strms[i].ev = echs_stream_next(strm[i]);
+		x->strms[i].ev = echs_stream_next(strm[i]);
 	}
 	/* set last slot */
-	x.last = (echs_event_t){.when = 0, .what = ""};
-	return (echs_stream_t){__stream, &x};
+	x->last = (echs_event_t){.when = 0, .what = ""};
+	return (echs_stream_t){__stream, x};
 }
 
 DEFUN void
@@ -390,10 +391,10 @@ echs_free_mux(echs_stream_t mux_strm)
 {
 	struct echs_mux_clo_s *x = mux_strm.clo;
 
-	if (LIKELY(x->strms != NULL)) {
-		free(x->strms);
+	if (LIKELY(x != NULL)) {
+		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
+		free(x);
 	}
-	memset(x, 0, sizeof(*x));
 	return;
 }
 
