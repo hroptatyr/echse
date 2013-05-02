@@ -80,6 +80,7 @@ libechse_la_SOURCES += strdef.c strdef.h
 libechse_la_SOURCES += fltdef.c fltdef.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += builders.c builders.h
+libechse_la_SOURCES += strctl.c strctl.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)

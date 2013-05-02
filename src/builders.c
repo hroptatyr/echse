@@ -41,6 +41,7 @@
 #include "echse.h"
 #include "instant.h"
 #include "builders.h"
+#include "strctl.h"
 
 #if !defined LIKELY
 # define LIKELY(_x)	__builtin_expect((_x), 1)
@@ -452,21 +453,20 @@ echs_select(echs_stream_t strm, const char *what)
 	x->nsels = 1U;
 	x->sels[0] = strdup(what);
 
-	/* set the stream */
-	x->strm = strm;
+	/* set the stream, best to operate on a clone of the stream */
+	x->strm = clone_echs_stream(strm);
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
 	return (echs_stream_t){__sel_stream, x};
 }
 
-DEFUN echs_stream_t
+DEFUN void
 echs_free_select(echs_stream_t sel_strm)
 {
 	struct echs_sel_clo_s *x = sel_strm.clo;
-	echs_stream_t res = {NULL};
 
 	if (LIKELY(x != NULL)) {
-		res = x->strm;
+		unclone_echs_stream(x->strm);
 		for (size_t i = 0; i < x->nsels; i++) {
 			/* we strdup'd them guys */
 			free(x->sels[i]);
@@ -474,7 +474,7 @@ echs_free_select(echs_stream_t sel_strm)
 		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
 		free(x);
 	}
-	return res;
+	return;
 }
 
 /* builders.c ends here */
