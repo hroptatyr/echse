@@ -1,7 +1,6 @@
 #include <echse.h>
 #include <strdef.h>
 #include <builders.h>
-#include <strctl.h>
 
 #if !defined countof
 # define countof(x)		(sizeof(x) / sizeof(*x))
@@ -27,8 +26,8 @@ make_echs_stream(echs_instant_t i, ...)
 		oct3 = echs_every_year(i, OCT, 3),
 		xmas = echs_every_year(i, DEC, 25),
 		boxd = echs_every_year(i, DEC, 26),
-		easter = echs_select(clone_echs_stream(east.s), "EASTER"),
-		ascension = echs_select(clone_echs_stream(east.s), "ASCENSION"),
+		easter = echs_select(east.s, "EASTER"),
+		ascension = echs_select(east.s, "ASCENSION"),
 	};
 
 	g_east = east;
@@ -49,8 +48,8 @@ free_echs_stream(echs_stream_t s)
 	echs_free_every(oct3);
 	echs_free_every(xmas);
 	echs_free_every(boxd);
-	unclone_echs_stream(echs_free_select(easter));
-	unclone_echs_stream(echs_free_select(ascension));
+	echs_free_select(easter);
+	echs_free_select(ascension);
 	echs_close_stream(g_east);
 	return;
 }
