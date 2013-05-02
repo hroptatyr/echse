@@ -36,6 +36,7 @@
  ***/
 #include <stdlib.h>
 #include "echse.h"
+#include "strctl.h"
 
 #if !defined UNUSED
 # define UNUSED(x)	__attribute__((unused)) x
@@ -80,6 +81,27 @@ __stream(void *clo)
 	return e;
 }
 
+static void*
+__ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct newy_clo_s *nyc = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		struct newy_clo_s *clone = malloc(sizeof(*nyc));
+
+		*clone = *nyc;
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		free(nyc);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
@@ -97,7 +119,7 @@ make_echs_stream(echs_instant_t i, ...)
 		clo->y = i.y;
 		clo->state = ON_NEWYEAR;
 	}
-	return (echs_stream_t){__stream, clo};
+	return (echs_stream_t){__stream, clo, __ctl};
 }
 
 void
