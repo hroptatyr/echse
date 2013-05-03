@@ -137,14 +137,23 @@ __wday_before(void *clo)
 	echs_wday_t ref_wd = wdclo->wd;
 	echs_wday_t when_wd = __get_wday(e.when);
 	int add;
+	int tgtd;
 
 	/* now the magic bit, we want the number of days to add so that
 	 * wd(e.when + X) == WD above, this is a simple modulo subtraction */
-	add = ((unsigned int)when_wd + 7U - (unsigned int)ref_wd) % 7;
+	add = ((int)when_wd + 7 - (int)ref_wd) % 7;
 	/* however if the difference is naught add 7 days so we truly get
 	 * the same weekday next week (after as in strictly-after) */
-	e.when.d -= add ?: wdclo->in_lieu;
-	e.when = echs_instant_fixup(e.when);
+	/* also, because echs_instant_t operates on unsigneds we have to
+	 * do a mini fix-up here */
+	if ((tgtd = e.when.d - (add ?: wdclo->in_lieu)) < 0) {
+		static const unsigned int mdays[] = {
+			0U, 31U, 28U, 31U, 30U, 31U, 30U,
+			31U, 31U, 30U, 31U, 30U, 31U,
+		};
+		tgtd += mdays[--e.when.m];
+	}
+	e.when.d = tgtd;
 	if (wdclo->state != NULL) {
 		e.what = wdclo->state;
 	}
