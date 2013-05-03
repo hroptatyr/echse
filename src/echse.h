@@ -56,7 +56,6 @@ typedef struct echs_filter_s echs_filter_t;
 typedef const struct echs_prop_s *echs_prop_t;
 
 union echs_instant_u {
-	/* normal YMDHMSms view on things */
 	struct {
 		uint32_t y:16;
 		uint32_t m:8;
@@ -65,17 +64,6 @@ union echs_instant_u {
 		uint32_t M:8;
 		uint32_t S:6;
 		uint32_t ms:10;
-	};
-	/* special YMCW view */
-	struct {
-		uint32_t:16;
-		uint32_t:8;
-		uint32_t c:4;
-		uint32_t w:4;
-		uint32_t:8;
-		uint32_t:8;
-		uint32_t:6;
-		uint32_t:10;
 	};
 	uint64_t u;
 } __attribute__((transparent_union));
