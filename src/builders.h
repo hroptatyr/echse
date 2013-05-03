@@ -142,4 +142,17 @@ DECLF void echs_free_select(echs_stream_t sel_strm);
 #define ECHS_SELECT(strm, what...)		\
 	__SELECT(strm, ((const char*[])what))
 
+struct echs_rename_atom_s {
+	const char *from;
+	const char *to;
+};
+
+DECLF echs_stream_t
+echs_rename(echs_stream_t strm, size_t nr, struct echs_rename_atom_s r[]);
+DECLF void echs_free_rename(echs_stream_t ren_strm);
+#define __RENAME(strm, what)			\
+	echs_rename(strm, countof(what), what)
+#define ECHS_RENAME(strm, what...)		\
+	__RENAME(strm, ((struct echs_rename_atom_s[])what))
+
 #endif	/* INCLUDED_builders_h_ */

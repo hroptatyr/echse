@@ -67,6 +67,17 @@ __get_wday(echs_instant_t i)
 	return (echs_wday_t)(((unsigned int)res % 7U) ?: SUN);
 }
 
+static char*
+strdup_state(const char *st)
+{
+	size_t sz = strlen(st);
+	char *res = malloc(1U + sz + 1U/*for \nul*/);
+
+	res[0] = '~';
+	memcpy(res + 1, st, sz + 1U);
+	return res;
+}
+
 
 struct wday_clo_s {
 	char *state;
@@ -473,6 +484,91 @@ echs_free_select(echs_stream_t sel_strm)
 			free(x->sels[i]);
 		}
 		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
+		free(x);
+	}
+	return;
+}
+
+
+/* simple content modifier */
+struct echs_ren_clo_s {
+	/* the stream to select from */
+	echs_stream_t strm;
+	/* total number of selectors */
+	size_t nrens;
+	char *rens[];
+};
+
+static echs_event_t
+__ren_stream(void *clo)
+{
+	struct echs_ren_clo_s *x = clo;
+	echs_event_t e = echs_stream_next(x->strm);
+
+	if (LIKELY(!__event_0_p(e) && e.what != NULL)) {
+		const char *what = e.what;
+		const char mod = *what;
+
+		switch (mod) {
+		case '~':
+		case '!':
+			what++;
+		default:
+			break;
+		}
+
+		for (size_t i = 0; i < 2 * x->nrens; i++) {
+			if (!strcmp(what, x->rens[i++])) {
+				/* rename */
+				x->rens[i][0] = mod;
+				e.what = x->rens[i];
+				switch (mod) {
+				case '~':
+				case '!':
+					break;
+				default:
+					e.what++;
+					break;
+				}
+				break;
+			}
+		}
+	}
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_rename(echs_stream_t strm, size_t nr, struct echs_rename_atom_s r[])
+{
+	struct echs_ren_clo_s *x;
+	size_t st_sz;
+
+	st_sz = 2U * nr * sizeof(*x->rens) + sizeof(*x);
+	x = malloc(st_sz);
+	for (size_t i = 0, j = 0; i < (x->nrens = nr); i++) {
+		struct echs_rename_atom_s ra = r[i];
+
+		x->rens[j++] = strdup(ra.from);
+		x->rens[j++] = strdup_state(ra.to);
+	}
+
+	/* set the stream, best to operate on a clone of the stream */
+	x->strm = clone_echs_stream(strm);
+	return (echs_stream_t){__ren_stream, x};
+}
+
+DEFUN void
+echs_free_rename(echs_stream_t ren_strm)
+{
+	struct echs_ren_clo_s *x = ren_strm.clo;
+
+	if (LIKELY(x != NULL)) {
+		unclone_echs_stream(x->strm);
+		for (size_t i = 0; i < 2 * x->nrens; i++) {
+			/* we strdup'd them guys */
+			free(x->rens[i]);
+		}
+		memset(x, 0, sizeof(*x) + x->nrens * sizeof(*x->rens));
 		free(x);
 	}
 	return;
