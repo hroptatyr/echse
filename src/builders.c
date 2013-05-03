@@ -443,15 +443,16 @@ out:
 }
 
 DEFUN echs_stream_t
-echs_select(echs_stream_t strm, const char *what)
+echs_select(echs_stream_t strm, size_t ns, const char *s[])
 {
 	struct echs_sel_clo_s *x;
 	size_t st_sz;
 
-	st_sz = 1U * sizeof(*x->sels) + sizeof(*x);
+	st_sz = ns * sizeof(*x->sels) + sizeof(*x);
 	x = malloc(st_sz);
-	x->nsels = 1U;
-	x->sels[0] = strdup(what);
+	for (size_t i = 0; i < (x->nsels = ns); i++) {
+		x->sels[i] = strdup(s[i]);
+	}
 
 	/* set the stream, best to operate on a clone of the stream */
 	x->strm = clone_echs_stream(strm);

@@ -42,6 +42,10 @@
 # define DEFUN
 #endif	/* !DECLF */
 
+#if !defined countof
+# define countof(x)		(sizeof(x) / sizeof(*x))
+#endif	/* !countof */
+
 typedef enum {
 	MON = (1U),
 	TUE = (2U),
@@ -131,7 +135,11 @@ DECLF void echs_every_set_state(echs_stream_t s, const char *state);
 DECLF echs_stream_t echs_mux(size_t nstrm, echs_stream_t strm[]);
 DECLF void echs_free_mux(echs_stream_t mux_strm);
 
-DECLF echs_stream_t echs_select(echs_stream_t st, const char *what);
+DECLF echs_stream_t echs_select(echs_stream_t st, size_t ns, const char *s[]);
 DECLF void echs_free_select(echs_stream_t sel_strm);
+#define __SELECT(strm, what)			\
+	echs_select(strm, countof(what), what)
+#define ECHS_SELECT(strm, what...)		\
+	__SELECT(strm, ((const char*[])what))
 
 #endif	/* INCLUDED_builders_h_ */
