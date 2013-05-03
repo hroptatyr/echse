@@ -505,6 +505,8 @@ __sel_ctl(echs_strctl_t ctl, void *clo, ...)
 		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
 		free(x);
 		break;
+	default:
+		break;
 	}
 	return NULL;
 }
@@ -612,6 +614,8 @@ __ren_ctl(echs_strctl_t ctl, void *clo, ...)
 		}
 		memset(x, 0, sizeof(*x) + x->nrens * sizeof(*x->rens));
 		free(x);
+		break;
+	default:
 		break;
 	}
 	return NULL;
