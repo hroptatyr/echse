@@ -67,6 +67,17 @@ __get_wday(echs_instant_t i)
 	return (echs_wday_t)(((unsigned int)res % 7U) ?: SUN);
 }
 
+static char*
+strdup_state(const char *st)
+{
+	size_t sz = strlen(st);
+	char *res = malloc(1U + sz + 1U/*for \nul*/);
+
+	res[0] = '~';
+	memcpy(res + 1, st, sz + 1U);
+	return res;
+}
+
 
 struct wday_clo_s {
 	char *state;
@@ -126,14 +137,23 @@ __wday_before(void *clo)
 	echs_wday_t ref_wd = wdclo->wd;
 	echs_wday_t when_wd = __get_wday(e.when);
 	int add;
+	int tgtd;
 
 	/* now the magic bit, we want the number of days to add so that
 	 * wd(e.when + X) == WD above, this is a simple modulo subtraction */
-	add = ((unsigned int)when_wd + 7U - (unsigned int)ref_wd) % 7;
+	add = ((int)when_wd + 7 - (int)ref_wd) % 7;
 	/* however if the difference is naught add 7 days so we truly get
 	 * the same weekday next week (after as in strictly-after) */
-	e.when.d -= add ?: wdclo->in_lieu;
-	e.when = echs_instant_fixup(e.when);
+	/* also, because echs_instant_t operates on unsigneds we have to
+	 * do a mini fix-up here */
+	if ((tgtd = e.when.d - (add ?: wdclo->in_lieu)) < 0) {
+		static const unsigned int mdays[] = {
+			0U, 31U, 28U, 31U, 30U, 31U, 30U,
+			31U, 31U, 30U, 31U, 30U, 31U,
+		};
+		tgtd += mdays[--e.when.m];
+	}
+	e.when.d = tgtd;
 	if (wdclo->state != NULL) {
 		e.what = wdclo->state;
 	}
@@ -366,6 +386,33 @@ __mux_stream(void *clo)
 	return x->strms[bestindx].ev;
 }
 
+static void*
+__mux_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_mux_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = x->nstrms * sizeof(*x->strms) + sizeof(*x);
+		struct echs_mux_clo_s *clone = malloc(sz);
+
+		*clone = *x;
+		for (size_t i = 0; i < x->nstrms; i++) {
+			/* bang strms slot */
+			clone->strms[i] = x->strms[i];
+		}
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
+		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 DEFUN echs_stream_t
 echs_mux(size_t nstrm, echs_stream_t strm[])
 {
@@ -384,7 +431,7 @@ echs_mux(size_t nstrm, echs_stream_t strm[])
 	}
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
-	return (echs_stream_t){__mux_stream, x};
+	return (echs_stream_t){__mux_stream, x, __mux_ctl};
 }
 
 DEFUN void
@@ -393,8 +440,7 @@ echs_free_mux(echs_stream_t mux_strm)
 	struct echs_mux_clo_s *x = mux_strm.clo;
 
 	if (LIKELY(x != NULL)) {
-		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
-		free(x);
+		__mux_ctl(ECHS_STRCTL_UNCLONE, x);
 	}
 	return;
 }
@@ -442,22 +488,55 @@ out:
 	return e;
 }
 
+static void*
+__sel_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_sel_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = x->nsels * sizeof(*x->sels) + sizeof(*x);
+		struct echs_sel_clo_s *clone = malloc(sz);
+
+		*clone = *x;
+		for (size_t i = 0; i < x->nsels; i++) {
+			clone->sels[i] = strdup(x->sels[i]);
+		}
+		clone->strm = clone_echs_stream(x->strm);
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		unclone_echs_stream(x->strm);
+		for (size_t i = 0; i < x->nsels; i++) {
+			/* we strdup'd them guys */
+			free(x->sels[i]);
+		}
+		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
+		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 DEFUN echs_stream_t
-echs_select(echs_stream_t strm, const char *what)
+echs_select(echs_stream_t strm, size_t ns, const char *s[])
 {
 	struct echs_sel_clo_s *x;
 	size_t st_sz;
 
-	st_sz = 1U * sizeof(*x->sels) + sizeof(*x);
+	st_sz = ns * sizeof(*x->sels) + sizeof(*x);
 	x = malloc(st_sz);
-	x->nsels = 1U;
-	x->sels[0] = strdup(what);
+	for (size_t i = 0; i < (x->nsels = ns); i++) {
+		x->sels[i] = strdup(s[i]);
+	}
 
 	/* set the stream, best to operate on a clone of the stream */
 	x->strm = clone_echs_stream(strm);
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
-	return (echs_stream_t){__sel_stream, x};
+	return (echs_stream_t){__sel_stream, x, __sel_ctl};
 }
 
 DEFUN void
@@ -466,13 +545,118 @@ echs_free_select(echs_stream_t sel_strm)
 	struct echs_sel_clo_s *x = sel_strm.clo;
 
 	if (LIKELY(x != NULL)) {
-		unclone_echs_stream(x->strm);
-		for (size_t i = 0; i < x->nsels; i++) {
-			/* we strdup'd them guys */
-			free(x->sels[i]);
+		__sel_ctl(ECHS_STRCTL_UNCLONE, x);
+	}
+	return;
+}
+
+
+/* simple content modifier */
+struct echs_ren_clo_s {
+	/* the stream to select from */
+	echs_stream_t strm;
+	/* total number of selectors */
+	size_t nrens;
+	char *rens[];
+};
+
+static echs_event_t
+__ren_stream(void *clo)
+{
+	struct echs_ren_clo_s *x = clo;
+	echs_event_t e = echs_stream_next(x->strm);
+
+	if (LIKELY(!__event_0_p(e) && e.what != NULL)) {
+		const char *what = e.what;
+		const char mod = *what;
+
+		switch (mod) {
+		case '~':
+		case '!':
+			what++;
+		default:
+			break;
 		}
-		memset(x, 0, sizeof(*x) + x->nsels * sizeof(*x->sels));
+
+		for (size_t i = 0; i < 2 * x->nrens; i++) {
+			if (!strcmp(what, x->rens[i++])) {
+				/* rename */
+				x->rens[i][0] = mod;
+				e.what = x->rens[i];
+				switch (mod) {
+				case '~':
+				case '!':
+					break;
+				default:
+					e.what++;
+					break;
+				}
+				break;
+			}
+		}
+	}
+	return e;
+}
+
+static void*
+__ren_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_ren_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = 2U * x->nrens * sizeof(*x->rens) + sizeof(*x);
+		struct echs_ren_clo_s *clone = malloc(sz);
+
+		*clone = *x;
+		for (size_t i = 0; i < 2U * x->nrens; i++) {
+			clone->rens[i] = strdup(x->rens[i]);
+		}
+		clone->strm = clone_echs_stream(x->strm);
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		unclone_echs_stream(x->strm);
+		for (size_t i = 0; i < 2 * x->nrens; i++) {
+			/* we strdup'd them guys */
+			free(x->rens[i]);
+		}
+		memset(x, 0, sizeof(*x) + x->nrens * sizeof(*x->rens));
 		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
+DEFUN echs_stream_t
+echs_rename(echs_stream_t strm, size_t nr, struct echs_rename_atom_s r[])
+{
+	struct echs_ren_clo_s *x;
+	size_t st_sz;
+
+	st_sz = 2U * nr * sizeof(*x->rens) + sizeof(*x);
+	x = malloc(st_sz);
+	for (size_t i = 0, j = 0; i < (x->nrens = nr); i++) {
+		struct echs_rename_atom_s ra = r[i];
+
+		x->rens[j++] = strdup(ra.from);
+		x->rens[j++] = strdup_state(ra.to);
+	}
+
+	/* set the stream, best to operate on a clone of the stream */
+	x->strm = clone_echs_stream(strm);
+	return (echs_stream_t){__ren_stream, x, __ren_ctl};
+}
+
+DEFUN void
+echs_free_rename(echs_stream_t ren_strm)
+{
+	struct echs_ren_clo_s *x = ren_strm.clo;
+
+	if (LIKELY(x != NULL)) {
+		__ren_ctl(ECHS_STRCTL_UNCLONE, x);
 	}
 	return;
 }
