@@ -377,6 +377,33 @@ __mux_stream(void *clo)
 	return x->strms[bestindx].ev;
 }
 
+static void*
+__mux_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_mux_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = x->nstrms * sizeof(*x->strms) + sizeof(*x);
+		struct echs_mux_clo_s *clone = malloc(sz);
+
+		*clone = *x;
+		for (size_t i = 0; i < x->nstrms; i++) {
+			/* bang strms slot */
+			clone->strms[i] = x->strms[i];
+		}
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
+		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
 DEFUN echs_stream_t
 echs_mux(size_t nstrm, echs_stream_t strm[])
 {
@@ -395,7 +422,7 @@ echs_mux(size_t nstrm, echs_stream_t strm[])
 	}
 	/* set last slot */
 	x->last = (echs_event_t){.when = 0, .what = ""};
-	return (echs_stream_t){__mux_stream, x};
+	return (echs_stream_t){__mux_stream, x, __mux_ctl};
 }
 
 DEFUN void
@@ -404,8 +431,7 @@ echs_free_mux(echs_stream_t mux_strm)
 	struct echs_mux_clo_s *x = mux_strm.clo;
 
 	if (LIKELY(x != NULL)) {
-		memset(x, 0, sizeof(*x) + x->nstrms * sizeof(*x->strms));
-		free(x);
+		__mux_ctl(ECHS_STRCTL_UNCLONE, x);
 	}
 	return;
 }
