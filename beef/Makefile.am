@@ -16,4 +16,7 @@ EXTRA_DIST =
 pkglib_LTLIBRARIES += de.la
 de_la_LDFLAGS = $(MOD_LDFLAGS)
 
+pkglib_LTLIBRARIES += uk.la
+uk_la_LDFLAGS = $(MOD_LDFLAGS)
+
 ## Makefile.am ends here
