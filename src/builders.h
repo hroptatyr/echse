@@ -103,6 +103,15 @@ typedef enum {
 #define SAT_BEFORE_OR_ON(x)	echs_wday_before_or_on(x, SAT)
 #define SUN_BEFORE_OR_ON(x)	echs_wday_before_or_on(x, SUN)
 
+/* ymcw opers */
+#define NTH(c, w)	(((c) << 8U) | (w) & 0xfU)
+#define FIRST(x)	NTH(1U, x)
+#define SECOND(x)	NTH(2U, x)
+#define THIRD(x)	NTH(3U, x)
+#define FOURTH(x)	NTH(4U, x)
+#define FIFTH(x)	NTH(5U, x)
+#define LAST(x)		NTH(5U, x)
+
 
 DECLF echs_stream_t echs_wday_after(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_after_or_on(echs_stream_t s, echs_wday_t wd);
