@@ -104,7 +104,7 @@ typedef enum {
 #define SUN_BEFORE_OR_ON(x)	echs_wday_before_or_on(x, SUN)
 
 /* ymcw opers */
-#define NTH(c, w)	(((c) << 8U) | (w) & 0xfU)
+#define NTH(c, w)	(((c) << 8U) | ((w) & 0xfU))
 #define FIRST(x)	NTH(1U, x)
 #define SECOND(x)	NTH(2U, x)
 #define THIRD(x)	NTH(3U, x)
@@ -128,7 +128,7 @@ DECLF echs_stream_t echs_free_wday(echs_stream_t);
 DECLF void echs_wday_set_state(echs_stream_t s, const char *state);
 
 DECLF echs_stream_t
-echs_every_year(echs_instant_t, echs_mon_t mon, unsigned int dom);
+echs_every_year(echs_instant_t, echs_mon_t mon, unsigned int);
 
 DECLF echs_stream_t
 echs_every_month(echs_instant_t, unsigned int dom);

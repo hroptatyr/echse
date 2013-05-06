@@ -212,12 +212,12 @@ __every_year(void *clo)
 	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
-DEFUN echs_stream_t
-echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
+static echs_stream_t
+_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
 {
-/* short for *-MON-DOM */
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
+	/* check the mode we're in */
 	if (i.m < mon || i.m == mon && i.d <= dom) {
 		i = (echs_instant_t){i.y, mon, dom, ECHS_ALL_DAY};
 	} else {
@@ -225,6 +225,79 @@ echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_year, clo};
+}
+
+/* our cw muxer (using the .d slot) */
+#define YMCW_MUX(c, w)	(((c) << 4U) | ((w) & 0x0fU))
+
+static echs_instant_t
+__ymcw_to_inst(echs_instant_t y)
+{
+/* convert instant with CW coded D slot in Y to Gregorian insants. */
+	unsigned int c = y.d >> 4U;
+	unsigned int w = y.d & 0x07U;
+	echs_instant_t res = {y.y, y.m, 1U, y.H, y.M, y.S, y.ms};
+	/* get month's first's weekday */
+	echs_wday_t wd1 = __get_wday(res);
+	unsigned int add;
+	unsigned int tgtd;
+
+	/* now just like in the __wday_after() code, we want the number of days
+	 * to add so that wd(res + X) == W above,
+	 * this is a simple modulo subtraction */
+	add = ((unsigned int)w + 7U - (unsigned int)wd1) % 7;
+	if ((tgtd = 1U + add + (c - 1) * 7U) > mdays[res.m]) {
+		if (UNLIKELY(tgtd == 29U && !(res.y % 4U))) {
+			/* ah, leap year innit
+			 * no need to check for Feb because months are
+			 * usually longer than 29 days and we wouldn't be
+			 * here if it was a different month */
+			;
+		} else {
+			tgtd -= 7U;
+		}
+	}
+	res.d = tgtd;
+	return res;
+}
+
+static echs_event_t
+__every_year_ymcw(void *clo)
+{
+	struct every_clo_s *eclo = clo;
+	echs_instant_t next = __ymcw_to_inst(eclo->next);
+
+	eclo->next.y++;
+	return (echs_event_t){next, eclo->state};
+}
+
+static echs_stream_t
+_every_year_ymcw(echs_instant_t i, echs_mon_t m, unsigned int spec)
+{
+	struct every_clo_s *clo = calloc(1, sizeof(*clo));
+	unsigned int c = spec >> 8U;
+	unsigned int w = spec & 0x0fU;
+	echs_instant_t prob = {i.y, m, YMCW_MUX(c, w), ECHS_ALL_DAY};
+
+	clo->next = prob;
+	return (echs_stream_t){__every_year_ymcw, clo};
+}
+
+DEFUN echs_stream_t
+echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int when)
+{
+/* short for *-MON-DOM */
+	/* check the mode we're in */
+	if (LIKELY(when < 32U)) {
+		return _every_year(i, mon, when);
+	} else if (when > FIRST(0U) && when <= FIFTH(SUN)) {
+		/* aaah */
+		return _every_year_ymcw(i, mon, when);
+	} else {
+		/* um */
+		;
+	}
+	return (echs_stream_t){NULL};
 }
 
 static echs_event_t
