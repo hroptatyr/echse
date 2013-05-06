@@ -53,6 +53,10 @@
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
+static const unsigned int mdays[] = {
+	0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
+};
+
 static echs_wday_t
 __get_wday(echs_instant_t i)
 {
@@ -82,7 +86,10 @@ strdup_state(const char *st)
 struct wday_clo_s {
 	char *state;
 	echs_wday_t wd;
-	int in_lieu;
+	union {
+		int in_lieu;
+		int deflt_mover;
+	};
 	echs_stream_t s;
 };
 
@@ -147,10 +154,6 @@ __wday_before(void *clo)
 	/* also, because echs_instant_t operates on unsigneds we have to
 	 * do a mini fix-up here */
 	if ((tgtd = e.when.d - (add ?: wdclo->in_lieu)) < 0) {
-		static const unsigned int mdays[] = {
-			0U, 31U, 28U, 31U, 30U, 31U, 30U,
-			31U, 31U, 30U, 31U, 30U, 31U,
-		};
 		tgtd += mdays[--e.when.m];
 	}
 	e.when.d = tgtd;
@@ -179,6 +182,118 @@ echs_wday_before_or_on(echs_stream_t s, echs_wday_t wd)
 	clo->wd = wd;
 	clo->s = s;
 	return (echs_stream_t){__wday_before, clo};
+}
+
+
+static echs_event_t
+__bday_after(void *clo)
+{
+	struct wday_clo_s *wdclo = clo;
+	echs_event_t e = echs_stream_next(wdclo->s);
+	echs_wday_t when_wd = __get_wday(e.when);
+	int add = wdclo->deflt_mover;
+
+	switch (when_wd) {
+	case FRI:
+		add++;
+	case SAT:
+		add++;
+	case SUN:
+		/* move to mon */
+		break;
+	case MON:
+	case TUE:
+	case WED:
+	case THU:
+		/* move to the day after */
+		break;
+	}
+
+	/* however if the difference is naught add 7 days so we truly get
+	 * the same weekday next week (after as in strictly-after) */
+	e.when.d += add;
+	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_bday_after(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 1;
+	return (echs_stream_t){__bday_after, clo};
+}
+
+DEFUN echs_stream_t
+echs_bday_after_or_on(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 0;
+	return (echs_stream_t){__bday_after, clo};
+}
+
+static echs_event_t
+__bday_before(void *clo)
+{
+	struct wday_clo_s *wdclo = clo;
+	echs_event_t e = echs_stream_next(wdclo->s);
+	echs_wday_t when_wd = __get_wday(e.when);
+	int add = wdclo->deflt_mover;
+	int tgtd;
+
+	switch (when_wd) {
+	case MON:
+	case SUN:
+		add--;
+	case SAT:
+		/* move to fri */
+		add--;
+		break;
+	case FRI:
+	case THU:
+	case WED:
+		/* move to the day before */
+		break;
+	}
+	/* however if the difference is naught add 7 days so we truly get
+	 * the same weekday next week (after as in strictly-after) */
+	/* also, because echs_instant_t operates on unsigneds we have to
+	 * do a mini fix-up here */
+	if ((tgtd = e.when.d + add) < 0) {
+		tgtd += mdays[--e.when.m];
+	}
+	e.when.d = tgtd;
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_bday_before(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = -1;
+	return (echs_stream_t){__bday_before, clo};
+}
+
+DEFUN echs_stream_t
+echs_bday_before_or_on(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 0;
+	return (echs_stream_t){__bday_before, clo};
 }
 
 DEFUN echs_stream_t
@@ -212,12 +327,12 @@ __every_year(void *clo)
 	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
-DEFUN echs_stream_t
-echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
+static echs_stream_t
+_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
 {
-/* short for *-MON-DOM */
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
+	/* check the mode we're in */
 	if (i.m < mon || i.m == mon && i.d <= dom) {
 		i = (echs_instant_t){i.y, mon, dom, ECHS_ALL_DAY};
 	} else {
@@ -225,6 +340,83 @@ echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int dom)
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_year, clo};
+}
+
+/* our cw muxer (using the .d slot) */
+#define YMCW_MUX(c, w)	(((c) << 4U) | ((w) & 0x0fU))
+
+static echs_instant_t
+__ymcw_to_inst(echs_instant_t y)
+{
+/* convert instant with CW coded D slot in Y to Gregorian insants. */
+	unsigned int c = y.d >> 4U;
+	unsigned int w = y.d & 0x07U;
+	echs_instant_t res = {y.y, y.m, 1U, y.H, y.M, y.S, y.ms};
+	/* get month's first's weekday */
+	echs_wday_t wd1 = __get_wday(res);
+	unsigned int add;
+	unsigned int tgtd;
+
+	/* now just like in the __wday_after() code, we want the number of days
+	 * to add so that wd(res + X) == W above,
+	 * this is a simple modulo subtraction */
+	add = ((unsigned int)w + 7U - (unsigned int)wd1) % 7;
+	if ((tgtd = 1U + add + (c - 1) * 7U) > mdays[res.m]) {
+		if (UNLIKELY(tgtd == 29U && !(res.y % 4U))) {
+			/* ah, leap year innit
+			 * no need to check for Feb because months are
+			 * usually longer than 29 days and we wouldn't be
+			 * here if it was a different month */
+			;
+		} else {
+			tgtd -= 7U;
+		}
+	}
+	res.d = tgtd;
+	return res;
+}
+
+static echs_event_t
+__every_year_ymcw(void *clo)
+{
+	struct every_clo_s *eclo = clo;
+	echs_instant_t next = __ymcw_to_inst(eclo->next);
+
+	eclo->next.y++;
+	return (echs_event_t){next, eclo->state};
+}
+
+static echs_stream_t
+_every_year_ymcw(echs_instant_t i, echs_mon_t m, unsigned int spec)
+{
+	struct every_clo_s *clo = calloc(1, sizeof(*clo));
+	unsigned int c = spec >> 8U;
+	unsigned int w = spec & 0x0fU;
+	echs_instant_t prob = {i.y, m, YMCW_MUX(c, w), ECHS_ALL_DAY};
+
+	if (!__inst_le_p(i, __ymcw_to_inst(prob))) {
+		/* next year then */
+		prob.y++;
+	}
+	clo->next = prob;
+	return (echs_stream_t){__every_year_ymcw, clo};
+}
+
+DEFUN echs_stream_t
+echs_every_year(echs_instant_t i, echs_mon_t mon, unsigned int when)
+{
+/* short for *-MON-DOM */
+	/* check the mode we're in */
+	if (LIKELY(when < 32U)) {
+		return _every_year(i, mon, when);
+	} else if (when > FIRST(0U) && when <= FIFTH(SUN)) {
+		/* aaah */
+		return _every_year_ymcw(i, mon, when);
+	} else {
+		/* um */
+		;
+	}
+	return (echs_stream_t){NULL};
 }
 
 static echs_event_t
@@ -237,10 +429,9 @@ __every_month(void *clo)
 	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
-DEFUN echs_stream_t
-echs_every_month(echs_instant_t i, unsigned int dom)
+static echs_stream_t
+_every_month(echs_instant_t i, unsigned int dom)
 {
-/* short for *-*-DOM */
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
 	if (i.d <= dom) {
@@ -250,6 +441,51 @@ echs_every_month(echs_instant_t i, unsigned int dom)
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_month, clo};
+}
+
+static echs_event_t
+__every_month_ymcw(void *clo)
+{
+	struct every_clo_s *eclo = clo;
+	echs_instant_t next = __ymcw_to_inst(eclo->next);
+
+	if (eclo->next.m++ > 12U) {
+		eclo->next.m = 1U;
+		eclo->next.y++;
+	}
+	return (echs_event_t){next, eclo->state};
+}
+
+static echs_stream_t
+_every_month_ymcw(echs_instant_t i, unsigned int spec)
+{
+	struct every_clo_s *clo = calloc(1, sizeof(*clo));
+	unsigned int c = spec >> 8U;
+	unsigned int w = spec & 0x0fU;
+	echs_instant_t prob = {i.y, i.m, YMCW_MUX(c, w), ECHS_ALL_DAY};
+
+	if (!__inst_le_p(i, __ymcw_to_inst(prob))) {
+		/* next year then */
+		prob.y++;
+	}
+	clo->next = prob;
+	return (echs_stream_t){__every_month_ymcw, clo};
+}
+
+DEFUN echs_stream_t
+echs_every_month(echs_instant_t i, unsigned int when)
+{
+/* short for *-*-DOM */
+	/* check the mode we're in */
+	if (LIKELY(when < 32U)) {
+		return _every_month(i, when);
+	} else if (when > FIRST(0U) && when <= FIFTH(SUN)) {
+		return _every_month_ymcw(i, when);
+	} else {
+		/* brilliant */
+		;
+	}
+	return (echs_stream_t){NULL};
 }
 
 DEFUN void
