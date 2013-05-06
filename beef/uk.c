@@ -21,10 +21,10 @@ make_echs_stream(echs_instant_t i, ...)
 {
 	echs_strdef_t east = echs_open_stream(i, "easter");
 	echs_stream_t all[] = {
-		newy = echs_every_year(i, JAN, 1),
-		mayd = MON_AFTER_OR_ON(echs_every_year(i, MAY, 1)),
-		spring = MON_BEFORE(echs_every_year(i, JUN, 1)),
-		summer = MON_BEFORE(echs_every_year(i, SEP, 1)),
+		newy = echs_every_year(i, JAN, 1U),
+		mayd = echs_every_year(i, MAY, FIRST(MON)),
+		spring = echs_every_year(i, MAY, LAST(MON)),
+		summer = echs_every_year(i, AUG, LAST(MON)),
 		xmas = echs_every_year(i, DEC, 25),
 		boxd = echs_every_year(i, DEC, 26),
 		easter = ECHS_SELECT(east.s, {"GOODFRI", "EASTER", "EASTERMON"}),
