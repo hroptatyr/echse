@@ -279,6 +279,10 @@ _every_year_ymcw(echs_instant_t i, echs_mon_t m, unsigned int spec)
 	unsigned int w = spec & 0x0fU;
 	echs_instant_t prob = {i.y, m, YMCW_MUX(c, w), ECHS_ALL_DAY};
 
+	if (!__inst_le_p(i, __ymcw_to_inst(prob))) {
+		/* next year then */
+		prob.y++;
+	}
 	clo->next = prob;
 	return (echs_stream_t){__every_year_ymcw, clo};
 }
@@ -345,6 +349,10 @@ _every_month_ymcw(echs_instant_t i, unsigned int spec)
 	unsigned int w = spec & 0x0fU;
 	echs_instant_t prob = {i.y, i.m, YMCW_MUX(c, w), ECHS_ALL_DAY};
 
+	if (!__inst_le_p(i, __ymcw_to_inst(prob))) {
+		/* next year then */
+		prob.y++;
+	}
 	clo->next = prob;
 	return (echs_stream_t){__every_month_ymcw, clo};
 }
