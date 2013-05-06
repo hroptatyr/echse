@@ -86,7 +86,10 @@ strdup_state(const char *st)
 struct wday_clo_s {
 	char *state;
 	echs_wday_t wd;
-	int in_lieu;
+	union {
+		int in_lieu;
+		int deflt_mover;
+	};
 	echs_stream_t s;
 };
 
@@ -179,6 +182,118 @@ echs_wday_before_or_on(echs_stream_t s, echs_wday_t wd)
 	clo->wd = wd;
 	clo->s = s;
 	return (echs_stream_t){__wday_before, clo};
+}
+
+
+static echs_event_t
+__bday_after(void *clo)
+{
+	struct wday_clo_s *wdclo = clo;
+	echs_event_t e = echs_stream_next(wdclo->s);
+	echs_wday_t when_wd = __get_wday(e.when);
+	int add = wdclo->deflt_mover;
+
+	switch (when_wd) {
+	case FRI:
+		add++;
+	case SAT:
+		add++;
+	case SUN:
+		/* move to mon */
+		break;
+	case MON:
+	case TUE:
+	case WED:
+	case THU:
+		/* move to the day after */
+		break;
+	}
+
+	/* however if the difference is naught add 7 days so we truly get
+	 * the same weekday next week (after as in strictly-after) */
+	e.when.d += add;
+	e.when = echs_instant_fixup(e.when);
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_bday_after(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 1;
+	return (echs_stream_t){__bday_after, clo};
+}
+
+DEFUN echs_stream_t
+echs_bday_after_or_on(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 0;
+	return (echs_stream_t){__bday_after, clo};
+}
+
+static echs_event_t
+__bday_before(void *clo)
+{
+	struct wday_clo_s *wdclo = clo;
+	echs_event_t e = echs_stream_next(wdclo->s);
+	echs_wday_t when_wd = __get_wday(e.when);
+	int add = wdclo->deflt_mover;
+	int tgtd;
+
+	switch (when_wd) {
+	case MON:
+	case SUN:
+		add--;
+	case SAT:
+		/* move to fri */
+		add--;
+		break;
+	case FRI:
+	case THU:
+	case WED:
+		/* move to the day before */
+		break;
+	}
+	/* however if the difference is naught add 7 days so we truly get
+	 * the same weekday next week (after as in strictly-after) */
+	/* also, because echs_instant_t operates on unsigneds we have to
+	 * do a mini fix-up here */
+	if ((tgtd = e.when.d + add) < 0) {
+		tgtd += mdays[--e.when.m];
+	}
+	e.when.d = tgtd;
+	if (wdclo->state != NULL) {
+		e.what = wdclo->state;
+	}
+	return e;
+}
+
+DEFUN echs_stream_t
+echs_bday_before(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = -1;
+	return (echs_stream_t){__bday_before, clo};
+}
+
+DEFUN echs_stream_t
+echs_bday_before_or_on(echs_stream_t s)
+{
+	struct wday_clo_s *clo = calloc(1, sizeof(*clo));
+
+	clo->s = s;
+	clo->deflt_mover = 0;
+	return (echs_stream_t){__bday_before, clo};
 }
 
 DEFUN echs_stream_t

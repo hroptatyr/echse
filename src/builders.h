@@ -118,6 +118,11 @@ DECLF echs_stream_t echs_wday_after_or_on(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_before(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_before_or_on(echs_stream_t s, echs_wday_t wd);
 
+DECLF echs_stream_t echs_bday_after(echs_stream_t s);
+DECLF echs_stream_t echs_bday_after_or_on(echs_stream_t s);
+DECLF echs_stream_t echs_bday_before(echs_stream_t s);
+DECLF echs_stream_t echs_bday_before_or_on(echs_stream_t s);
+
 /**
  * dtor for both echs_wday_after() and echs_wday_before()
  * Return the stream S passed to the respective ctor. */
