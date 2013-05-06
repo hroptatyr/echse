@@ -310,10 +310,9 @@ __every_month(void *clo)
 	return (echs_event_t){echs_instant_fixup(next), eclo->state};
 }
 
-DEFUN echs_stream_t
-echs_every_month(echs_instant_t i, unsigned int dom)
+static echs_stream_t
+_every_month(echs_instant_t i, unsigned int dom)
 {
-/* short for *-*-DOM */
 	struct every_clo_s *clo = calloc(1, sizeof(*clo));
 
 	if (i.d <= dom) {
@@ -323,6 +322,47 @@ echs_every_month(echs_instant_t i, unsigned int dom)
 	}
 	clo->next = i;
 	return (echs_stream_t){__every_month, clo};
+}
+
+static echs_event_t
+__every_month_ymcw(void *clo)
+{
+	struct every_clo_s *eclo = clo;
+	echs_instant_t next = __ymcw_to_inst(eclo->next);
+
+	if (eclo->next.m++ > 12U) {
+		eclo->next.m = 1U;
+		eclo->next.y++;
+	}
+	return (echs_event_t){next, eclo->state};
+}
+
+static echs_stream_t
+_every_month_ymcw(echs_instant_t i, unsigned int spec)
+{
+	struct every_clo_s *clo = calloc(1, sizeof(*clo));
+	unsigned int c = spec >> 8U;
+	unsigned int w = spec & 0x0fU;
+	echs_instant_t prob = {i.y, i.m, YMCW_MUX(c, w), ECHS_ALL_DAY};
+
+	clo->next = prob;
+	return (echs_stream_t){__every_month_ymcw, clo};
+}
+
+DEFUN echs_stream_t
+echs_every_month(echs_instant_t i, unsigned int when)
+{
+/* short for *-*-DOM */
+	/* check the mode we're in */
+	if (LIKELY(when < 32U)) {
+		return _every_month(i, when);
+	} else if (when > FIRST(0U) && when <= FIFTH(SUN)) {
+		return _every_month_ymcw(i, when);
+	} else {
+		/* brilliant */
+		;
+	}
+	return (echs_stream_t){NULL};
 }
 
 DEFUN void
