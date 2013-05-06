@@ -53,6 +53,10 @@
 # define UNUSED(x)	__attribute__((unused)) x
 #endif	/* UNUSED */
 
+static const unsigned int mdays[] = {
+	0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
+};
+
 static echs_wday_t
 __get_wday(echs_instant_t i)
 {
@@ -147,10 +151,6 @@ __wday_before(void *clo)
 	/* also, because echs_instant_t operates on unsigneds we have to
 	 * do a mini fix-up here */
 	if ((tgtd = e.when.d - (add ?: wdclo->in_lieu)) < 0) {
-		static const unsigned int mdays[] = {
-			0U, 31U, 28U, 31U, 30U, 31U, 30U,
-			31U, 31U, 30U, 31U, 30U, 31U,
-		};
 		tgtd += mdays[--e.when.m];
 	}
 	e.when.d = tgtd;
