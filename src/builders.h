@@ -148,6 +148,10 @@ DECLF void echs_every_set_state(echs_stream_t s, const char *state);
 /* just testing */
 DECLF echs_stream_t echs_mux(size_t nstrm, echs_stream_t strm[]);
 DECLF void echs_free_mux(echs_stream_t mux_strm);
+#define __MUX(what)						\
+	echs_mux(countof(what), what)
+#define ECHS_MUX(args...)					\
+	__MUX(((echs_stream_t[]){args}))
 
 DECLF echs_stream_t echs_select(echs_stream_t st, size_t ns, const char *s[]);
 DECLF void echs_free_select(echs_stream_t sel_strm);
