@@ -897,4 +897,141 @@ echs_free_rename(echs_stream_t ren_strm)
 	return;
 }
 
+
+struct echs_mov_clo_s {
+	/* the stream with blockers */
+	echs_stream_t blocker;
+	/* the stream with items to move */
+	echs_stream_t movees;
+
+	/* next blocker event */
+	echs_event_t blk_next;
+
+	/* direction to move */
+	int dir;
+};
+
+static inline char
+echs_event_mdfr(echs_event_t e)
+{
+	if (UNLIKELY(e.what == NULL)) {
+		return '!';
+	}
+	switch (*e.what) {
+	case '!':
+	case '~':
+		return *e.what;
+	default:
+		break;
+	}
+	return '\0';
+}
+
+static echs_event_t
+__mov_stream(void *clo)
+{
+	struct echs_mov_clo_s *x = clo;
+	echs_event_t e = echs_stream_next(x->movees);
+	echs_event_t blk_next = x->blk_next;
+	int open = 0;
+
+	for (; __inst_le_p(blk_next.when, e.when);
+	     blk_next = echs_stream_next(x->blocker)) {
+		if (!echs_event_mdfr(blk_next)) {
+			/* we need to move behind it, so get the next guy in */
+			open++;
+		} else {
+			open--;
+		}
+	}
+
+	if (UNLIKELY(open)) {
+		echs_event_t blk_last;
+
+		for (; open;
+		     blk_last = blk_next,
+			     blk_next = echs_stream_next(x->blocker)) {
+			/* now we have to keep iterating until all open
+			 * blockers disappear */
+			if (!echs_event_mdfr(blk_next)) {
+				open++;
+			} else {
+				open--;
+			}
+		}
+		/* we can now safely put outselves behind blk_last */
+		e.when = blk_last.when;
+		e.when = (e.when.d++, echs_instant_fixup(e.when));
+	}
+	x->blk_next = blk_next;
+	return e;
+}
+
+static void*
+__mov_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_mov_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = sizeof(*x);
+		struct echs_mov_clo_s *clone = malloc(sz);
+
+		clone->blocker = clone_echs_stream(x->blocker);
+		clone->movees = clone_echs_stream(x->movees);
+		clone->dir = x->dir;
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		unclone_echs_stream(x->blocker);
+		unclone_echs_stream(x->movees);
+		memset(x, 0, sizeof(*x));
+		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
+static echs_stream_t
+_move(echs_stream_t blocker, echs_stream_t movees, int dir)
+{
+	struct echs_mov_clo_s *x;
+	size_t st_sz;
+
+	st_sz = sizeof(*x);
+	x = malloc(st_sz);
+
+	/* set the stream, best to operate on a clone of the stream */
+	x->blocker = clone_echs_stream(blocker);
+	x->movees = clone_echs_stream(movees);
+	x->blk_next = echs_stream_next(x->blocker);
+	x->dir = dir;
+	return (echs_stream_t){__mov_stream, x, __mov_ctl};
+}
+
+DEFUN echs_stream_t
+echs_move_after(echs_stream_t blocker, echs_stream_t movees)
+{
+	return _move(blocker, movees, 1);
+}
+
+DEFUN echs_stream_t
+echs_move_before(echs_stream_t blocker, echs_stream_t movees)
+{
+	return _move(blocker, movees, -1);
+}
+
+DEFUN void
+echs_free_move(echs_stream_t move_strm)
+{
+	struct echs_mov_clo_s *x = move_strm.clo;
+
+	if (LIKELY(x != NULL)) {
+		__mov_ctl(ECHS_STRCTL_UNCLONE, x);
+	}
+	return;
+}
+
 /* builders.c ends here */

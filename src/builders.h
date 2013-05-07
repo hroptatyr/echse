@@ -173,4 +173,10 @@ DECLF void echs_free_rename(echs_stream_t ren_strm);
 #define ECHS_RENAME(strm, what...)		\
 	__RENAME(strm, ((struct echs_rename_atom_s[])what))
 
+DECLF echs_stream_t
+echs_move_after(echs_stream_t blocker, echs_stream_t movees);
+DECLF echs_stream_t
+echs_move_before(echs_stream_t blocker, echs_stream_t movees);
+DECLF void echs_free_move(echs_stream_t move_strm);
+
 #endif	/* INCLUDED_builders_h_ */
