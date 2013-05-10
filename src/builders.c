@@ -977,9 +977,9 @@ __mov_ctl(echs_strctl_t ctl, void *clo, ...)
 		size_t sz = sizeof(*x);
 		struct echs_mov_clo_s *clone = malloc(sz);
 
+		*clone = *x;
 		clone->blocker = clone_echs_stream(x->blocker);
 		clone->movees = clone_echs_stream(x->movees);
-		clone->dir = x->dir;
 		return clone;
 	}
 	case ECHS_STRCTL_UNCLONE:
@@ -1001,7 +1001,7 @@ _move(echs_stream_t blocker, echs_stream_t movees, int dir)
 	size_t st_sz;
 
 	st_sz = sizeof(*x);
-	x = malloc(st_sz);
+	x = calloc(1, st_sz);
 
 	/* set the stream, best to operate on a clone of the stream */
 	x->blocker = clone_echs_stream(blocker);
