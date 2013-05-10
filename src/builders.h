@@ -112,6 +112,9 @@ typedef enum {
 #define FIFTH(x)	NTH(5U, x)
 #define LAST(x)		NTH(5U, x)
 
+#define GET_NTH(spec)	((spec) >> 8U)
+#define GET_WDAY(spec)	((spec) & 0xfU)
+
 
 DECLF echs_stream_t echs_wday_after(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_after_or_on(echs_stream_t s, echs_wday_t wd);
@@ -137,6 +140,11 @@ echs_every_year(echs_instant_t, echs_mon_t mon, unsigned int);
 
 DECLF echs_stream_t
 echs_every_month(echs_instant_t, unsigned int dom);
+
+/**
+ * Generate a stream with events on WDAY. */
+DECLF echs_stream_t
+echs_every_week(echs_instant_t, echs_wday_t wday);
 
 DECLF void echs_free_every(echs_stream_t);
 

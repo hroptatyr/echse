@@ -489,6 +489,29 @@ echs_every_month(echs_instant_t i, unsigned int when)
 	return (echs_stream_t){NULL};
 }
 
+static echs_event_t
+__every_week(void *clo)
+{
+	struct every_clo_s *eclo = clo;
+	echs_instant_t next;
+
+	eclo->next = next = echs_instant_fixup(eclo->next);
+	eclo->next.d += 7U;
+	return (echs_event_t){next, eclo->state};
+}
+
+DEFUN echs_stream_t
+echs_every_week(echs_instant_t i, echs_wday_t wd)
+{
+	struct every_clo_s *clo = calloc(1, sizeof(*clo));
+	echs_wday_t iwd = __get_wday(i);
+	unsigned int in;
+
+	in = (wd + 7U - iwd) % 7U;
+	clo->next = (i.d += in, i.H = ECHS_ALL_DAY, i);
+	return (echs_stream_t){__every_week, clo};
+}
+
 DEFUN void
 echs_free_every(echs_stream_t s)
 {
