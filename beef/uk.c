@@ -15,14 +15,15 @@ echs_stream_t xbox;
 echs_stream_t xmas;
 echs_stream_t boxd;
 echs_strdef_t g_east;
-echs_strdef_t g_weekend;
 
 
 echs_stream_t
 make_echs_stream(echs_instant_t i, ...)
 {
 	echs_strdef_t east = echs_open_stream(i, "easter");
-	echs_strdef_t weekend = echs_open_stream(i, "weekend");
+	echs_stream_t sat;
+	echs_stream_t sun;
+	echs_stream_t we;
 
 	newy = echs_every_year(i, JAN, 1U);
 	mayd = echs_every_year(i, MAY, FIRST(MON));
@@ -34,10 +35,13 @@ make_echs_stream(echs_instant_t i, ...)
 	boxd = echs_every_year(i, DEC, 26);
 	echs_every_set_state(xmas, "Christmas");
 	echs_every_set_state(boxd, "Boxing_Day");
-	xbox = echs_move_after(weekend.s, ECHS_MUX(xmas, boxd));
+	/* blocker stream */
+	sat = echs_every_week(i, SAT);
+	sun = echs_every_week(i, SUN);
+	we = ECHS_MUX(sat, sun);
+	xbox = echs_move_after(we, ECHS_MUX(xmas, boxd));
 
 	g_east = east;
-	g_weekend = weekend;
 	echs_every_set_state(mayd, "Mayday");
 	echs_every_set_state(newy, "New_Year");
 	echs_every_set_state(summer, "Summer_Bank_Holiday");
@@ -62,7 +66,6 @@ free_echs_stream(echs_stream_t s)
 	echs_free_every(boxd);
 
 	echs_close_stream(g_east);
-	echs_close_stream(g_weekend);
 	return;
 }
 
