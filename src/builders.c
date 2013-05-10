@@ -1182,4 +1182,76 @@ echs_free_move(echs_stream_t move_strm)
 	return;
 }
 
+
+/* stream streams */
+struct echs_strm_clo_s {
+	size_t idx;
+	size_t nev;
+	echs_event_t ev[];
+};
+
+static echs_event_t
+__strm_stream(void *clo)
+{
+	struct echs_strm_clo_s *x = clo;
+
+	return x->ev[x->idx++];
+}
+
+static void*
+__strm_ctl(echs_strctl_t ctl, void *clo, ...)
+{
+	struct echs_strm_clo_s *x = clo;
+
+	switch (ctl) {
+	case ECHS_STRCTL_CLONE: {
+		size_t sz = x->nev * sizeof(*x->ev) + sizeof(*x);
+		struct echs_strm_clo_s *clone = malloc(sz);
+
+		*clone = *x;
+		for (size_t i = 0; i < x->nev; i++) {
+			/* bang strms slot */
+			clone->ev[i] = x->ev[i];
+		}
+		return clone;
+	}
+	case ECHS_STRCTL_UNCLONE:
+		memset(x, 0, sizeof(*x) + x->nev * sizeof(*x->ev));
+		free(x);
+		break;
+	default:
+		break;
+	}
+	return NULL;
+}
+
+DEFUN echs_stream_t
+echs_stream(echs_instant_t inst, size_t nev, echs_event_t ev[])
+{
+	struct echs_strm_clo_s *x;
+	size_t st_sz;
+
+	st_sz = sizeof(*x) + nev * sizeof(*x->ev);
+	x = calloc(1, st_sz);
+
+	/* TODO: sort me! */
+	for (size_t i = 0; i < nev; i++) {
+		if (__inst_le_p(inst, ev[i].when)) {
+			x->ev[x->nev++] = ev[i];
+		}
+	}
+	return (echs_stream_t){__strm_stream, x, __strm_ctl};
+}
+
+DEFUN void
+echs_free_stream(echs_stream_t strm_strm)
+{
+	struct echs_strm_clo_s *x = strm_strm.clo;
+
+	if (LIKELY(x != NULL)) {
+		__strm_ctl(ECHS_STRCTL_UNCLONE, x);
+	}
+	return;
+}
+
 /* builders.c ends here */

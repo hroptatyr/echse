@@ -187,4 +187,12 @@ DECLF echs_stream_t
 echs_move_before(echs_stream_t blocker, echs_stream_t movees);
 DECLF void echs_free_move(echs_stream_t move_strm);
 
+/**
+ * Return the NEV events in EV as stream. */
+DECLF echs_stream_t
+echs_stream(echs_instant_t i, size_t nev, echs_event_t ev[]);
+DECLF void echs_free_stream(echs_stream_t strm_strm);
+#define __STREAM(i, evs)	echs_stream(i, countof(evs), evs)
+#define ECHS_STREAM(i, evs...)	__STREAM(i, ((echs_event_t[]){evs}))
+
 #endif	/* INCLUDED_builders_h_ */
