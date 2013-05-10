@@ -14,6 +14,7 @@ echs_stream_t easter;
 echs_stream_t xbox;
 echs_stream_t xmas;
 echs_stream_t boxd;
+echs_stream_t rwed;
 echs_strdef_t g_east;
 
 
@@ -41,13 +42,19 @@ make_echs_stream(echs_instant_t i, ...)
 	we = ECHS_MUX(sat, sun);
 	xbox = echs_move_after(we, ECHS_MUX(xmas, boxd));
 
+	echs_event_t w = {
+		{2011, 4, 29, ECHS_ALL_DAY},
+		"Wedding_of_Prince_William_and_Catherine_Middleton"
+	};
+	rwed = ECHS_STREAM(i, w);
+
 	g_east = east;
 	echs_every_set_state(mayd, "Mayday");
 	echs_every_set_state(newy, "New_Year");
 	echs_every_set_state(summer, "Summer_Bank_Holiday");
 	echs_every_set_state(spring, "Spring_Bank_Holiday");
 
-	return ECHS_MUX(newy, mayd, spring, summer, easter, xbox);
+	return ECHS_MUX(newy, mayd, spring, summer, easter, xbox, rwed);
 }
 
 void
@@ -60,6 +67,7 @@ free_echs_stream(echs_stream_t s)
 	echs_free_every(spring);
 	echs_free_select(easter);
 	echs_free_move(xbox);
+	echs_free_stream(rwed);
 
 	/* free tentative resources */
 	echs_free_every(xmas);
