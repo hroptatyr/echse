@@ -65,6 +65,10 @@ union echs_instant_u {
 		uint32_t S:6;
 		uint32_t ms:10;
 	};
+	struct {
+		uint32_t dpart;
+		uint32_t intra;
+	};
 	uint64_t u;
 } __attribute__((transparent_union));
 
