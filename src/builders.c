@@ -40,6 +40,7 @@
 #include <string.h>
 #include "echse.h"
 #include "instant.h"
+#include "event.h"
 #include "builders.h"
 #include "strctl.h"
 
@@ -898,6 +899,13 @@ echs_free_rename(echs_stream_t ren_strm)
 }
 
 
+typedef struct echs_intv_s echs_intv_t;
+
+struct echs_intv_s {
+	echs_instant_t beg;
+	echs_instant_t end;
+};
+
 struct echs_mov_clo_s {
 	/* the stream with blockers */
 	echs_stream_t blocker;
@@ -906,64 +914,181 @@ struct echs_mov_clo_s {
 
 	/* next blocker event */
 	echs_event_t blk_next;
+	/* last used blocker interval */
+	echs_intv_t blki_last;
 
 	/* direction to move */
 	int dir;
 };
 
-static inline char
-echs_event_mdfr(echs_event_t e)
+static inline bool
+echs_instant_in_p(echs_instant_t i, echs_intv_t intv)
 {
-	if (UNLIKELY(e.what == NULL)) {
-		return '!';
-	}
-	switch (*e.what) {
+/* return non-false if i is in INTV */
+	return __inst_le_p(intv.beg, i) || __inst_lt_p(i, intv.end);
+}
+
+static inline bool
+echs_instant_right_after_p(echs_instant_t i, echs_intv_t intv)
+{
+	return __inst_eq_p(intv.end, i);
+}
+
+static inline bool
+echs_instant_after_p(echs_instant_t i, echs_intv_t intv)
+{
+	return __inst_le_p(intv.end, i);
+}
+
+static inline bool
+echs_instant_before_p(echs_instant_t i, echs_intv_t intv)
+{
+	return __inst_le_p(i, intv.beg);
+}
+
+static inline bool
+echs_event_overlap_p(echs_event_t e, echs_intv_t intv)
+{
+	return echs_instant_in_p(echs_event_beg(e), intv) ||
+		echs_instant_in_p(echs_event_end(e), intv);
+}
+
+static inline bool
+echs_event_right_after_p(echs_event_t e, echs_intv_t intv)
+{
+	return echs_instant_right_after_p(echs_event_beg(e), intv);
+}
+
+static inline bool
+echs_event_after_p(echs_event_t e, echs_intv_t intv)
+{
+	return echs_instant_after_p(echs_event_beg(e), intv);
+}
+
+static inline bool
+echs_event_before_p(echs_event_t e, echs_intv_t intv)
+{
+	return echs_instant_before_p(echs_event_end(e), intv);
+}
+
+static echs_intv_t
+__find_next_blocker(struct echs_mov_clo_s *x)
+{
+	echs_event_t blk_next = x->blk_next;
+	int open = 0;
+	struct echs_intv_s blki = {echs_event_beg(blk_next)};
+
+	do {
+		switch (echs_event_mdfr(blk_next)) {
+		default:
+			/* start a new open level */
+			open++;
+			break;
+		case '~':
+			/* close a level of openness */
+			open--;
+		case '!':
+			blki.end = echs_event_end(blk_next);
+			break;
+		}
+	} while (!__event_0_p(blk_next = echs_stream_next(x->blocker)) &&
+		 (open || echs_event_right_after_p(blk_next, blki)));
+
+	/* save the next event we popped already */
+	x->blk_next = blk_next;
+	return blki;
+}
+
+static echs_event_t
+__find_next_movee(struct echs_mov_clo_s *x)
+{
+	echs_event_t e = echs_stream_next(x->movees);
+	return e;
+}
+
+static echs_event_t
+__find_end(struct echs_mov_clo_s *x, echs_event_t sta)
+{
+/* find corresponding end event to STA */
+	switch (echs_event_mdfr(sta)) {
 	case '!':
+		/* the event is its own end event */
+		return sta;
 	case '~':
-		return *e.what;
+		/* huh? */
+		return sta;
 	default:
 		break;
 	}
-	return '\0';
+	return (echs_event_t){0};
+}
+
+static echs_instant_t
+__abs_end(echs_instant_t i)
+{
+	if (echs_instant_all_day_p(i)) {
+		i.intra = 0U;
+		i.d++;
+		goto fixup;
+	} else if (echs_instant_all_sec_p(i)) {
+		i.ms = 0U;
+		i.S++;
+		goto fixup;
+	}
+	return i;
+fixup:
+	return echs_instant_fixup(i);
 }
 
 static echs_event_t
 __mov_stream(void *clo)
 {
 	struct echs_mov_clo_s *x = clo;
-	echs_event_t e = echs_stream_next(x->movees);
-	echs_event_t blk_next = x->blk_next;
-	int open = 0;
+	echs_event_t e = __find_next_movee(x);
+	echs_event_t eend;
+	echs_intv_t blki = x->blki_last;
+	static struct __mov_opt_s {
+		/* 1 if event lengths must be maintained */
+		unsigned int keep_length:1;
+		/* 1 if events must appear in the same order as in MOVEES */
+		unsigned int keep_order:1;
+		/* 1 if the event starts at BEG_MOVEE - BEG_BLOCKER after
+		 * the blocker */
+		unsigned int keep_distance:1;
+		/* 1 if later elements in the movee stream block moved
+		 * elements in the output stream as well */
+		unsigned int self_blocking:1;
+	} opt;
 
-	for (; __inst_le_p(blk_next.when, e.when);
-	     blk_next = echs_stream_next(x->blocker)) {
-		if (!echs_event_mdfr(blk_next)) {
-			/* we need to move behind it, so get the next guy in */
-			open++;
+	while (echs_event_after_p(e, blki)) {
+		blki = __find_next_blocker(x);
+	}
+
+	/* blki_before now holds the latest possible interval sooner than E
+	 * and blki the blocker interval after that */
+
+	/* find the end point of E to see if we can squeeze in E */
+	eend = __find_end(x, e);
+
+	/* try and squeeze E into the gap between blki_before and blki */
+	if (LIKELY(echs_event_before_p(eend, blki))) {
+		/* do nothing, E fits into the gap */
+		;
+	} else {
+		/* otherwise move */
+		echs_idiff_t df = echs_instant_diff(eend.when, e.when);
+
+		/* we should mind keep_distance here */
+		if (echs_instant_all_day_p(e.when)) {
+			e.when.dpart = blki.end.dpart;
 		} else {
-			open--;
+			e.when = blki.end;
 		}
+		eend.when = echs_instant_add(e.when, df);
+		blki.end = __abs_end(eend.when);
 	}
 
-	if (UNLIKELY(open)) {
-		echs_event_t blk_last;
-
-		for (; open;
-		     blk_last = blk_next,
-			     blk_next = echs_stream_next(x->blocker)) {
-			/* now we have to keep iterating until all open
-			 * blockers disappear */
-			if (!echs_event_mdfr(blk_next)) {
-				open++;
-			} else {
-				open--;
-			}
-		}
-		/* we can now safely put outselves behind blk_last */
-		e.when = blk_last.when;
-		e.when = (e.when.d++, echs_instant_fixup(e.when));
-	}
-	x->blk_next = blk_next;
+	x->blki_last = blki;
 	return e;
 }
 
