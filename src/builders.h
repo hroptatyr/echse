@@ -112,6 +112,9 @@ typedef enum {
 #define FIFTH(x)	NTH(5U, x)
 #define LAST(x)		NTH(5U, x)
 
+#define GET_NTH(spec)	((spec) >> 8U)
+#define GET_WDAY(spec)	((spec) & 0xfU)
+
 
 DECLF echs_stream_t echs_wday_after(echs_stream_t s, echs_wday_t wd);
 DECLF echs_stream_t echs_wday_after_or_on(echs_stream_t s, echs_wday_t wd);
@@ -138,6 +141,11 @@ echs_every_year(echs_instant_t, echs_mon_t mon, unsigned int);
 DECLF echs_stream_t
 echs_every_month(echs_instant_t, unsigned int dom);
 
+/**
+ * Generate a stream with events on WDAY. */
+DECLF echs_stream_t
+echs_every_week(echs_instant_t, echs_wday_t wday);
+
 DECLF void echs_free_every(echs_stream_t);
 
 /**
@@ -148,6 +156,10 @@ DECLF void echs_every_set_state(echs_stream_t s, const char *state);
 /* just testing */
 DECLF echs_stream_t echs_mux(size_t nstrm, echs_stream_t strm[]);
 DECLF void echs_free_mux(echs_stream_t mux_strm);
+#define __MUX(what)						\
+	echs_mux(countof(what), what)
+#define ECHS_MUX(args...)					\
+	__MUX(((echs_stream_t[]){args}))
 
 DECLF echs_stream_t echs_select(echs_stream_t st, size_t ns, const char *s[]);
 DECLF void echs_free_select(echs_stream_t sel_strm);
@@ -168,5 +180,19 @@ DECLF void echs_free_rename(echs_stream_t ren_strm);
 	echs_rename(strm, countof(what), what)
 #define ECHS_RENAME(strm, what...)		\
 	__RENAME(strm, ((struct echs_rename_atom_s[])what))
+
+DECLF echs_stream_t
+echs_move_after(echs_stream_t blocker, echs_stream_t movees);
+DECLF echs_stream_t
+echs_move_before(echs_stream_t blocker, echs_stream_t movees);
+DECLF void echs_free_move(echs_stream_t move_strm);
+
+/**
+ * Return the NEV events in EV as stream. */
+DECLF echs_stream_t
+echs_stream(echs_instant_t i, size_t nev, echs_event_t ev[]);
+DECLF void echs_free_stream(echs_stream_t strm_strm);
+#define __STREAM(i, evs)	echs_stream(i, countof(evs), evs)
+#define ECHS_STREAM(i, evs...)	__STREAM(i, ((echs_event_t[]){evs}))
 
 #endif	/* INCLUDED_builders_h_ */

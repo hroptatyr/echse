@@ -40,9 +40,20 @@
 #include <stdbool.h>
 #include "echse.h"
 
+typedef struct echs_idiff_s echs_idiff_t;
+
+struct echs_idiff_s {
+	unsigned int dd;
+	unsigned int msd;
+};
+
 /**
  * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
 extern echs_instant_t echs_instant_fixup(echs_instant_t);
+
+extern echs_idiff_t echs_instant_diff(echs_instant_t end, echs_instant_t beg);
+
+extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
 
 
 static inline __attribute__((pure)) bool
