@@ -47,6 +47,11 @@
 # define UNLIKELY(_x)	__builtin_expect((_x), 0)
 #endif	/* UNLIKELY */
 
+static const unsigned int doy[] = {
+	0U, 0U, 31U, 59U, 90U, 120U, 151U, 181U, 212U, 243U, 273U, 304U, 334U,
+	365U, 396U, 424U, 455U, 485U, 516U, 546U, 577U, 608U, 638U, 669U, 699U,
+};
+
 
 echs_instant_t
 echs_instant_fixup(echs_instant_t e)
@@ -120,6 +125,89 @@ refix_ym:
 		}
 	}
 	return e;
+}
+
+static inline unsigned int
+__doy(echs_instant_t i)
+{
+	unsigned int res = doy[i.m] + i.d;
+
+	if (UNLIKELY((i.y % 4U) == 0) && i.m >= 3) {
+		res++;
+	}
+	return res;
+}
+
+echs_idiff_t
+echs_instant_diff(echs_instant_t end, echs_instant_t beg)
+{
+	int extra_df;
+	int intra_df;
+
+	/* just see what the intraday part yields for the difference */
+	intra_df = end.H - beg.H;
+	intra_df *= 60;
+	intra_df += end.M - beg.M;
+	intra_df *= 60;
+	intra_df += end.S - beg.S;
+	intra_df *= 1000;
+	intra_df += end.ms - beg.ms;
+
+	if (intra_df < 0) {
+		intra_df += 24 * 60 * 60 * 1000;
+		extra_df = -1;
+	} else if (intra_df < 24 * 60 * 60 * 1000) {
+		extra_df = 0;
+	} else {
+		extra_df = 1;
+	}
+
+	{
+		unsigned int dom_end = __doy(end);
+		unsigned int dom_beg = __doy(beg);
+		int df_y = end.y - beg.y;
+
+		if ((extra_df += dom_end - dom_beg) < 0) {
+			df_y--;
+		}
+		extra_df += df_y * 365 + (df_y - 1) / 4;
+	}
+
+	return (echs_idiff_t){extra_df, intra_df};
+}
+
+echs_instant_t
+echs_instant_add(echs_instant_t bas, echs_idiff_t add)
+{
+	echs_instant_t res;
+	int dd = add.dd;
+	int msd = add.msd;
+	int df_y;
+	int df_m;
+
+	res.y = bas.y + dd / 365U;
+	if ((df_y = res.y - bas.y)) {
+		dd -= df_y * 365 + (df_y - 1) / 4;
+	}
+
+	res.m = bas.m + dd / 31;
+	if ((df_m = res.m - bas.m)) {
+		dd -= doy[bas.m + df_m] - doy[bas.m + 1];
+	}
+
+	res.d = bas.d + dd;
+
+	res.ms = bas.ms + msd % 1000;
+	msd /= 1000;
+	res.S = bas.S + msd % 60;
+	msd /= 60;
+	res.M = bas.M + msd % 60;
+	msd /= 60;
+	res.H = bas.H + msd % 24;
+	msd /= 24;
+
+	res.d += msd;
+	return echs_instant_fixup(res);
 }
 
 /* instant.c ends here */
