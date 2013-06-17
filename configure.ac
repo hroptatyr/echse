@@ -3,12 +3,8 @@ dnl Autoconf startup.
 dnl -------------------------------------------------------------------------
 
 AC_PREREQ([2.63])
-m4_define([GIT_VERSION_GEN], [dnl
-pushdef([version], [m4_esyscmd([./git-version-gen])])dnl
-ifelse([]version[], [], [0.1.0], []version[])[]dnl
-popdef([version])dnl
-])
-AC_INIT([echse], [GIT_VERSION_GEN], [https://github.com/hroptatyr/echse])
+## t.i.n.a.v = this is not a version, never use it!
+AC_INIT([echse], [t.i.n.a.v], [https://github.com/hroptatyr/echse])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([src/config.h])
@@ -31,6 +27,9 @@ AC_COPYRIGHT([dnl
 
 AM_INIT_AUTOMAKE([foreign dist-xz color-tests parallel-tests])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
+GIT_VERSION_MAGIC
+AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
 
 ## the build chain
 AC_PROG_CC([icc gcc tcc cc])
