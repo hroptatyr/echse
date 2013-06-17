@@ -157,6 +157,11 @@ echse_state_LDADD = libechsv.la
 EXTRA_echse_state_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
 
+## that new guy, steve
+noinst_LTLIBRARIES += libsteve.la
+libsteve_la_SOURCES = steve.h steve.c
+libsteve_la_LDFLAGS = $(AM_LDFLAGS) -static
+
 
 ## gperf rule
 %.c: %.gperf
