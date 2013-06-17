@@ -1,4 +1,5 @@
 ### Makefile.am
+include $(top_builddir)/version.mk
 
 AM_CFLAGS = $(EXTRA_CFLAGS)
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
@@ -12,8 +13,12 @@ noinst_LTLIBRARIES =
 pkglib_LTLIBRARIES =
 noinst_HEADERS =
 BUILT_SOURCES =
-EXTRA_DIST =
-CLEANFILES = $(BUILT_SOURCES)
+EXTRA_DIST = $(BUILT_SOURCES)
+CLEANFILES =
+
+CLEANFILES += version.c
+EXTRA_DIST += version.c.in
+noinst_HEADERS += version.h
 
 
 ## predef streams
@@ -70,6 +75,11 @@ echs_file_la_LDFLAGS = $(MOD_LDFLAGS)
 pkglib_LTLIBRARIES += echs-filter.la
 echs_filter_la_LDFLAGS = $(MOD_LDFLAGS)
 
+## version lib
+noinst_LTLIBRARIES += libechsv.la
+libechsv_la_SOURCES = version.c version.h
+libechsv_la_LDFLAGS = -static
+
 
 ## ourself as .so
 noinst_LTLIBRARIES += libechse.la
@@ -98,6 +108,7 @@ echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_CPPFLAGS += $(LTDLINCL)
 echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_LDADD = libechsv.la
 EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse-clo.c echse-clo.h
 
@@ -129,6 +140,7 @@ echs_lisp_LDFLAGS = $(AM_LDFLAGS)
 echs_lisp_LDFLAGS += $(guile_LIBS)
 echs_lisp_LDFLAGS += $(libechse_la_LDFLAGS)
 echs_lisp_LDADD = libechse.la
+echs_lisp_LDADD += libechsv.la
 BUILT_SOURCES += echs-lisp.x
 
 ## transform edge files into states
@@ -141,24 +153,36 @@ echse_state_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_state_CPPFLAGS += $(LTDLINCL)
 echse_state_LDFLAGS = $(AM_LDFLAGS)
 echse_state_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_state_LDADD = libechsv.la
 EXTRA_echse_state_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
+
+## that new guy, steve
+noinst_LTLIBRARIES += libsteve.la
+libsteve_la_SOURCES = steve.h steve.c
+libsteve_la_LDFLAGS = $(AM_LDFLAGS) -static
 
 
 ## gperf rule
 %.c: %.gperf
 	$(AM_V_GEN) $(GPERF) -L ANSI-C $< --output-file $@
 
-## our rule for gengetopt
-%.c %.h: %.ggo
-	$(AM_V_GEN) $(GENGETOPT) -l -i $< -F $*
+## gengetopt rule with sed hack to avoid using VERSION and config.h
+## depend on Makefile.am to survive a git pull
+%.c %.h: %.ggo Makefile.am
+	$(AM_V_GEN) gengetopt -l -i $< -F $* \
+	&& sed \
+	  -e 's,config.h,version.h,g' \
+	  -e 's,\(.*\)_PARSER_VERSION VERSION,\1_PARSER_VERSION $(PACKAGE)_version_string,g' \
+	  $*.h >$*.h-t \
+	&& mv $*.h-t $*.h
 
 snarf_opts = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(guile_CFLAGS)
 %.x: %.c
 	$(AM_V_GEN) guile-snarf -o $@ $< $(snarf_opts)
 
-# 
-# Help the developers get nice post-processed source files
+version.c: version.c.in $(top_builddir)/version.mk
+	sed -e 's,[@]VERSION[@],$(VERSION),g' <$(srcdir)/$@.in >$@
 
 ## Create preprocessor output (debugging purposes only)
 .c.i:
