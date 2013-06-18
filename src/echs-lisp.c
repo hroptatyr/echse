@@ -126,9 +126,7 @@ SCM_SYMBOL(sym_begin, "begin");
 SCM_SYMBOL(sym_rset, "read-set!");
 SCM_SYMBOL(sym_keywords, "keywords");
 SCM_SYMBOL(sym_prefix, "prefix");
-#if defined DEBUG_FLAG
 SCM_SYMBOL(sym_top_repl, "top-repl");
-#endif	/* DEBUG_FLAG */
 
 static scm_t_bits scm_tc16_echs_mod;
 /* date range to scan through */
