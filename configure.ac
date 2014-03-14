@@ -54,6 +54,9 @@ AC_ARG_VAR([GPERF], [full path to the gperf tool])
 PKG_CHECK_MODULES([guile], [guile-1.8])
 
 
+## check if yuck is globally available
+AX_CHECK_YUCK
+
 ## libtool goddess^Wgoodness
 SXE_CHECK_LIBTOOL
 LT_CONFIG_LTDL_DIR([libltdl])
@@ -73,6 +76,7 @@ dnl final output
 dnl -------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([libltdl/Makefile])
+AC_CONFIG_FILES([build-aux/Makefile])
 AC_CONFIG_FILES([src/Makefile])
 AC_CONFIG_FILES([beef/Makefile])
 AC_OUTPUT
