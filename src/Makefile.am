@@ -3,6 +3,7 @@ include $(top_builddir)/version.mk
 
 AM_CFLAGS = $(EXTRA_CFLAGS)
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
+AM_CPPFLAGS += -DHAVE_VERSION_H
 AM_LDFLAGS = $(XCCLDFLAGS)
 MOD_LDFLAGS = $(XCCLDFLAGS) -shared -avoid-version -module
 
@@ -157,6 +158,12 @@ EXTRA_echse_state_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse.yucc
 
 
+## version rules
+version.c: version.c.in $(top_builddir)/.version
+	$(AM_V_GEN) PATH="$(top_builddir)/build-aux:$${PATH}" \
+		yuck$(EXEEXT) scmver --ignore-noscm --force -o $@ \
+			--use-reference --reference $(top_builddir)/.version $<
+
 ## gperf rule
 SUFFIXES += .gperf
 .gperf.c:
@@ -169,13 +176,11 @@ SUFFIXES += .yucc
 	$(AM_V_GEN) PATH=$(top_builddir)/build-aux:"$${PATH}" \
 		yuck$(EXEEXT) gen -o $@ $<
 
+## guile rule
 SUFFIXES += .x
 snarf_opts = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(guile_CFLAGS)
 .c.x:
 	$(AM_V_GEN) guile-snarf -o $@ $< $(snarf_opts)
-
-version.c: version.c.in $(top_builddir)/version.mk
-	sed -e 's,[@]VERSION[@],$(VERSION),g' <$(srcdir)/$@.in >$@
 
 ## Create preprocessor output (debugging purposes only)
 .c.i:
