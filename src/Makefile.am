@@ -101,8 +101,7 @@ EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
 
 
 noinst_PROGRAMS += echse
-echse_SOURCES = echse.c echse.h
-echse_SOURCES += echse-clo.ggo
+echse_SOURCES = echse.c echse.h echse.yuck
 echse_SOURCES += boobs.h
 echse_SOURCES += $(libechse_la_SOURCES)
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
@@ -111,7 +110,7 @@ echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
 echse_LDADD = libechsv.la
 EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
-BUILT_SOURCES += echse-clo.c echse-clo.h
+BUILT_SOURCES += echse.yucc
 
 noinst_LTLIBRARIES += echse.la
 echse_la_SOURCES = echse.c
@@ -146,8 +145,7 @@ BUILT_SOURCES += echs-lisp.x
 
 ## transform edge files into states
 noinst_PROGRAMS += echse-state
-echse_state_SOURCES = echse-state.c
-echse_state_SOURCES += echse-state-clo.ggo
+echse_state_SOURCES = echse-state.c echse.yuck
 echse_state_SOURCES += boobs.h
 echse_state_SOURCES += $(libechse_la_SOURCES)
 echse_state_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
@@ -156,7 +154,7 @@ echse_state_LDFLAGS = $(AM_LDFLAGS)
 echse_state_LDFLAGS += $(LIBLTDL) -export-dynamic
 echse_state_LDADD = libechsv.la
 EXTRA_echse_state_DEPENDENCIES = $(LTDLDEPS)
-BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
+BUILT_SOURCES += echse.yucc
 
 
 ## gperf rule
