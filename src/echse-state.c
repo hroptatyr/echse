@@ -358,53 +358,38 @@ free_echs_stream(echs_stream_t s)
 
 
 #if defined STANDALONE
-#if defined __INTEL_COMPILER
-# pragma warning (disable:593)
-# pragma warning (disable:181)
-#elif defined __GNUC__
-# pragma GCC diagnostic ignored "-Wswitch"
-# pragma GCC diagnostic ignored "-Wswitch-enum"
-#endif /* __INTEL_COMPILER */
-#include "echse-state-clo.h"
-#include "echse-state-clo.c"
-#if defined __INTEL_COMPILER
-# pragma warning (default:593)
-# pragma warning (default:181)
-#elif defined __GNUC__
-# pragma GCC diagnostic warning "-Wswitch"
-# pragma GCC diagnostic warning "-Wswitch-enum"
-#endif	/* __INTEL_COMPILER */
+#include "echse.yucc"
 
 int
 main(int argc, char *argv[])
 {
 	/* command line options */
-	struct echs_args_info argi[1];
+	yuck_t argi[1U];
 	/* date range to scan through */
 	echs_instant_t from;
 	echs_instant_t till;
 	echs_stream_t strm;
-	int res = 0;
+	int rc = 0;
 
-	if (echs_parser(argc, argv, argi)) {
-		res = 1;
+	if (yuck_parse(argi, argc, argv)) {
+		rc = 1;
 		goto out;
 	}
 
-	if (argi->from_given) {
+	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
 	} else {
 		from = (echs_instant_t){2000, 1, 1};
 	}
 
-	if (argi->till_given) {
+	if (argi->till_arg) {
 		till = dt_strp(argi->till_arg);
 	} else {
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
 	/* generate the input stream to our filter */
-	strm = make_echs_stream(from, argi->inputs, argi->inputs_num);
+	strm = make_echs_stream(from, argi->args, argi->nargs);
 
 	/* the iterator */
 	for (echs_event_t e;
@@ -422,8 +407,8 @@ main(int argc, char *argv[])
 	free_echs_stream(strm);
 
 out:
-	echs_parser_free(argi);
-	return res;
+	yuck_free(argi);
+	return rc;
 }
 #endif	/* STANDALONE */
 

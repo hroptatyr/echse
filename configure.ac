@@ -3,8 +3,7 @@ dnl Autoconf startup.
 dnl -------------------------------------------------------------------------
 
 AC_PREREQ([2.63])
-## t.i.n.a.v = this is not a version, never use it!
-AC_INIT([echse], [t.i.n.a.v], [https://github.com/hroptatyr/echse])
+AC_INIT([echse], [0.1.1.GIT], [https://github.com/hroptatyr/echse])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([src/config.h])
@@ -28,7 +27,7 @@ AC_COPYRIGHT([dnl
 AM_INIT_AUTOMAKE([foreign dist-xz color-tests parallel-tests])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-GIT_VERSION_MAGIC
+AX_YUCK_SCMVER([version.mk])
 AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
 
 ## the build chain
@@ -54,6 +53,9 @@ AC_ARG_VAR([GPERF], [full path to the gperf tool])
 PKG_CHECK_MODULES([guile], [guile-1.8])
 
 
+## check if yuck is globally available
+AX_CHECK_YUCK
+
 ## libtool goddess^Wgoodness
 SXE_CHECK_LIBTOOL
 LT_CONFIG_LTDL_DIR([libltdl])
@@ -73,6 +75,7 @@ dnl final output
 dnl -------------------------------------------------------------------------
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([libltdl/Makefile])
+AC_CONFIG_FILES([build-aux/Makefile])
 AC_CONFIG_FILES([src/Makefile])
 AC_CONFIG_FILES([beef/Makefile])
 AC_OUTPUT

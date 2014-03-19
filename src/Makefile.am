@@ -3,6 +3,7 @@ include $(top_builddir)/version.mk
 
 AM_CFLAGS = $(EXTRA_CFLAGS)
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
+AM_CPPFLAGS += -DHAVE_VERSION_H
 AM_LDFLAGS = $(XCCLDFLAGS)
 MOD_LDFLAGS = $(XCCLDFLAGS) -shared -avoid-version -module
 
@@ -14,7 +15,8 @@ pkglib_LTLIBRARIES =
 noinst_HEADERS =
 BUILT_SOURCES =
 EXTRA_DIST = $(BUILT_SOURCES)
-CLEANFILES =
+CLEANFILES = 
+SUFFIXES =
 
 CLEANFILES += version.c
 EXTRA_DIST += version.c.in
@@ -100,8 +102,7 @@ EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
 
 
 noinst_PROGRAMS += echse
-echse_SOURCES = echse.c echse.h
-echse_SOURCES += echse-clo.ggo
+echse_SOURCES = echse.c echse.h echse.yuck
 echse_SOURCES += boobs.h
 echse_SOURCES += $(libechse_la_SOURCES)
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
@@ -110,7 +111,7 @@ echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
 echse_LDADD = libechsv.la
 EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
-BUILT_SOURCES += echse-clo.c echse-clo.h
+BUILT_SOURCES += echse.yucc
 
 noinst_LTLIBRARIES += echse.la
 echse_la_SOURCES = echse.c
@@ -145,8 +146,7 @@ BUILT_SOURCES += echs-lisp.x
 
 ## transform edge files into states
 noinst_PROGRAMS += echse-state
-echse_state_SOURCES = echse-state.c
-echse_state_SOURCES += echse-state-clo.ggo
+echse_state_SOURCES = echse-state.c echse.yuck
 echse_state_SOURCES += boobs.h
 echse_state_SOURCES += $(libechse_la_SOURCES)
 echse_state_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
@@ -155,29 +155,32 @@ echse_state_LDFLAGS = $(AM_LDFLAGS)
 echse_state_LDFLAGS += $(LIBLTDL) -export-dynamic
 echse_state_LDADD = libechsv.la
 EXTRA_echse_state_DEPENDENCIES = $(LTDLDEPS)
-BUILT_SOURCES += echse-state-clo.c echse-state-clo.h
+BUILT_SOURCES += echse.yucc
 
+
+## version rules
+version.c: version.c.in $(top_builddir)/.version
+	$(AM_V_GEN) PATH="$(top_builddir)/build-aux:$${PATH}" \
+		yuck$(EXEEXT) scmver --ignore-noscm --force -o $@ \
+			--use-reference --reference $(top_builddir)/.version $<
 
 ## gperf rule
-%.c: %.gperf
-	$(AM_V_GEN) $(GPERF) -L ANSI-C $< --output-file $@
+SUFFIXES += .gperf
+.gperf.c:
+	$(AM_V_GEN) $(GPERF) -L ANSI-C "$<" --output-file "$@"
 
-## gengetopt rule with sed hack to avoid using VERSION and config.h
-## depend on Makefile.am to survive a git pull
-%.c %.h: %.ggo Makefile.am
-	$(AM_V_GEN) gengetopt -l -i $< -F $* \
-	&& sed \
-	  -e 's,config.h,version.h,g' \
-	  -e 's,\(.*\)_PARSER_VERSION VERSION,\1_PARSER_VERSION $(PACKAGE)_version_string,g' \
-	  $*.h >$*.h-t \
-	&& mv $*.h-t $*.h
+## yuck rule
+SUFFIXES += .yuck
+SUFFIXES += .yucc
+.yuck.yucc:
+	$(AM_V_GEN) PATH=$(top_builddir)/build-aux:"$${PATH}" \
+		yuck$(EXEEXT) gen -o $@ $<
 
+## guile rule
+SUFFIXES += .x
 snarf_opts = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(guile_CFLAGS)
-%.x: %.c
+.c.x:
 	$(AM_V_GEN) guile-snarf -o $@ $< $(snarf_opts)
-
-version.c: version.c.in $(top_builddir)/version.mk
-	sed -e 's,[@]VERSION[@],$(VERSION),g' <$(srcdir)/$@.in >$@
 
 ## Create preprocessor output (debugging purposes only)
 .c.i:

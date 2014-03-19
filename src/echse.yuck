@@ -1,0 +1,7 @@
+Usage: echse ARG...
+
+Merge and display echse sources.
+
+  --from=DT             Start event streams at DT.
+  --till=DT             Finish event streams by DT.
+  -f, --filter=FILE     Use filter script FILE.

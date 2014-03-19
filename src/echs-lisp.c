@@ -860,22 +860,7 @@ init_echs_lisp(void)
 
 
 #if defined STANDALONE
-#if defined __INTEL_COMPILER
-# pragma warning (disable:593)
-# pragma warning (disable:181)
-#elif defined __GNUC__
-# pragma GCC diagnostic ignored "-Wswitch"
-# pragma GCC diagnostic ignored "-Wswitch-enum"
-#endif /* __INTEL_COMPILER */
-#include "echse-clo.h"
-#include "echse-clo.c"
-#if defined __INTEL_COMPILER
-# pragma warning (default:593)
-# pragma warning (default:181)
-#elif defined __GNUC__
-# pragma GCC diagnostic warning "-Wswitch"
-# pragma GCC diagnostic warning "-Wswitch-enum"
-#endif	/* __INTEL_COMPILER */
+#include "echse.yucc"
 
 struct clo_s {
 	unsigned int ninp;
@@ -915,31 +900,31 @@ int
 main(int argc, char **argv)
 {
 	/* command line options */
-	struct echs_args_info argi[1];
-	int res = 0;
+	yuck_t argi[1U];
+	int rc = 0;
 
-	if (echs_parser(argc, argv, argi)) {
-		res = 1;
+	if (yuck_parse(argi, argc, argv)) {
+		rc = 1;
 		goto out;
 	}
 
-	if (argi->from_given) {
+	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
 	} else {
 		from = (echs_instant_t){2000, 1, 1};
 	}
 
-	if (argi->till_given) {
+	if (argi->till_arg) {
 		till = dt_strp(argi->till_arg);
 	} else {
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
-	scm_with_guile(boot, &(struct clo_s){argi->inputs_num, argi->inputs});
+	scm_with_guile(boot, &(struct clo_s){argi->nargs, argi->args});
 
 out:
-	echs_parser_free(argi);
-	return res;
+	yuck_free(argi);
+	return rc;
 }
 #endif	/* STANDALONE */
 
