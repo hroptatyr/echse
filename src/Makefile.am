@@ -131,19 +131,6 @@ libhattrie_la_SOURCES += hat-trie/murmurhash3.c hat-trie/murmurhash3.h
 libhattrie_la_CPPFLAGS = $(AM_CPPFLAGS)
 libhattrie_la_LDFLAGS = $(AM_LDFLAGS)
 
-## just to test the guile stuff
-noinst_PROGRAMS += echs-lisp
-echs_lisp_SOURCES = echs-lisp.c
-echs_lisp_SOURCES += $(libechse_la_SOURCES)
-echs_lisp_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
-echs_lisp_CPPFLAGS += $(guile_CFLAGS)
-echs_lisp_LDFLAGS = $(AM_LDFLAGS)
-echs_lisp_LDFLAGS += $(guile_LIBS)
-echs_lisp_LDFLAGS += $(libechse_la_LDFLAGS)
-echs_lisp_LDADD = libechse.la
-echs_lisp_LDADD += libechsv.la
-BUILT_SOURCES += echs-lisp.x
-
 ## transform edge files into states
 noinst_PROGRAMS += echse-state
 echse_state_SOURCES = echse-state.c echse.yuck
@@ -175,12 +162,6 @@ SUFFIXES += .yucc
 .yuck.yucc:
 	$(AM_V_GEN) PATH=$(top_builddir)/build-aux:"$${PATH}" \
 		yuck$(EXEEXT) gen -o $@ $<
-
-## guile rule
-SUFFIXES += .x
-snarf_opts = $(DEFS) $(INCLUDES) $(CPPFLAGS) $(guile_CFLAGS)
-.c.x:
-	$(AM_V_GEN) guile-snarf -o $@ $< $(snarf_opts)
 
 ## Create preprocessor output (debugging purposes only)
 .c.i:

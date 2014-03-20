@@ -50,8 +50,6 @@ if test -z "${GPERF}"; then
 fi
 AC_ARG_VAR([GPERF], [full path to the gperf tool])
 
-PKG_CHECK_MODULES([guile], [guile-1.8])
-
 
 ## check if yuck is globally available
 AX_CHECK_YUCK
