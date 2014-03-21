@@ -3,7 +3,6 @@ include $(top_builddir)/version.mk
 
 AM_CFLAGS = $(EXTRA_CFLAGS)
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
-AM_CPPFLAGS += -DHAVE_VERSION_H
 AM_LDFLAGS = $(XCCLDFLAGS)
 
 bin_PROGRAMS =
@@ -37,12 +36,9 @@ libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
 
-
-noinst_PROGRAMS += echse
+bin_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h echse.yuck
 echse_SOURCES += version.h version.c
-echse_SOURCES += boobs.h
-echse_SOURCES += $(libechse_la_SOURCES)
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_CPPFLAGS += $(LTDLINCL)
 echse_CPPFLAGS += -DHAVE_VERSION_H
