@@ -44,6 +44,7 @@ echse_CPPFLAGS += $(LTDLINCL)
 echse_CPPFLAGS += -DHAVE_VERSION_H
 echse_LDFLAGS = $(AM_LDFLAGS)
 echse_LDFLAGS += $(LIBLTDL) -export-dynamic
+echse_LDADD = libechse.la
 EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse.yucc
 
