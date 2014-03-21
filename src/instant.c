@@ -1,6 +1,6 @@
 /*** instant.c -- some echs_instant_t functionality
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -39,13 +39,7 @@
 #endif	/* HAVE_CONFIG_H */
 
 #include "instant.h"
-
-#if !defined LIKELY
-# define LIKELY(_x)	__builtin_expect((_x), 1)
-#endif	/* !LIKELY */
-#if !defined UNLIKELY
-# define UNLIKELY(_x)	__builtin_expect((_x), 0)
-#endif	/* UNLIKELY */
+#include "nifty.h"
 
 static const unsigned int doy[] = {
 	0U, 0U, 31U, 59U, 90U, 120U, 151U, 181U, 212U, 243U, 273U, 304U, 334U,
@@ -67,7 +61,7 @@ echs_instant_fixup(echs_instant_t e)
 	if (UNLIKELY(echs_instant_all_day_p(e))) {
 		/* just fix up the day, dom and year portion */
 		goto fixup_d;
-	} else if (UNLIKELY(echs_instant_all_day_p(e))) {
+	} else if (UNLIKELY(echs_instant_all_sec_p(e))) {
 		/* just fix up the sec, min, ... portions */
 		goto fixup_S;
 	}

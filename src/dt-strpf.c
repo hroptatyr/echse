@@ -1,6 +1,6 @@
 /*** dt-strpf.c -- parser and formatter funs for echse
  *
- * Copyright (C) 2011-2013 Sebastian Freundt
+ * Copyright (C) 2011-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -42,15 +42,8 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdint.h>
-#include "echse.h"
 #include "dt-strpf.h"
-
-#if !defined LIKELY
-# define LIKELY(_x)	__builtin_expect((_x), 1)
-#endif	/* !LIKELY */
-#if !defined UNLIKELY
-# define UNLIKELY(_x)	__builtin_expect((_x), 0)
-#endif	/* UNLIKELY */
+#include "nifty.h"
 
 static int32_t
 strtoi_lim(const char *str, const char **ep, int32_t llim, int32_t ulim)
