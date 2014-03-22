@@ -38,6 +38,7 @@
 #define INCLUDED_event_h_
 
 #include <stddef.h>
+#include <stdbool.h>
 #include "instant.h"
 
 typedef struct echs_event_s echs_event_t;
@@ -49,5 +50,31 @@ struct echs_event_s {
 	echs_evuid_t uid;
 	const char *desc;
 };
+
+
+/* convenience */
+static inline __attribute__((pure)) bool
+echs_event_0_p(echs_event_t e)
+{
+	return echs_instant_0_p(e.from);
+}
+
+static inline __attribute__((pure)) bool
+echs_event_lt_p(echs_event_t e1, echs_event_t e2)
+{
+	return echs_instant_lt_p(e1.from, e2.from);
+}
+
+static inline __attribute__((pure)) bool
+echs_event_le_p(echs_event_t e1, echs_event_t e2)
+{
+	return echs_instant_le_p(e1.from, e2.from);
+}
+
+static inline __attribute__((pure)) bool
+echs_event_eq_p(echs_event_t e1, echs_event_t e2)
+{
+	return echs_instant_eq_p(e1.from, e2.from);
+}
 
 #endif	/* INCLUDED_event_h_ */
