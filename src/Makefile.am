@@ -29,6 +29,7 @@ libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += event.h
 libechse_la_SOURCES += evstrm.h
+libechse_la_SOURCES += evical.c evical.h
 libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += nifty.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
