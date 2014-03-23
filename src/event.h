@@ -66,15 +66,15 @@ echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 }
 
 static inline __attribute__((pure)) bool
-echs_event_le_p(echs_event_t e1, echs_event_t e2)
+echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	return echs_instant_le_p(e1.from, e2.from);
+	return e1.uid == e2.uid && echs_instant_eq_p(e1.from, e2.from);
 }
 
 static inline __attribute__((pure)) bool
-echs_event_eq_p(echs_event_t e1, echs_event_t e2)
+echs_event_le_p(echs_event_t e1, echs_event_t e2)
 {
-	return echs_instant_eq_p(e1.from, e2.from);
+	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
 }
 
 #endif	/* INCLUDED_event_h_ */
