@@ -70,20 +70,20 @@ snarf_value(const char *s)
 		/* date-time value */
 		s += sizeof(vdt) - 1;
 	} else {
-		goto out;
+		/* could be VERSION=1.0 syntax */
+		;
 	}
 	res = dt_strp(s);
-out:
 	return res;
 }
 
 static void
 snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 {
-	static const char dtsta[] = "DTSTART;";
-	static const char dtend[] = "DTEND;";
-	static const char summ[] = "SUMMARY:";
-	static const char desc[] = "DESCRIPTION:";
+	static const char dtsta[] = "DTSTART";
+	static const char dtend[] = "DTEND";
+	static const char summ[] = "SUMMARY";
+	static const char desc[] = "DESCRIPTION";
 	const char *lp = line;
 	const char *ep = line + llen;
 	enum {
@@ -99,19 +99,19 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 	} else if (!strncmp(line, dtsta, sizeof(dtsta) - 1)) {
 		/* got DTSTART */
 		fld = FLD_DTSTART;
-		lp += sizeof(dtsta) - 1;
+		lp += sizeof(dtsta);
 	} else if (!strncmp(line, dtend, sizeof(dtend) - 1)) {
 		/* got DTEND */
 		fld = FLD_DTEND;
-		lp += sizeof(dtend) - 1;
+		lp += sizeof(dtend);
 	} else if (!strncmp(line, summ, sizeof(summ) - 1)) {
 		/* got SUMMARY */
 		fld = FLD_SUMM;
-		lp += sizeof(summ) - 1;
+		lp += sizeof(summ);
 	} else if (!strncmp(line, desc, sizeof(desc) - 1)) {
 		/* got DESCRIPTION */
 		fld = FLD_DESC;
-		lp += sizeof(desc) - 1;
+		lp += sizeof(desc);
 	} else {
 		return;
 	}
