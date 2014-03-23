@@ -77,6 +77,78 @@ out:
 	return res;
 }
 
+static void
+snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
+{
+	static const char dtsta[] = "DTSTART;";
+	static const char dtend[] = "DTEND;";
+	static const char summ[] = "SUMMARY:";
+	static const char desc[] = "DESCRIPTION:";
+	const char *lp = line;
+	const char *ep = line + llen;
+	enum {
+		FLD_UNK,
+		FLD_DTSTART,
+		FLD_DTEND,
+		FLD_SUMM,
+		FLD_DESC,
+	} fld;
+
+	if (0) {
+		;
+	} else if (!strncmp(line, dtsta, sizeof(dtsta) - 1)) {
+		/* got DTSTART */
+		fld = FLD_DTSTART;
+		lp += sizeof(dtsta) - 1;
+	} else if (!strncmp(line, dtend, sizeof(dtend) - 1)) {
+		/* got DTEND */
+		fld = FLD_DTEND;
+		lp += sizeof(dtend) - 1;
+	} else if (!strncmp(line, summ, sizeof(summ) - 1)) {
+		/* got SUMMARY */
+		fld = FLD_SUMM;
+		lp += sizeof(summ) - 1;
+	} else if (!strncmp(line, desc, sizeof(desc) - 1)) {
+		/* got DESCRIPTION */
+		fld = FLD_DESC;
+		lp += sizeof(desc) - 1;
+	} else {
+		return;
+	}
+
+	/* do more string inspection here */
+	if (LIKELY(ep[-1] == '\n')) {
+		ep--;
+	}
+	if (UNLIKELY(ep[-1] == '\r')) {
+		ep--;
+	}
+
+	switch (fld) {
+	default:
+	case FLD_UNK:
+		/* how did we get here? */
+		return;
+	case FLD_DTSTART:
+		ev->from = snarf_value(lp);
+		break;
+	case FLD_DTEND:
+		ev->till = snarf_value(lp);
+		break;
+	case FLD_SUMM: {
+		obint_t c;
+
+		c = intern(lp, ep - lp);
+		ev->uid = c;
+		break;
+	}
+	case FLD_DESC:
+		ev->desc = strndup(lp, ep - lp);
+		break;
+	}
+	return;
+}
+
 static evarr_t
 read_ical(const char *fn)
 {
@@ -101,8 +173,6 @@ read_ical(const char *fn)
 		switch (st) {
 			static const char beg[] = "BEGIN:VEVENT";
 			static const char end[] = "END:VEVENT";
-			static const char dtsta[] = "DTSTART;";
-			static const char dtend[] = "DTEND;";
 		default:
 		case ST_UNK:
 			/* check if line is a new vevent */
@@ -131,15 +201,7 @@ read_ical(const char *fn)
 				break;
 			}
 			/* otherwise interpret the line */
-			if (0) {
-				;
-			} else if (!strncmp(line, dtsta, sizeof(dtsta) - 1)) {
-				/* got DTSTART */
-				ev.from = snarf_value(line + sizeof(dtsta) - 1);
-			} else if (!strncmp(line, dtend, sizeof(dtend) - 1)) {
-				/* got DTEND */
-				ev.till = snarf_value(line + sizeof(dtend) - 1);
-			}
+			snarf_fld(&ev, line, nrd);
 			break;
 		}
 	}
