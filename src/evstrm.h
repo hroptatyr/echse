@@ -37,9 +37,11 @@
 #if !defined INCLUDED_evstrm_h_
 #define INCLUDED_evstrm_h_
 
+#include <stddef.h>
 #include "event.h"
 
 typedef struct echs_evstrm_s *echs_evstrm_t;
+typedef const struct echs_evstrm_class_s *echs_evstrm_class_t;
 
 struct echs_evstrm_class_s {
 	/** next method */
@@ -51,8 +53,7 @@ struct echs_evstrm_class_s {
 };	
 
 struct echs_evstrm_s {
-	unsigned int clsid;
-	struct echs_evstrm_class_s class;
+	const echs_evstrm_class_t class;
 	char data[];
 };
 
@@ -61,24 +62,32 @@ struct echs_evstrm_s {
  * Stream ctor. */
 extern echs_evstrm_t make_echs_evstrm(void);
 
+/**
+ * Muxer, produce an evstrm that iterates over all evstrms given. */
+extern echs_evstrm_t echs_evstrm_mux(echs_evstrm_t s, ...);
+
+/**
+ * Muxer, same as `echs_evstrm_vmux()' but for an array S of size N. */
+extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
+
 
 static inline echs_event_t
 echs_evstrm_next(echs_evstrm_t s)
 {
-	return s->class.next(s);
+	return s->class->next(s);
 }
 
 static inline void
 free_echs_evstrm(echs_evstrm_t s)
 {
-	s->class.free(s);
+	s->class->free(s);
 	return;
 }
 
 static inline echs_evstrm_t
 clone_echs_evstrm(echs_evstrm_t s)
 {
-	return s->class.clone(s);
+	return s->class->clone(s);
 }
 
 #endif	/* INCLUDED_evstrm_h_ */
