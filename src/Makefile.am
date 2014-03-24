@@ -39,6 +39,15 @@ libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 EXTRA_libechse_la_SOURCES = wikisort.c
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
+pkginclude_HEADERS = echse.h
+pkginclude_HEADERS += event.h
+pkginclude_HEADERS += instant.h
+pkginclude_HEADERS += dt-strpf.h
+pkginclude_HEADERS += intern.h
+pkginclude_HEADERS += evstrm.h
+pkginclude_HEADERS += evical.h
+pkginclude_HEADERS += nifty.h
+pkginclude_HEADERS += boobs.h
 
 bin_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h echse.yuck
