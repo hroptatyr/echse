@@ -41,6 +41,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "instant.h"
+#include "dt-strpf.h"
 #include "event.h"
+#include "evstrm.h"
+/* known evstrm impls */
+#include "evical.h"
 
 #endif	/* INCLUDED_echse_h_ */
