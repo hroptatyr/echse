@@ -9,15 +9,13 @@ LC_ALL = C
 AM_CFLAGS = $(EXTRA_CFLAGS)
 AM_CPPFLAGS = -D_POSIX_C_SOURCE=200112L -D_XOPEN_SOURCE=600 -D_BSD_SOURCE
 AM_CPPFLAGS += -DTEST
-AM_CPPFLAGS += -I$(top_srcdir)/src
+echse_CFLAGS = -I$(top_srcdir)/src
+echse_LIBS = $(top_builddir)/src/libechse.la
 
 EXTRA_DIST = $(BUILT_SOURCES) $(TESTS)
 TESTS =
 TEST_EXTENSIONS =
 BUILT_SOURCES =
-dt_tests =
-bin_tests =
-batch_tests =
 check_PROGRAMS =
 CLEANFILES = $(check_PROGRAMS)
 noinst_LIBRARIES =
@@ -29,7 +27,10 @@ AM_CLIT_LOG_FLAGS = -v --builddir $(top_builddir)/src
 AM_LOG_COMPILER = false
 
 ## actual regression tests
-
+check_PROGRAMS += evical_prnt
+evical_prnt_CPPFLAGS = $(AM_CPPFLAGS)
+evical_prnt_CPPFLAGS += $(echse_CFLAGS)
+evical_prnt_LDADD = $(echse_LIBS)
 
 ## our friendly helpers
 check_PROGRAMS += clitoris
