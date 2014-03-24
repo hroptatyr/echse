@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include "evical.h"
 #include "intern.h"
+#include "bufpool.h"
 #include "dt-strpf.h"
 #include "nifty.h"
 
@@ -143,7 +144,7 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 		break;
 	}
 	case FLD_DESC:
-		ev->desc = strndup(lp, ep - lp);
+		ev->desc = bufpool(lp, ep - lp).str;
 		break;
 	}
 	return;
