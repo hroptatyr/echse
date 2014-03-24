@@ -1,0 +1,9 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ evical_prnt "${srcdir}/sample_01.ics" "${srcdir}/sample_02.ics"
+VEVENT 0: March meeting
+VEVENT 1: Flight home
+VEVENT 0: New year's day
+VEVENT 1: Good Friday
+VEVENT 2: Boxing day
+$

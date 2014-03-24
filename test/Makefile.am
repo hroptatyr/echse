@@ -31,6 +31,9 @@ check_PROGRAMS += evical_prnt
 evical_prnt_CPPFLAGS = $(AM_CPPFLAGS)
 evical_prnt_CPPFLAGS += $(echse_CFLAGS)
 evical_prnt_LDADD = $(echse_LIBS)
+TESTS += evical_prnt_01.clit
+EXTRA_DIST += sample_01.ics
+EXTRA_DIST += sample_02.ics
 
 ## our friendly helpers
 check_PROGRAMS += clitoris
