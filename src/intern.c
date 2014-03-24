@@ -117,6 +117,7 @@ make_obint(const char *str, size_t len)
 	/* paste the string in question */
 	memcpy(obs + (res = obn), str, len);
 	/* assemble the result */
+	res >>= 2U;
 	res |= len << ((sizeof(res) - 1U) * 8U);
 	/* inc the obn pointer */
 	obn += pad;
