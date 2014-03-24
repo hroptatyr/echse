@@ -307,21 +307,4 @@ make_echs_evical(const char *fn)
 	return make_evical_vevent(a);
 }
 
-
-#if defined STANDALONE
-int
-main(int argc, char *argv[])
-{
-	for (int i = 1; i < argc; i++) {
-		echs_evstrm_t s = make_echs_evical(argv[i]);
-
-		for (echs_event_t e;
-		     !echs_instant_0_p((e = echs_evstrm_next(s)).from);) {
-			printf("got one\n");
-		}
-	}
-	return 0;
-}
-#endif	/* STANDALONE */
-
 /* evical.c ends here */
