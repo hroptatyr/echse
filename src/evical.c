@@ -168,8 +168,6 @@ read_ical(const char *fn)
 	}
 
 	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
-		echs_instant_t i;
-
 		switch (st) {
 			static const char beg[] = "BEGIN:VEVENT";
 			static const char end[] = "END:VEVENT";
