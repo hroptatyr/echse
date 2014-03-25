@@ -1,4 +1,4 @@
-/*** evical.c -- simple icalendar parser for echse
+/*** evical_prnt.c -- simple icalendar parser for echse
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -42,7 +42,6 @@
 #include <string.h>
 #include <stdio.h>
 #include "echse.h"
-#include "intern.h"
 
 
 int
@@ -57,6 +56,8 @@ main(int argc, char *argv[])
 		}
 		free_echs_evstrm(s);
 	}
+	clear_interns();
+	clear_bufpool();
 	return 0;
 }
 
