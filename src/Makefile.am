@@ -40,6 +40,7 @@ libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += -lm
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 EXTRA_libechse_la_SOURCES = wikisort.c
+EXTRA_libechse_la_SOURCES += evical-gp.c
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
 
 bin_PROGRAMS += echse
@@ -62,8 +63,8 @@ version.c: version.c.in $(top_builddir)/.version
 			--use-reference --reference $(top_builddir)/.version $<
 
 ## gperf rule
-SUFFIXES += .gperf
-.gperf.c:
+SUFFIXES += .erf
+.erf.c:
 	$(AM_V_GEN) $(GPERF) -L ANSI-C "$<" --output-file "$@"
 
 ## yuck rule

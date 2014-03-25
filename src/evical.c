@@ -46,6 +46,7 @@
 #include "bufpool.h"
 #include "dt-strpf.h"
 #include "nifty.h"
+#include "evical-gp.c"
 
 typedef struct evarr_s *evarr_t;
 
@@ -70,42 +71,15 @@ snarf_value(const char *s)
 static void
 snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 {
-	static const char dtsta[] = "DTSTART";
-	static const char dtend[] = "DTEND";
-	static const char summ[] = "SUMMARY";
-	static const char desc[] = "DESCRIPTION";
-	const char *lp = line;
+	const char *lp;
 	const char *ep = line + llen;
-	enum {
-		FLD_UNK,
-		FLD_DTSTART,
-		FLD_DTEND,
-		FLD_SUMM,
-		FLD_DESC,
-	} fld;
+	const struct ical_fld_cell_s *c;
 
-	if (0) {
-		;
-	} else if (!strncmp(line, dtsta, sizeof(dtsta) - 1)) {
-		/* got DTSTART */
-		fld = FLD_DTSTART;
-		lp += sizeof(dtsta) - 1;
-	} else if (!strncmp(line, dtend, sizeof(dtend) - 1)) {
-		/* got DTEND */
-		fld = FLD_DTEND;
-		lp += sizeof(dtend) - 1;
-	} else if (!strncmp(line, summ, sizeof(summ) - 1)) {
-		/* got SUMMARY */
-		fld = FLD_SUMM;
-		lp += sizeof(summ);
-	} else if (!strncmp(line, desc, sizeof(desc) - 1)) {
-		/* got DESCRIPTION */
-		fld = FLD_DESC;
-		lp += sizeof(desc);
-	} else {
+	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
+		return;
+	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
 		return;
 	}
-
 	/* do more string inspection here */
 	if (LIKELY(ep[-1] == '\n')) {
 		ep--;
@@ -114,10 +88,10 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 		ep--;
 	}
 
-	switch (fld) {
+	switch (c->fld) {
 	default:
 	case FLD_UNK:
-		/* how did we get here? */
+		/* how did we get here */
 		return;
 	case FLD_DTSTART:
 		ev->from = snarf_value(lp);
@@ -125,14 +99,18 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 	case FLD_DTEND:
 		ev->till = snarf_value(lp);
 		break;
-	case FLD_SUMM: {
-		obint_t c;
-
-		c = intern(lp, ep - lp);
-		ev->uid = c;
+	case FLD_SUMM:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		with (obint_t uid = intern(lp, ep - lp)) {
+			ev->uid = uid;
+		}
 		break;
-	}
 	case FLD_DESC:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
 		ev->desc = bufpool(lp, ep - lp).str;
 		break;
 	}
