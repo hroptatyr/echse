@@ -236,4 +236,23 @@ echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 	return make_evmux(strm, nstrm);
 }
 
+
+/* file prober and ctor */
+#include "evical.h"
+
+echs_evstrm_t
+make_echs_evstrm_from_file(const char *fn)
+{
+/* just try the usual readers for now,
+ * DSO support and config files will come later */
+	echs_evstrm_t s;
+
+	if (0) {
+		;
+	} else if ((s = make_echs_evical(fn)) != NULL) {
+		;
+	}
+	return s;
+}
+
 /* evstrm.c ends here */
