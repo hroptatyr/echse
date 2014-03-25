@@ -129,9 +129,11 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 
 	/* slight optimisation here */
 	if (UNLIKELY(ns == 0UL)) {
-		return NULL;
+		res = NULL;
+		goto trivial;
 	} else if (UNLIKELY(ns == 1UL)) {
-		return *s;
+		res = (void*)*s;
+		goto trivial;
 	}
 	/* otherwise we have to resort to merge-sorting aka muxing */
 	res = malloc(sizeof(*res) + ns * sizeof(*res->ev));
@@ -142,6 +144,11 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 		/* precache them events */
 		__refill(res, i);
 	}
+	return (echs_evstrm_t)res;
+
+trivial:
+	/* second exit, freeing the array passed on to us */
+	free(s);
 	return (echs_evstrm_t)res;
 }
 

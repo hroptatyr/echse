@@ -81,15 +81,16 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 			free_echs_evstrm(sarr[i]);
 		}
 	}
+	if (UNLIKELY(smux == NULL)) {
+		/* return early */
+		return 1;
+	}
 	/* just get it out now */
 	for (echs_event_t e;
 	     !echs_event_0_p(e = echs_evstrm_next(smux)); n++) {
 		printf("VEVENT %u: %s\n", n, obint_name(e.uid));
 	}
 	free_echs_evstrm(smux);
-
-	clear_interns();
-	clear_bufpool();
 	return 0;
 }
 
@@ -129,6 +130,9 @@ Try --help for a list of commands.\n", stderr);
 		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
 		break;
 	}
+	/* some global resources */
+	clear_interns();
+	clear_bufpool();
 out:
 	yuck_free(argi);
 	return rc;
