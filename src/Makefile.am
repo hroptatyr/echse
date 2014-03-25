@@ -37,6 +37,7 @@ libechse_la_SOURCES += nifty.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
+libechse_la_LDFLAGS += -lm
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
 EXTRA_libechse_la_SOURCES = wikisort.c
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
