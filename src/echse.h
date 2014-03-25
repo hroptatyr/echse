@@ -47,4 +47,8 @@
 /* known evstrm impls */
 #include "evical.h"
 
+/* auxiliary stuff that might pollute the global namespace */
+#include "intern.h"
+#include "bufpool.h"
+
 #endif	/* INCLUDED_echse_h_ */
