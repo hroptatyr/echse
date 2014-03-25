@@ -135,6 +135,25 @@ read_ical(const char *fn)
 		return NULL;
 	}
 
+	/* little probe first
+	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
+	with (ssize_t nrd) {
+		static const char hdr[] = "BEGIN:VCALENDAR";
+
+		if (UNLIKELY((nrd = getline(&line, &llen, fp)) <= 0)) {
+			/* must be bollocks then */
+			goto clo;
+		} else if ((size_t)nrd < sizeof(hdr)) {
+			/* still looks like bollocks */
+			goto clo;
+		} else if (memcmp(line, hdr, sizeof(hdr) - 1)) {
+			/* also bollocks */
+			goto clo;
+		}
+		/* otherwise, this looks legit
+		 * oh, but keep your fingers crossed anyway */
+	}
+
 	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
 		switch (st) {
 			static const char beg[] = "BEGIN:VEVENT";
@@ -171,11 +190,12 @@ read_ical(const char *fn)
 			break;
 		}
 	}
-	/* clean up reader resources */
-	free(line);
-	fclose(fp);
 	/* massage result array */
 	a->nev = nev;
+	/* clean up reader resources */
+	free(line);
+clo:
+	fclose(fp);
 	return a;
 }
 
