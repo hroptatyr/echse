@@ -59,8 +59,8 @@ struct echs_evstrm_s {
 
 
 /**
- * Stream ctor. */
-extern echs_evstrm_t make_echs_evstrm(void);
+ * Stream ctor.  Probe file FN and return stream or NULL. */
+extern echs_evstrm_t make_echs_evstrm_from_file(const char *fn);
 
 /**
  * Muxer, produce an evstrm that iterates over all evstrms given. */

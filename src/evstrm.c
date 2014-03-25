@@ -173,7 +173,14 @@ clone_evmux(echs_evstrm_t s)
 	/* clone all streams */
 	res->s = malloc(this->ns * sizeof(*this->s));
 	for (size_t i = 0U; i < this->ns; i++) {
-		res->s[i] = clone_echs_evstrm(this->s[i]);
+		echs_evstrm_t stmp;
+
+		if (UNLIKELY((stmp = this->s[i]) == NULL)) {
+			;
+		} else if (UNLIKELY((stmp = clone_echs_evstrm(stmp)) == NULL)) {
+			;
+		}
+		res->s[i] = stmp;
 	}
 	return (echs_evstrm_t)res;
 }
@@ -207,6 +214,7 @@ echs_evstrm_t
 echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 {
 	echs_evstrm_t *strm;
+	size_t nstrm = 0UL;
 
 	if (UNLIKELY(s == NULL || n == 0UL)) {
 		return NULL;
@@ -215,9 +223,36 @@ echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 	 * our make_evstrm(), it's the right signature already */
 	strm = malloc(n * sizeof(*strm));
 	for (size_t i = 0U; i < n; i++) {
-		strm[i] = clone_echs_evstrm(s[i]);
+		echs_evstrm_t stmp;
+
+		if (UNLIKELY(s[i] == NULL)) {
+			;
+		} else if (UNLIKELY((stmp = clone_echs_evstrm(s[i])) == NULL)) {
+			;
+		} else {
+			strm[nstrm++] = stmp;
+		}
 	}
-	return make_evmux(strm, n);
+	return make_evmux(strm, nstrm);
+}
+
+
+/* file prober and ctor */
+#include "evical.h"
+
+echs_evstrm_t
+make_echs_evstrm_from_file(const char *fn)
+{
+/* just try the usual readers for now,
+ * DSO support and config files will come later */
+	echs_evstrm_t s;
+
+	if (0) {
+		;
+	} else if ((s = make_echs_evical(fn)) != NULL) {
+		;
+	}
+	return s;
 }
 
 /* evstrm.c ends here */

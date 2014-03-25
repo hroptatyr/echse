@@ -53,14 +53,51 @@
 #if defined STANDALONE
 #include "echse.yucc"
 
+/* date range to scan through */
+static echs_instant_t from;
+static echs_instant_t till;
+
+static int
+cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
+{
+	echs_evstrm_t smux;
+	unsigned int n = 0;
+
+	with (echs_evstrm_t sarr[argi->nargs]) {
+		size_t ns = 0UL;
+
+		for (size_t i = 0UL; i < argi->nargs; i++) {
+			const char *fn = argi->args[i];
+			echs_evstrm_t s = make_echs_evstrm_from_file(fn);
+
+			if (LIKELY(s != NULL)) {
+				sarr[ns++] = s;
+			}
+		}
+		/* now mux them all into one */
+		smux = echs_evstrm_vmux(sarr, ns);
+		/* kill the originals */
+		for (size_t i = 0UL; i < ns; i++) {
+			free_echs_evstrm(sarr[i]);
+		}
+	}
+	/* just get it out now */
+	for (echs_event_t e;
+	     !echs_event_0_p(e = echs_evstrm_next(smux)); n++) {
+		printf("VEVENT %u: %s\n", n, obint_name(e.uid));
+	}
+	free_echs_evstrm(smux);
+
+	clear_interns();
+	clear_bufpool();
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
 	/* command line options */
 	yuck_t argi[1U];
-	/* date range to scan through */
-	echs_instant_t from;
-	echs_instant_t till;
 	int rc = 0;
 
 	if (yuck_parse(argi, argc, argv)) {
@@ -80,7 +117,18 @@ main(int argc, char *argv[])
 		till = (echs_instant_t){2037, 12, 31};
 	}
 
-	;
+	switch (argi->cmd) {
+	default:
+	case ECHSE_CMD_NONE:
+		fputs("\
+echse: no valid command given\n\
+Try --help for a list of commands.\n", stderr);
+		rc = 1;
+		break;
+	case ECHSE_CMD_MERGE:
+		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
+		break;
+	}
 out:
 	yuck_free(argi);
 	return rc;

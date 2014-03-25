@@ -42,6 +42,8 @@
 #include <string.h>
 #include <stdio.h>
 #include "echse.h"
+/* specifically testing the evical routines */
+#include "evical.h"
 
 
 int
