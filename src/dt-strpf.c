@@ -1,6 +1,6 @@
 /*** dt-strpf.c -- parser and formatter funs for echse
  *
- * Copyright (C) 2011-2013 Sebastian Freundt
+ * Copyright (C) 2011-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -42,38 +42,8 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdint.h>
-#include "echse.h"
 #include "dt-strpf.h"
-
-#if !defined LIKELY
-# define LIKELY(_x)	__builtin_expect((_x), 1)
-#endif	/* !LIKELY */
-#if !defined UNLIKELY
-# define UNLIKELY(_x)	__builtin_expect((_x), 0)
-#endif	/* UNLIKELY */
-
-static int32_t
-strtoi_lim(const char *str, const char **ep, int32_t llim, int32_t ulim)
-{
-	int32_t res = 0;
-	const char *sp;
-	/* we keep track of the number of digits via rulim */
-	int32_t rulim;
-
-	for (sp = str, rulim = ulim > 10 ? ulim : 10;
-	     res * 10 <= ulim && rulim && *sp >= '0' && *sp <= '9';
-	     sp++, rulim /= 10) {
-		res *= 10;
-		res += *sp - '0';
-	}
-	if (UNLIKELY(sp == str)) {
-		res = -1;
-	} else if (UNLIKELY(res < llim || res > ulim)) {
-		res = -2;
-	}
-	*ep = (const char*)sp;
-	return res;
-}
+#include "nifty.h"
 
 static size_t
 ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
@@ -120,73 +90,164 @@ echs_instant_t
 dt_strp(const char *str)
 {
 /* code dupe, see __strpd_std() */
-	echs_instant_t nul = {0};
-	echs_instant_t res = {0};
+	echs_instant_t res = {.u = 0U};
+	unsigned int tmp = 0U;
 	const char *sp;
-	int32_t tmp;
 
 	if (UNLIKELY((sp = str) == NULL)) {
-		return nul;
+		goto nul;
 	}
 	/* read the year */
-	if ((tmp = strtoi_lim(sp, &sp, 1583, 4095)) < 0 || *sp++ != '-') {
-		return nul;
+	for (; *sp >= '0' && *sp <= '9'; sp++) {
+		tmp *= 10U;
+		tmp += *sp - '0';
 	}
-	res.y = tmp;
-
-	/* read the month */
-	if ((tmp = strtoi_lim(sp, &sp, 0, 12)) < 0 || *sp++ != '-') {
-		return nul;
-	}
-	res.m = tmp;
-
-	/* read the day or the count */
-	if ((tmp = strtoi_lim(sp, &sp, 0, 31)) < 0) {
-		return nul;
-	}
-	res.d = tmp;
-
-	/* check for the d/t separator */
 	switch (*sp++) {
-	case ' ':
-		/* time might be following */
+	case '-':
+		/* just the year then? */
+		if (tmp < 1583U || tmp > 4095U) {
+			goto nul;
+		}
+		/* yep, just the year */
+		res.y = tmp;
+
+		/* snarf month */
+		switch (*sp++) {
+		case '0':
+			if (*sp > '0' && *sp <= '9') {
+				tmp = *sp++ - '0';
+				break;
+			}
+			goto nul;
+		case '1':
+			if (*sp >= '0' && *sp <= '2') {
+				tmp = 10U + *sp++ - '0';
+				break;
+			}
+			goto nul;
+		default:
+			goto nul;
+		}
+		res.m = tmp;
+
+		/* snarf mday, ... if there's a separator */
+		if (*sp++ != '-') {
+			goto nul;
+		}
+		switch (*sp++) {
+		case '0':
+			tmp = 0U;
+			break;
+		case '1':
+			tmp = 10U;
+			break;
+		case '2':
+			tmp = 20U;
+			break;
+		case '3':
+			tmp = 30U;
+			break;
+		default:
+			goto nul;
+		}
+		if (*sp >= '0' && *sp <= '9') {
+			tmp += *sp++ - '0';
+			res.d = tmp;
+		} else {
+			goto nul;
+		}
+		if (*sp != 'T' && *sp != ' ') {
+			res.H = ECHS_ALL_DAY;
+			goto res;
+		}
+		sp++;
+		/* fallthrough */
 	case 'T':
-		/* time's following */
+	case ' ':
+		if (tmp >= 15830101U && tmp <= 40951231U) {
+			/* in case we had no separators */
+			res.y = tmp / 10000U;
+			res.m = (tmp / 100U) % 100U;
+			res.d = (tmp % 100U);
+		}
 		break;
-	case '\0':
+
 	default:
-		/* just the date, make it ECHS_ALL_DAY then aye */
-		res.H = ECHS_ALL_DAY;
-		return res;
+		if (tmp >= 15830101U && tmp <= 40951231U) {
+			res.y = tmp / 10000U;
+			res.m = (tmp / 100U) % 100U;
+			res.d = (tmp % 100U);
+			res.H = ECHS_ALL_DAY;
+		}
+		goto res;
 	}
 
 	/* and now parse the time */
-	if ((tmp = strtoi_lim(sp, &sp, 0, 23)) < 0 || *sp++ != ':') {
-		return nul;
+	for (tmp = 0U; *sp >= '0' && *sp <= '9'; sp++) {
+		tmp *= 10U;
+		tmp += *sp - '0';
 	}
-	res.H = tmp;
+	switch (*sp++) {
+	case ':':
+		/* oh we're doing it the slow way */
+		if (tmp > 23U) {
+			goto nul;
+		}
+		res.H = tmp;
 
-	/* minute */
-	if ((tmp = strtoi_lim(++sp, &sp, 0, 59)) < 0 || *sp++ != ':') {
-		return nul;
+		/* parse minute */
+		if (sp[0] >= '0' && sp[0] <= '5' &&
+		    sp[1] >= '0' && sp[1] <= '9') {
+			res.M = 10 * (sp[0] - '0') + sp[1] - '0';
+		} else {
+			goto nul;
+		}
+		if (sp[2] != ':') {
+			goto nul;
+		}
+		sp += 3;
+		/* parse second */
+		if ((sp[0] >= '0' && sp[0] <= '5' &&
+		     sp[1] >= '0' && sp[1] <= '9') ||
+		    (sp[0] == '6' && sp[1] == '0')) {
+			res.S = 10 * (sp[0] - '0') + sp[1] - '0';
+		} else {
+			goto nul;
+		}
+		if (sp[2] != '.') {
+			res.ms = ECHS_ALL_SEC;
+			goto res;
+		}
+		/* fallthrough */
+		sp += 3;
+	case '.':
+		if (tmp <= 235960U) {
+			res.H = tmp / 10000U;
+			res.M = (tmp / 100U) % 100U;
+			res.S = tmp % 100U;
+			res.ms = ECHS_ALL_SEC;
+		}
+		break;
+	default:
+		if (tmp <= 235960U) {
+			res.H = tmp / 10000U;
+			res.M = (tmp / 100U) % 100U;
+			res.S = tmp % 100U;
+			res.ms = ECHS_ALL_SEC;
+		}
+		goto res;
 	}
-	res.M = tmp;
-
-	/* second, allow leap second too */
-	if ((tmp = strtoi_lim(++sp, &sp, 0, 60)) < 0) {
-		return nul;
-	}
-	res.S = tmp;
 
 	/* millisecond part */
-	if (*sp++ != '.') {
-		/* make it ALL_SEC then */
-		tmp = ECHS_ALL_SEC;
-	} else if ((tmp = strtoi_lim(sp, &sp, 0, 999)) < 0) {
-		return nul;
+	for (tmp = 0U; tmp < 100U && *sp >= '0' && *sp <= '9'; sp++) {
+		tmp *= 10U;
+		tmp += *sp - '0';
 	}
 	res.ms = tmp;
+res:
 	return res;
+nul:
+	return (echs_instant_t){.u = 0U};
 }
 
 size_t

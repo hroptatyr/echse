@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** evstrm.h -- streams of events
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,61 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_evstrm_h_
+#define INCLUDED_evstrm_h_
 
 #include <stddef.h>
-#include "instant.h"
+#include "event.h"
+
+typedef struct echs_evstrm_s *echs_evstrm_t;
+typedef const struct echs_evstrm_class_s *echs_evstrm_class_t;
+
+struct echs_evstrm_class_s {
+	/** next method */
+	echs_event_t(*next)(echs_evstrm_t);
+	/** clone method */
+	echs_evstrm_t(*clone)(echs_evstrm_t);
+	/** dtor method */
+	void(*free)(echs_evstrm_t);
+};	
+
+struct echs_evstrm_s {
+	const echs_evstrm_class_t class;
+	char data[];
+};
+
+
+/**
+ * Stream ctor. */
+extern echs_evstrm_t make_echs_evstrm(void);
 
 /**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+ * Muxer, produce an evstrm that iterates over all evstrms given. */
+extern echs_evstrm_t echs_evstrm_mux(echs_evstrm_t s, ...);
 
 /**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+ * Muxer, same as `echs_evstrm_vmux()' but for an array S of size N. */
+extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
 
-#endif	/* INCLUDED_dt_strpf_h_ */
+
+static inline echs_event_t
+echs_evstrm_next(echs_evstrm_t s)
+{
+	return s->class->next(s);
+}
+
+static inline void
+free_echs_evstrm(echs_evstrm_t s)
+{
+	s->class->free(s);
+	return;
+}
+
+static inline echs_evstrm_t
+clone_echs_evstrm(echs_evstrm_t s)
+{
+	return s->class->clone(s);
+}
+
+#endif	/* INCLUDED_evstrm_h_ */

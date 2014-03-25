@@ -1,6 +1,6 @@
 /*** event.h -- some echs_event_t functionality
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -37,74 +37,44 @@
 #if !defined INCLUDED_event_h_
 #define INCLUDED_event_h_
 
-#include "echse.h"
+#include <stddef.h>
+#include <stdbool.h>
+#include "instant.h"
 
-#if !defined LIKELY
-# define LIKELY(_x)	__builtin_expect((_x), 1)
-#endif	/* !LIKELY */
-#if !defined UNLIKELY
-# define UNLIKELY(_x)	__builtin_expect((_x), 0)
-#endif	/* UNLIKELY */
-#if !defined UNUSED
-# define UNUSED(x)	__attribute__((unused)) x
-#endif	/* UNUSED */
+typedef struct echs_event_s echs_event_t;
+typedef uintptr_t echs_evuid_t;
+
+struct echs_event_s {
+	echs_instant_t from;
+	echs_instant_t till;
+	echs_evuid_t uid;
+	const char *desc;
+};
 
 
-static inline __attribute__((pure, const)) char
-echs_event_mdfr(echs_event_t e)
+/* convenience */
+static inline __attribute__((pure)) bool
+echs_event_0_p(echs_event_t e)
 {
-	if (UNLIKELY(e.what == NULL)) {
-		return '!';
-	}
-	switch (*e.what) {
-	case '!':
-	case '~':
-		return *e.what;
-	default:
-		break;
-	}
-	return '\0';
+	return echs_instant_0_p(e.from);
 }
 
-static inline echs_instant_t
-echs_event_beg(echs_event_t e)
+static inline __attribute__((pure)) bool
+echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 {
-	switch (echs_event_mdfr(e)) {
-	default:
-	case '!':
-		if (echs_instant_all_day_p(e.when)) {
-			e.when.H = 0U;
-		} else if (echs_instant_all_sec_p(e.when)) {
-			e.when.ms = 0U;
-		}
-		break;
-	case '~':
-		return (echs_instant_t){0};
-	}
-	return e.when;
+	return echs_instant_lt_p(e1.from, e2.from);
 }
 
-static inline echs_instant_t
-echs_event_end(echs_event_t e)
+static inline __attribute__((pure)) bool
+echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	switch (echs_event_mdfr(e)) {
-	default:
-		return (echs_instant_t){0};
-	case '!':
-		if (echs_instant_all_day_p(e.when)) {
-			e.when = (e.when.d++, echs_instant_fixup(e.when));
-		} else if (echs_instant_all_sec_p(e.when)) {
-			e.when = (e.when.S++, echs_instant_fixup(e.when));
-		}
-	case '~':
-		if (echs_instant_all_day_p(e.when)) {
-			e.when.H = 0U;
-		} else if (echs_instant_all_sec_p(e.when)) {
-			e.when.ms = 0U;
-		}
-		break;
-	}
-	return e.when;
+	return e1.uid == e2.uid && echs_instant_eq_p(e1.from, e2.from);
+}
+
+static inline __attribute__((pure)) bool
+echs_event_le_p(echs_event_t e1, echs_event_t e2)
+{
+	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
 }
 
 #endif	/* INCLUDED_event_h_ */

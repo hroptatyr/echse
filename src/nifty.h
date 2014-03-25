@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** nifty.h -- generally handy macroes
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2009-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,59 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_nifty_h_
+#define INCLUDED_nifty_h_
 
-#include <stddef.h>
-#include "instant.h"
+#if !defined LIKELY
+# define LIKELY(_x)	__builtin_expect((_x), 1)
+#endif	/* !LIKELY */
+#if !defined UNLIKELY
+# define UNLIKELY(_x)	__builtin_expect((_x), 0)
+#endif	/* UNLIKELY */
 
-/**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+#if !defined UNUSED
+# define UNUSED(_x)	_x __attribute__((unused))
+#endif	/* !UNUSED */
 
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+#if !defined ALGN
+# define ALGN(_x, to)	_x __attribute__((aligned(to)))
+#endif	/* !ALGN */
 
-#endif	/* INCLUDED_dt_strpf_h_ */
+#if !defined countof
+# define countof(x)	(sizeof(x) / sizeof(*x))
+#endif	/* !countof */
+
+#define _paste(x, y)	x ## y
+#define paste(x, y)	_paste(x, y)
+
+#if !defined with
+# define with(args...)							\
+	for (args, *paste(__ep, __LINE__) = (void*)1;			\
+	     paste(__ep, __LINE__); paste(__ep, __LINE__)= 0)
+#endif	/* !with */
+
+#if !defined if_with
+# define if_with(init, args...)					\
+	for (init, *paste(__ep, __LINE__) = (void*)1;			\
+	     paste(__ep, __LINE__) && (args); paste(__ep, __LINE__)= 0)
+#endif	/* !if_with */
+
+#define once					\
+	static int paste(__, __LINE__);		\
+	if (!paste(__, __LINE__)++)
+#define but_first				\
+	static int paste(__, __LINE__);		\
+	if (paste(__, __LINE__)++)
+
+static __inline void*
+deconst(const void *cp)
+{
+	union {
+		const void *c;
+		void *p;
+	} tmp = {cp};
+	return tmp.p;
+}
+
+#endif	/* INCLUDED_nifty_h_ */

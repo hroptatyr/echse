@@ -1,0 +1,9 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ evical_prntdesc "${srcdir}/sample_01.ics" "${srcdir}/sample_02.ics"
+VEVENT 0: Just a catch-up thing really.
+VEVENT 1: Make sure to pack bags beforehand.
+VEVENT 0: 
+VEVENT 1: 
+VEVENT 2: 
+$

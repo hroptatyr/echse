@@ -76,4 +76,5 @@ AC_CONFIG_FILES([libltdl/Makefile])
 AC_CONFIG_FILES([build-aux/Makefile])
 AC_CONFIG_FILES([src/Makefile])
 AC_CONFIG_FILES([beef/Makefile])
+AC_CONFIG_FILES([test/Makefile])
 AC_OUTPUT

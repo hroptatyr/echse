@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** bufpool.c -- pooling buffers
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,76 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
-
+ ***/
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include <stddef.h>
-#include "instant.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "bufpool.h"
+#include "nifty.h"
 
-/**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+/* the big string obarray */
+static struct bufpool_s *restrict obs;
+static size_t nobs;
+static size_t zobs;
 
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+static bufpool_t nul = {""};
 
-#endif	/* INCLUDED_dt_strpf_h_ */
+
+bufpool_t
+bufpool(const char *str, size_t len)
+{
+	size_t i;
+
+	/* see if it's a sensible request first */
+	if (UNLIKELY(len == 0UL)) {
+		return nul;
+	}
+	if (nobs >= zobs) {
+		/* time to resize */
+		obs = realloc(obs, (zobs += 64U) * sizeof(*obs));
+	}
+	obs[nobs].str = malloc(len + 1U);
+	obs[nobs].len = len;
+	memcpy(obs[nobs].str, str, len);
+	obs[nobs].str[len] = '\0';
+	/* advance pointer and assemble result */
+	i = nobs++;
+	return (bufpool_t)obs[i];
+}
+
+void
+bufunpool(bufpool_t bp)
+{
+	for (size_t i = 0U; i < nobs; i++) {
+		if (bp.str == obs[i].str) {
+			/* must have found him */
+			free(obs[i].str);
+			obs[i] = (bufpool_t){NULL, 0UL};
+			break;
+		}
+	}
+	return;
+}
+
+void
+clear_bufpool(void)
+{
+	if (LIKELY(obs != NULL)) {
+		for (size_t i = 0U; i < nobs; i++) {
+			if (LIKELY(obs[i].str != NULL)) {
+				free(obs[i].str);
+			}
+		}
+		free(obs);
+	}
+	obs = NULL;
+	zobs = 0U;
+	nobs = 0U;
+	return;
+}
+
+/* bufpool.c ends here */

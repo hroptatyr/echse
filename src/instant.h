@@ -37,16 +37,53 @@
 #if !defined INCLUDED_instant_h_
 #define INCLUDED_instant_h_
 
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include <stdbool.h>
-#include "echse.h"
+#include <stdint.h>
 
 typedef struct echs_idiff_s echs_idiff_t;
+typedef union echs_instant_u echs_instant_t;
+
+union echs_instant_u {
+	struct {
+#if defined WORDS_BIGENDIAN
+		uint32_t y:16;
+		uint32_t m:8;
+		uint32_t d:8;
+		uint32_t H:8;
+		uint32_t M:8;
+		uint32_t S:6;
+		uint32_t ms:10;
+#else  /* !WORDS_BIGENDIAN */
+		uint32_t ms:10;
+		uint32_t S:6;
+		uint32_t M:8;
+		uint32_t H:8;
+		uint32_t d:8;
+		uint32_t m:8;
+		uint32_t y:16;
+#endif	/* WORDS_BIGENDIAN */
+	};
+	struct {
+#if defined WORDS_BIGENDIAN
+		uint32_t dpart;
+		uint32_t intra;
+#else  /* !WORDS_BIGENDIAN */
+		uint32_t intra;
+		uint32_t dpart;
+#endif	/* WORDS_BIGENDIAN */
+	};
+	uint64_t u;
+} __attribute__((transparent_union));
 
 struct echs_idiff_s {
 	unsigned int dd;
 	unsigned int msd;
 };
 
+
 /**
  * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
 extern echs_instant_t echs_instant_fixup(echs_instant_t);
@@ -56,62 +93,43 @@ extern echs_idiff_t echs_instant_diff(echs_instant_t end, echs_instant_t beg);
 extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
 
 
+#define ECHS_ALL_DAY	(0xffU)
+#define ECHS_ALL_SEC	(0x3ffU)
+
 static inline __attribute__((pure)) bool
-__inst_0_p(echs_instant_t x)
+echs_instant_all_day_p(echs_instant_t i)
+{
+	return i.H == ECHS_ALL_DAY;
+}
+
+static inline __attribute__((pure)) bool
+echs_instant_all_sec_p(echs_instant_t i)
+{
+	return i.ms == ECHS_ALL_SEC;
+}
+
+static inline __attribute__((pure)) bool
+echs_instant_0_p(echs_instant_t x)
 {
 	return x.u == 0U;
 }
 
 static inline __attribute__((pure)) bool
-__inst_lt_p(echs_instant_t x, echs_instant_t y)
+echs_instant_lt_p(echs_instant_t x, echs_instant_t y)
 {
-	return (x.y < y.y || x.y == y.y &&
-		(x.m < y.m || x.m == y.m &&
-		 (x.d < y.d || x.d == y.d &&
-		  (x.H < y.H || x.H == y.H &&
-		   (x.M < y.M || x.M == y.M &&
-		    (x.S < y.S || x.S == y.S &&
-		     (x.ms < y.ms)))))));
+	return x.u < y.u;
 }
 
 static inline __attribute__((pure)) bool
-__inst_le_p(echs_instant_t x, echs_instant_t y)
+echs_instant_le_p(echs_instant_t x, echs_instant_t y)
 {
-	return !(x.y > y.y || x.y == y.y &&
-		 (x.m > y.m || x.m == y.m &&
-		  (x.d > y.d || x.d == y.d &&
-		   (x.H > y.H || x.H == y.H &&
-		    (x.M > y.M || x.M == y.M &&
-		     (x.S > y.S || x.S == y.S &&
-		      (x.ms > y.ms)))))));
+	return !(x.u > y.u);
 }
 
 static inline __attribute__((pure)) bool
-__inst_eq_p(echs_instant_t x, echs_instant_t y)
+echs_instant_eq_p(echs_instant_t x, echs_instant_t y)
 {
-	return x.y == y.y && x.m == y.m && x.d == y.d &&
-		x.H == y.H && x.M == y.M && x.S == y.S &&
-		x.ms == y.ms;
-}
-
-
-/* convenience */
-static inline bool
-__event_0_p(echs_event_t e)
-{
-	return __inst_0_p(e.when);
-}
-
-static inline bool
-__event_lt_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_lt_p(e.when, i);
-}
-
-static inline bool
-__event_le_p(echs_event_t e, echs_instant_t i)
-{
-	return __inst_le_p(e.when, i);
+	return x.u == y.u;
 }
 
 #endif	/* INCLUDED_instant_h_ */

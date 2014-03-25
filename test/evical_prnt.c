@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** evical_prnt.c -- simple icalendar parser for echse
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,32 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include "echse.h"
 
-#include <stddef.h>
-#include "instant.h"
+
+int
+main(int argc, char *argv[])
+{
+	for (int i = 1, n = 0; i < argc; i++, n = 0) {
+		echs_evstrm_t s = make_echs_evical(argv[i]);
 
-/**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+		for (echs_event_t e;
+		     !echs_event_0_p(e = echs_evstrm_next(s)); n++) {
+			printf("VEVENT %d: %s\n", n, obint_name(e.uid));
+		}
+		free_echs_evstrm(s);
+	}
+	clear_interns();
+	clear_bufpool();
+	return 0;
+}
 
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
-
-#endif	/* INCLUDED_dt_strpf_h_ */
+/* evical_prnt.c ends here */

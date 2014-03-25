@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** intern.h -- interning system
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,52 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
+ ***/
+#if !defined INCLUDED_intern_h_
+#define INCLUDED_intern_h_
+
+#include <stdint.h>
+
+/**
+ * obints are length+offset integers, at least 32 bits wide, always even.
+ * They can fit short strings up to a length of 256 bytes and two
+ * byte-wise equal strings will produce the same obint.
+ *
+ * LLLLLLLL OOOOOOOOOOOOOOOOOOOOOOOO(00)
+ * ^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^ ||
+ * length   offset / 4U           divisible by 4
  **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
-
-#include <stddef.h>
-#include "instant.h"
+typedef uint_fast32_t obint_t;
 
 /**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+ * Return the interned representation of STR. */
+extern obint_t intern(const char *str, size_t len);
 
 /**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+ * Unintern the OBINT object. */
+extern void unintern(obint_t);
 
-#endif	/* INCLUDED_dt_strpf_h_ */
+/**
+ * Return the string representation of an OBINT object. */
+extern const char *obint_name(obint_t);
+
+/**
+ * Clean up resources used by the interning system. */
+extern void clear_interns(void);
+
+
+static inline size_t
+obint_off(obint_t ob)
+{
+	/* mask out the length bit */
+	return (ob & ((1ULL << ((sizeof(ob) - 1U) * 8U)) - 1U)) << 2U;
+}
+
+static inline size_t
+obint_len(obint_t ob)
+{
+	/* mask out the offset bit */
+	return ob >> ((sizeof(ob) - 1U) * 8U);
+}
+
+#endif	/* INCLUDED_intern_h_ */

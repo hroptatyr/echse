@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** bufpool.h -- pooling buffers
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,34 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_bufpool_h_
+#define INCLUDED_bufpool_h_
 
 #include <stddef.h>
-#include "instant.h"
 
 /**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+ * bufpools are length+offset integer tuples, much like interns.
+ * Input buffers won't be checked for duplicates though.
+ **/
+typedef const struct bufpool_s bufpool_t;
+
+struct bufpool_s {
+	char *str;
+	size_t len;
+};
+
+
+/**
+ * Return the interned representation of STR. */
+extern bufpool_t bufpool(const char *str, size_t len);
 
 /**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+ * Unintern the BUFPOOL object. */
+extern void bufunpool(bufpool_t);
 
-#endif	/* INCLUDED_dt_strpf_h_ */
+/**
+ * Clean up resources used by the buffer pooling system. */
+extern void clear_bufpool(void);
+
+#endif	/* INCLUDED_bufpool_h_ */

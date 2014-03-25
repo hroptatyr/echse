@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** evical.h -- icalendar event stremas
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,19 +33,20 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_evical_h_
+#define INCLUDED_evical_h_
 
-#include <stddef.h>
-#include "instant.h"
+#include "event.h"
+#include "evstrm.h"
+
+
+/**
+ * Stream ctor, from .ics file FN. */
+extern echs_evstrm_t make_echs_evical(const char *fn);
 
 /**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+ * Return one event from string S. */
+extern echs_event_t make_echs_ical_event(const char *s, size_t z);
 
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
-
-#endif	/* INCLUDED_dt_strpf_h_ */
+#endif	/* INCLUDED_evical_h_ */
