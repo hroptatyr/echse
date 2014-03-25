@@ -268,7 +268,7 @@ make_echs_evical(const char *fn)
 	evarr_t a;
 
 	if ((a = read_ical(fn)) == NULL) {
-		return (echs_evstrm_t){0U};
+		return NULL;
 	}
 	/* got it, sort it then */
 	WikiSort(a->ev, a->nev);
