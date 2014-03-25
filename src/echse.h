@@ -44,8 +44,6 @@
 #include "dt-strpf.h"
 #include "event.h"
 #include "evstrm.h"
-/* known evstrm impls */
-#include "evical.h"
 
 /* auxiliary stuff that might pollute the global namespace */
 #include "intern.h"
