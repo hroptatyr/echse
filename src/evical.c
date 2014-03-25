@@ -58,23 +58,12 @@ struct evarr_s {
 static echs_instant_t
 snarf_value(const char *s)
 {
-	static const char vd[] = "VALUE=DATE:";
-	static const char vdt[] = "VALUE=DATE-TIME:";
 	echs_instant_t res = {.u = 0U};
+	const char *sp;
 
-	if (0) {
-		;
-	} else if (!strncmp(s, vd, sizeof(vd) - 1)) {
-		/* date value */
-		s += sizeof(vd) - 1;
-	} else if (!strncmp(s, vdt, sizeof(vdt) - 1)) {
-		/* date-time value */
-		s += sizeof(vdt) - 1;
-	} else {
-		/* could be VERSION=1.0 syntax */
-		;
+	if (LIKELY((sp = strchr(s, ':')) != NULL)) {
+		res = dt_strp(sp + 1);
 	}
-	res = dt_strp(s);
 	return res;
 }
 
@@ -100,11 +89,11 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 	} else if (!strncmp(line, dtsta, sizeof(dtsta) - 1)) {
 		/* got DTSTART */
 		fld = FLD_DTSTART;
-		lp += sizeof(dtsta);
+		lp += sizeof(dtsta) - 1;
 	} else if (!strncmp(line, dtend, sizeof(dtend) - 1)) {
 		/* got DTEND */
 		fld = FLD_DTEND;
-		lp += sizeof(dtend);
+		lp += sizeof(dtend) - 1;
 	} else if (!strncmp(line, summ, sizeof(summ) - 1)) {
 		/* got SUMMARY */
 		fld = FLD_SUMM;
