@@ -132,4 +132,24 @@ echs_instant_eq_p(echs_instant_t x, echs_instant_t y)
 	return x.u == y.u;
 }
 
+static inline __attribute__((pure, const)) echs_instant_t
+echs_nul_instant(void)
+{
+	static const echs_instant_t nul = {.u = 0UL};
+	return nul;
+}
+
+static inline __attribute__((pure, const)) echs_instant_t
+echs_min_instant(void)
+{
+	return echs_nul_instant();
+}
+
+static inline __attribute__((pure, const)) echs_instant_t
+echs_max_instant(void)
+{
+	static const echs_instant_t i = {.u = -1ULL};
+	return i;
+}
+
 #endif	/* INCLUDED_instant_h_ */
