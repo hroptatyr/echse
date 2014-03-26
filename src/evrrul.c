@@ -259,6 +259,17 @@ echs_yearly(evrrul_param_t param, echs_mon_t mon, unsigned int dom)
 		mon = (echs_mon_t)param.proto.from.m;
 		dom = param.proto.from.d;
 	}
+	/* massage param then */
+	if (echs_instant_0_p(param.till)) {
+		param.till = echs_max_instant();
+	}
+	if (!param.count) {
+		param.count--;
+	}
+	if (param.interval) {
+		/* use param.interval - 1 really */
+		param.interval--;
+	}
 	/* check the mode we're in */
 	if (LIKELY(dom < 32U)) {
 		return _yearly(param, mon, dom);
