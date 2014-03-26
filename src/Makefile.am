@@ -32,6 +32,7 @@ libechse_la_SOURCES += bufpool.c bufpool.h
 libechse_la_SOURCES += event.h
 libechse_la_SOURCES += evstrm.c evstrm.h
 libechse_la_SOURCES += evical.c evical.h
+libechse_la_SOURCES += evrrul.c evrrul.h
 libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += nifty.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
