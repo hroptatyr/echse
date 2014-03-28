@@ -65,6 +65,26 @@ evrrul_y_04_CPPFLAGS += $(echse_CFLAGS)
 evrrul_y_04_LDADD = $(echse_LIBS)
 TESTS += evrrul_y_04.clit
 
+check_PROGRAMS += bitint_test_01
+bitint_test_01_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_01_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_01.clit
+
+check_PROGRAMS += bitint_test_02
+bitint_test_02_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_02_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_02.clit
+
+check_PROGRAMS += bitint_test_03
+bitint_test_03_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_03_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_03.clit
+
+check_PROGRAMS += bitint_test_04
+bitint_test_04_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_04_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_04.clit
+
 
 ## our friendly helpers
 check_PROGRAMS += clitoris
