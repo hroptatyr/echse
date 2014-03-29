@@ -106,6 +106,54 @@ ass_bi31(bitint31_t bi, int x)
 	return bi;
 }
 
+/**
+ * Assign X to bitset/integer BI. */
+static inline bituint63_t
+ass_bui63(bituint63_t bi, unsigned int x)
+{
+/* LSB set means we carry only an integer
+ * bi == 0 means we carry nothing */
+	if (bi == 0U) {
+		return (x << 1U) | 1U;
+	} else if (bi & 0b1U) {
+		/* degrade */
+		bi >>= 1U;
+		bi = 1U << ++bi;
+	}
+	bi |= 1U << (x + 1U); 
+	return bi;
+}
+
+/**
+ * Assign X to bitset/integer BI. */
+static inline bitint63_t
+ass_bi63(bitint63_t bi, int x)
+{
+/* LSB set in pos: on integer (in neg)
+ * nothing set -> nothing set
+ * otherwise bitset */
+	if (bi.pos == 0U && bi.neg == 0) {
+		bi.pos |= 0b1U;
+		bi.neg = x;
+		return bi;
+	} else if (bi.pos & 0b1U) {
+		/* degrade */
+		if (bi.neg > 0) {
+			bi.pos = 1U << (unsigned int)bi.neg;
+			bi.neg = 0;
+		} else {
+			bi.pos = 0U;
+			bi.neg = 1U << (unsigned int)(-bi.neg);
+		}
+	}
+	if (x > 0) {
+		bi.pos |= 1U << (unsigned int)x;
+	} else {
+		bi.neg |= 1U << (unsigned int)(-x);
+	}
+	return bi;
+}
+
 static inline unsigned int
 bui31_next(bitint_iter_t *restrict iter, bituint31_t bi)
 {
@@ -153,6 +201,61 @@ bi31_next(bitint_iter_t *restrict iter, bitint31_t bi)
 		/* we're doing negatives alright */
 		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
 		res = 32 - (*iter)++;
+	} else {
+	term:
+		*iter = 0U;
+		return 0;
+	}
+	return res;
+}
+
+static inline unsigned int
+bui63_next(bitint_iter_t *restrict iter, bituint63_t bi)
+{
+	unsigned int res;
+
+	if (bi & 0b1U) {
+		if (*iter) {
+			goto term;
+		}
+		res = bi >> 1U;
+		*iter = res;
+	} else if (bi >>= 1U, bi >>= *iter) {
+		for (; !(bi & 0b1U); (*iter)++, bi >>= 1U);
+		res = (*iter)++;
+	} else {
+	term:
+		*iter = 0U;
+		return 0;
+	}
+	return res;
+}
+
+static inline int
+bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
+{
+	int res;
+
+	if (bi.pos & 0b1U) {
+		if (*iter) {
+			goto term;
+		}
+		res = bi.neg;
+		*iter = 1U;
+	} else if (*iter < 64U && (bi.pos >>= *iter)) {
+		/* we're still doing positives */
+		for (; !(bi.pos & 0b1U); (*iter)++, bi.pos >>= 1U);
+		res = (*iter);
+		if (bi.pos > 1U) {
+			(*iter)++;
+		} else {
+			/* switch to negatives */
+			*iter = 64U;
+		}
+	} else if (*iter >= 64 && (bi.neg >>= (*iter - 64U))) {
+		/* we're doing negatives alright */
+		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
+		res = 64 - (*iter)++;
 	} else {
 	term:
 		*iter = 0U;
