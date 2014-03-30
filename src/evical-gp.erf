@@ -22,7 +22,6 @@ typedef enum {
 %define hash-function-name __evical_fld_hash
 %define lookup-function-name __evical_fld
 %null-strings
-%ignore-case
 %compare-strncmp
 
 struct ical_fld_cell_s {
