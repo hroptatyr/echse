@@ -1,4 +1,4 @@
-/*** evical.c -- simple icalendar parser for echse
+/*** bitint.h -- integer degrading bitsets
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -56,6 +56,12 @@ typedef struct {
 } bitint63_t;
 
 typedef size_t bitint_iter_t;
+
+/* a very specific one */
+typedef struct {
+	uint32_t pos[12U];
+	int32_t neg[12U];
+} bitint383_t;
 
 
 /**
@@ -129,7 +135,7 @@ ass_bui63(bituint63_t bi, unsigned int x)
 static inline bitint63_t
 ass_bi63(bitint63_t bi, int x)
 {
-/* LSB set in pos: on integer (in neg)
+/* LSB set in pos: one integer (in neg)
  * nothing set -> nothing set
  * otherwise bitset */
 	if (bi.pos == 0U && bi.neg == 0) {
@@ -153,6 +159,11 @@ ass_bi63(bitint63_t bi, int x)
 	}
 	return bi;
 }
+
+/**
+ * Assign X to bitset/integer BI. */
+extern void ass_bi383(bitint383_t *restrict bi, int x);
+
 
 static inline unsigned int
 bui31_next(bitint_iter_t *restrict iter, bituint31_t bi)
@@ -271,5 +282,9 @@ bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
 	}
 	return res;
 }
+
+/**
+ * Iterate over integers in BI. */
+extern int bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi);
 
 #endif	/* INCLUDED_bitint_h_ */
