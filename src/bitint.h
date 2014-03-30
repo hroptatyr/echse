@@ -187,6 +187,10 @@ bi31_next(bitint_iter_t *restrict iter, bitint31_t bi)
 		}
 		res = bi.neg;
 		*iter = 1U;
+	} else if (!*iter && bi.neg & 0b1U) {
+		/* get the naught out first */
+		res = 0U;
+		*iter = 1U;
 	} else if (*iter < 32U && (bi.pos >>= *iter)) {
 		/* we're still doing positives */
 		for (; !(bi.pos & 0b1U); (*iter)++, bi.pos >>= 1U);
@@ -195,9 +199,9 @@ bi31_next(bitint_iter_t *restrict iter, bitint31_t bi)
 			(*iter)++;
 		} else {
 			/* switch to negatives */
-			*iter = 32U;
+			*iter = 33U;
 		}
-	} else if (*iter >= 32 && (bi.neg >>= (*iter - 32U))) {
+	} else if (*iter > 32 && (bi.neg >>= (*iter - 32U))) {
 		/* we're doing negatives alright */
 		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
 		res = 32 - (*iter)++;
@@ -242,6 +246,10 @@ bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
 		}
 		res = bi.neg;
 		*iter = 1U;
+	} else if (!*iter && bi.neg & 0b1U) {
+		/* get the naught out first */
+		res = 0U;
+		*iter = 1U;
 	} else if (*iter < 64U && (bi.pos >>= *iter)) {
 		/* we're still doing positives */
 		for (; !(bi.pos & 0b1U); (*iter)++, bi.pos >>= 1U);
@@ -250,9 +258,9 @@ bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
 			(*iter)++;
 		} else {
 			/* switch to negatives */
-			*iter = 64U;
+			*iter = 65U;
 		}
-	} else if (*iter >= 64 && (bi.neg >>= (*iter - 64U))) {
+	} else if (*iter > 64 && (bi.neg >>= (*iter - 64U))) {
 		/* we're doing negatives alright */
 		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
 		res = 64 - (*iter)++;
