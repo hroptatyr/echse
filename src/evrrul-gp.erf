@@ -1,0 +1,65 @@
+%{
+typedef enum {
+	KEY_UNK,
+	/* actual keys */
+	KEY_FREQ,
+	KEY_UNTIL,
+	KEY_COUNT,
+	KEY_INTER,
+	KEY_WKST,
+	/* by* specs */
+	BY_SEC,
+	BY_MIN,
+	BY_HOUR,
+	BY_WDAY,
+	BY_MDAY,
+	BY_YDAY,
+	BY_WEEK,
+	BY_MON,
+	BY_POS,
+	BY_EASTER,
+
+	/* weekdays */
+	WDAY_MIR,
+	WDAY_MON,
+	WDAY_TUE,
+	WDAY_WED,
+	WDAY_THU,
+	WDAY_FRI,
+	WDAY_SAT,
+	WDAY_SUN,
+} rrul_key_t;
+
+%}
+%7bit
+%readonly-tables
+%enum
+%switch=1
+%struct-type
+%define slot-name keystr
+%define hash-function-name __evrrul_key_hash
+%define lookup-function-name __evrrul_key
+%null-strings
+%compare-strncmp
+
+struct rrul_key_cell_s {
+	const char *keystr;
+	rrul_key_t key;
+};
+
+%%
+FREQ, KEY_FREQ
+UNTIL, KEY_UNTIL
+COUNT, KEY_COUNT
+INTERVAL, KEY_INTER
+WKST, KEY_WKST
+BYSECOND, BY_SEC
+BYMINUTE, BY_MIN
+BYHOUR, BY_HOUR
+BYDAY, BY_WDAY
+BYMONTHDAY, BY_MDAY
+BYYEARDAY, BY_YDAY
+BYWEEKNO, BY_WEEK
+BYMONTH, BY_MON
+BYSETPOS, BY_POS
+BYEASTER, BY_EASTER
