@@ -72,7 +72,7 @@ ass_bui31(bituint31_t bi, unsigned int x)
 		bi >>= 1U;
 		bi = 1U << ++bi;
 	}
-	bi |= 1U << (x + 1U); 
+	bi |= 1U << (x + 1U);
 	return bi;
 }
 
@@ -118,9 +118,9 @@ ass_bui63(bituint63_t bi, unsigned int x)
 	} else if (bi & 0b1U) {
 		/* degrade */
 		bi >>= 1U;
-		bi = 1U << ++bi;
+		bi = 1ULL << ++bi;
 	}
-	bi |= 1U << (x + 1U); 
+	bi |= 1ULL << (x + 1U);
 	return bi;
 }
 
@@ -139,17 +139,17 @@ ass_bi63(bitint63_t bi, int x)
 	} else if (bi.pos & 0b1U) {
 		/* degrade */
 		if (bi.neg > 0) {
-			bi.pos = 1U << (unsigned int)bi.neg;
-			bi.neg = 0;
+			bi.pos = 1ULL << (unsigned int)bi.neg;
+			bi.neg = 0LL;
 		} else {
-			bi.pos = 0U;
-			bi.neg = 1U << (unsigned int)(-bi.neg);
+			bi.pos = 0ULL;
+			bi.neg = 1ULL << (unsigned int)(-bi.neg);
 		}
 	}
 	if (x > 0) {
-		bi.pos |= 1U << (unsigned int)x;
+		bi.pos |= 1ULL << (unsigned int)x;
 	} else {
-		bi.neg |= 1U << (unsigned int)(-x);
+		bi.neg |= 1ULL << (unsigned int)(-x);
 	}
 	return bi;
 }
