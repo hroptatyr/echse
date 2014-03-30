@@ -105,6 +105,30 @@ bitint_test_08_CPPFLAGS = $(AM_CPPFLAGS)
 bitint_test_08_CPPFLAGS += $(echse_CFLAGS)
 TESTS += bitint_test_08.clit
 
+check_PROGRAMS += bitint_test_09
+bitint_test_09_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_09_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_09_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_09.clit
+
+check_PROGRAMS += bitint_test_10
+bitint_test_10_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_10_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_10_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_10.clit
+
+check_PROGRAMS += bitint_test_11
+bitint_test_11_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_11_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_11_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_11.clit
+
+check_PROGRAMS += bitint_test_12
+bitint_test_12_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_12_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_12_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_12.clit
+
 
 ## our friendly helpers
 check_PROGRAMS += clitoris
