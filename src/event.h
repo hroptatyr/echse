@@ -77,4 +77,14 @@ echs_event_le_p(echs_event_t e1, echs_event_t e2)
 	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
 }
 
+static inline __attribute__((pure, const)) echs_event_t
+echs_nul_event(void)
+{
+	static const echs_event_t nul = {
+		.from = {.u = 0UL},
+		.till = {.u = 0UL}
+	};
+	return nul;
+}
+
 #endif	/* INCLUDED_event_h_ */
