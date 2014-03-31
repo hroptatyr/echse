@@ -76,7 +76,8 @@ ass_bui31(bituint31_t bi, unsigned int x)
 	} else if (bi & 0b1U) {
 		/* degrade */
 		bi >>= 1U;
-		bi = 1U << ++bi;
+		bi++;
+		bi = 1U << bi;
 	}
 	bi |= 1U << (x + 1U);
 	return bi;
@@ -124,7 +125,8 @@ ass_bui63(bituint63_t bi, unsigned int x)
 	} else if (bi & 0b1U) {
 		/* degrade */
 		bi >>= 1U;
-		bi = 1ULL << ++bi;
+		bi++;
+		bi = 1ULL << bi;
 	}
 	bi |= 1ULL << (x + 1U);
 	return bi;
