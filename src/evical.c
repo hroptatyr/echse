@@ -374,7 +374,7 @@ read_ical(const char *fn)
 			if (!strncmp(line, beg, sizeof(beg) - 1)) {
 				/* yep, set state to vevent */
 				st = ST_VEVENT;
-				ev = (echs_event_t){0U, 0U};
+				ev = echs_nul_event();
 			}
 			break;
 		case ST_VEVENT:

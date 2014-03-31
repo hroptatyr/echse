@@ -108,13 +108,12 @@ static inline echs_event_t
 next_evrrul_yly_event(const evrrul_param_t param)
 {
 /* we trust FROM to sit on the right occurrence */
-	static const echs_event_t nul = {0U};
 	echs_event_t res;
 
 	if (UNLIKELY(!param.count)) {
-		return nul;
+		return echs_nul_event();
 	} else if (UNLIKELY(echs_instant_lt_p(param.till, param.proto.from))) {
-		return nul;
+		return echs_nul_event();
 	}
 	/* otherwise prep the result */
 	res = param.proto;
@@ -156,18 +155,17 @@ static inline echs_event_t
 next_evrrul_ymcwly_event(const evrrul_param_t param)
 {
 /* we trust FROM to sit on the right occurrence */
-	static const echs_event_t nul = {0U};
 	echs_instant_t next;
 	echs_event_t res;
 
 	if (UNLIKELY(!param.count)) {
-		return nul;
+		return echs_nul_event();
 	}
 	/* compute next instance */
 	next = __ymcw_to_inst(param.proto.from);
 
 	if (UNLIKELY(echs_instant_lt_p(param.till, next))) {
-		return nul;
+		return echs_nul_event();
 	}
 	/* otherwise prep the result */
 	res = param.proto;
