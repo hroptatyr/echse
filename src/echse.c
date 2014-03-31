@@ -109,13 +109,13 @@ main(int argc, char *argv[])
 	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
 	} else {
-		from = (echs_instant_t){2000, 1, 1};
+		from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
 	}
 
 	if (argi->till_arg) {
 		till = dt_strp(argi->till_arg);
 	} else {
-		till = (echs_instant_t){2037, 12, 31};
+		till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
 	}
 
 	switch (argi->cmd) {
