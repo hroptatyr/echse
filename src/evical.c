@@ -405,19 +405,34 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		ve->ev.from = snarf_value(lp);
 		break;
 	case FLD_RRULE:
+	case FLD_XRULE:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
 		/* otherwise snarf him */
-		for (struct rrulsp_s rr;
-		     (rr = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
-			/* bang to global array */
-			goptr_t x = add_to_grr(rr);
+		for (struct rrulsp_s r;
+		     (r = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
+			goptr_t x;
 
-			if (!ve->rr.r) {
-				ve->rr.r = x;
+			switch (c->fld) {
+			case FLD_RRULE:
+				/* bang to global array */
+				x = add_to_grr(r);
+
+				if (!ve->rr.nr++) {
+					ve->rr.r = x;
+				}
+				break;
+			case FLD_XRULE:
+				/* bang to global array */
+				x = add_to_gxr(r);
+
+				if (!ve->xr.nr++) {
+					ve->xr.r = x;
+				}
+				break;
 			}
-			ve->rr.nr++;
+			/* this isn't supposed to be a for-loop */
 			break;
 		}
 		break;
