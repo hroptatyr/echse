@@ -63,6 +63,7 @@ struct rrulsp_s {
 	echs_freq_t freq;
 	unsigned int count;
 	unsigned int inter;
+	echs_instant_t until;
 
 	bitint31_t dom;
 	bitint383_t doy;
@@ -270,6 +271,10 @@ snarf_rrule(const char *s, size_t z)
 				rr.inter = (unsigned int)tmp;
 				break;
 			}
+			break;
+
+		case KEY_UNTIL:
+			rr.until = dt_strp(++kv);
 			break;
 
 		case BY_WDAY:
