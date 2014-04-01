@@ -370,6 +370,48 @@ snarf_rrule(const char *s, size_t z)
 	return rr;
 }
 
+static struct dtlst_s
+snarf_xdate(const char *line, size_t llen)
+{
+	struct dtlst_s res = {0UL, ngxd};
+
+	for (const char *sp = line, *const ep = line + llen, *eod;
+	     sp < ep; sp = eod + 1U) {
+		echs_instant_t in;
+
+		if (UNLIKELY((eod = strchr(sp, ',')) == NULL)) {
+			eod = ep;
+		}
+		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
+			continue;
+		}
+		add_to_gxd(in);
+		res.ndt++;
+	}
+	return res;
+}
+
+static struct dtlst_s
+snarf_rdate(const char *line, size_t llen)
+{
+	struct dtlst_s res = {0UL, ngrd};
+
+	for (const char *sp = line, *const ep = line + llen, *eod;
+	     sp < ep; sp = eod + 1U) {
+		echs_instant_t in;
+
+		if (UNLIKELY((eod = strchr(sp, ',')) == NULL)) {
+			eod = ep;
+		}
+		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
+			continue;
+		}
+		add_to_grd(in);
+		res.ndt++;
+	}
+	return res;
+}
+
 static void
 snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
@@ -396,13 +438,47 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* how did we get here */
 		return;
 	case FLD_DTSTART:
-		ve->ev.from = snarf_value(lp);
-		break;
 	case FLD_DTEND:
-		ve->ev.till = snarf_value(lp);
+		with (echs_instant_t i = snarf_value(lp)) {
+			switch (c->fld) {
+			case FLD_DTSTART:
+				ve->ev.from = i;
+				break;
+			case FLD_DTEND:
+				ve->ev.till = i;
+				break;
+			}
+		}
 		break;
 	case FLD_XDATE:
-		ve->ev.from = snarf_value(lp);
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		/* otherwise snarf */
+		with (struct dtlst_s l = snarf_xdate(lp, ep - lp)) {
+			if (l.ndt == 0UL) {
+				break;
+			}
+			if (!ve->xd.ndt) {
+				ve->xd.dt = l.dt;
+			}
+			ve->xd.ndt += l.ndt;
+		}
+		break;
+	case FLD_RDATE:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		/* otherwise snarf */
+		with (struct dtlst_s l = snarf_rdate(lp, ep - lp)) {
+			if (l.ndt == 0UL) {
+				break;
+			}
+			if (!ve->rd.ndt) {
+				ve->rd.dt = l.dt;
+			}
+			ve->rd.ndt += l.ndt;
+		}
 		break;
 	case FLD_RRULE:
 	case FLD_XRULE:
