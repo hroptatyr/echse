@@ -257,6 +257,7 @@ make_echs_evmux(echs_evstrm_t s[], size_t n)
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
 	strm = malloc(n * sizeof(*strm));
+	memcpy(strm, s, n * sizeof(*s));
 	return make_evmux(strm, nstrm);
 }
 
