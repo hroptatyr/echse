@@ -561,35 +561,11 @@ next_evical_vevent(echs_evstrm_t s)
 	return this->ev[this->i++];
 }
 
-
-#define T	echs_event_t
-
-static inline __attribute__((const, pure)) bool
-compare(T e1, T e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
-
-#include "wikisort.c"
-
-echs_evstrm_t
-make_echs_evical(const char *fn)
-{
-	evarr_t a;
-
-	if ((a = read_ical(fn)) == NULL) {
-		return NULL;
-	}
-	/* got it, sort it then */
-	WikiSort(a->ev, a->nev);
-	return make_evical_vevent(a);
-}
-
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
-	/* the actual recurrence rule */
-	struct rrulsp_s rr;
+	/* the actual complete vevent */
+	struct ical_vevent_s ve;
 };
 
 static echs_event_t next_evrrul(echs_evstrm_t);
@@ -603,12 +579,12 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-make_evrrul(const struct rrulsp_s *rr)
+make_evrrul(const struct ical_vevent_s *ve)
 {
 	struct evrrul_s *res = malloc(sizeof(*res));
 
 	res->class = &evrrul_cls;
-	res->rr = *rr;
+	res->ve = *ve;
 	return (echs_evstrm_t)res;
 }
 
@@ -626,7 +602,7 @@ clone_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	return make_evrrul(&this->rr);
+	return make_evrrul(&this->ve);
 }
 
 static echs_event_t
@@ -637,10 +613,59 @@ next_evrrul(echs_evstrm_t s)
 	return nul;
 }
 
+
+#define T	echs_event_t
+
+static inline __attribute__((const, pure)) bool
+compare(T e1, T e2)
+{
+	return echs_instant_lt_p(e1.from, e2.from);
+}
+
+#include "wikisort.c"
 
 echs_evstrm_t
-make_echs_evrrul(const char *fn)
+make_echs_evical(const char *fn)
 {
+	vearr_t a;
+
+	if ((a = read_ical(fn)) == NULL) {
+		return NULL;
+	}
+	/* now split into vevents and rrules */
+	with (echs_evstrm_t s[a->nev]) {
+		echs_event_t ev[a->nev];
+		size_t nev = 0UL;
+		size_t ns = 0UL;
+
+		/* rearrange so that pure vevents sit in ev,
+		 * and rrules somewhere else */
+		for (size_t i = 0U; i < a->nev; i++) {
+			if (a->ev[i].nrr || a->ev[i].nrd) {
+				/* it's an rrule */
+				echs_evstrm_t tmp;
+
+				if ((tmp = make_evrrul(a->ev + i)) != NULL) {
+					s[ns++] = tmp;
+				}
+			} else {
+				ev[nev++] = a->ev[i].ev;
+			}
+		}
+
+		if (nev) {
+			/* sort them */
+			WikiSort(ev, nev);
+			/* and materialise into event stream */
+			s[ns++] = make_evical_vevent(ev, nev);
+		}
+		if (UNLIKELY(!ns)) {
+			break;
+		} else if (ns == 1UL) {
+			return *s;
+		}
+		return make_echs_evmux(s, ns);
+	}
 	return NULL;
 }
 
