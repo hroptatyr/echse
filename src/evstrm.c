@@ -251,6 +251,8 @@ make_echs_evmux(echs_evstrm_t s[], size_t n)
 
 	if (UNLIKELY(s == NULL || n == 0UL)) {
 		return NULL;
+	} else if (UNLIKELY(n == 1UL)) {
+		return *s;
 	}
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
