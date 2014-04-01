@@ -126,14 +126,16 @@ static size_t zgrd;
 static goptr_t ngrd;
 static echs_instant_t *grd;
 
-#define CHECK_RESIZE(id, z)						\
-	if (UNLIKELY(!ng##id)) {					\
+#define CHECK_RESIZE(id, iniz, nitems)					\
+	if (UNLIKELY(!z##id)) {						\
 		/* leave the first one out */				\
-		g##id = malloc((zg##id = z) * sizeof(*g##id));		\
-		memset(g##id, 0, sizeof(*g##id));			\
-		ng##id = 1U;						\
-	} else if (UNLIKELY(ng##id >= zg##id)) {			\
-		g##id = realloc(g##id, (zg##id *= 2U) * sizeof(*g##id)); \
+		id = malloc((z##id = iniz) * sizeof(*id));		\
+		memset(id, 0, sizeof(*id));				\
+	}								\
+	if (UNLIKELY(n##id + nitems > z##id)) {				\
+		do {							\
+			id = realloc(id, (z##id *= 2U) * sizeof(*id));	\
+		} while (n##id + nitems > z##id);			\
 	}
 
 static goptr_t
@@ -141,9 +143,15 @@ add_to_grr(struct rrulsp_s rr)
 {
 	goptr_t res;
 
-	CHECK_RESIZE(rr, 16U);
+	CHECK_RESIZE(grr, 16U, 1U);
 	grr[res = ngrr++] = rr;
 	return res;
+}
+
+static const struct rrulsp_s*
+get_grr(goptr_t d)
+{
+	return grr + d;
 }
 
 static goptr_t
@@ -151,29 +159,53 @@ add_to_gxr(struct rrulsp_s xr)
 {
 	goptr_t res;
 
-	CHECK_RESIZE(xr, 16U);
+	CHECK_RESIZE(gxr, 16U, 1U);
 	gxr[res = ngxr++] = xr;
 	return res;
 }
 
-static goptr_t
-add_to_gxd(echs_instant_t xd)
+static const struct rrulsp_s*
+get_gxr(goptr_t d)
 {
-	goptr_t res;
-
-	CHECK_RESIZE(xd, 64U);
-	gxd[res = ngxd++] = xd;
-	return res;
+	return gxr + d;
 }
 
 static goptr_t
-add_to_grd(echs_instant_t rd)
+add_to_gxd(struct dtlst_s xdlst)
 {
+	const echs_instant_t *dp = (const echs_instant_t*)xdlst.dt;
+	const size_t nd = xdlst.ndt;
 	goptr_t res;
 
-	CHECK_RESIZE(rd, 64U);
-	grd[res = ngrd++] = rd;
+	CHECK_RESIZE(gxd, 64U, nd);
+	memcpy(gxd + ngxd, dp, nd * sizeof(*dp));
+	res = ngxd, ngxd += nd;
 	return res;
+}
+
+static echs_instant_t
+get_gxd(goptr_t d)
+{
+	return gxd[d];
+}
+
+static goptr_t
+add_to_grd(struct dtlst_s rdlst)
+{
+	const echs_instant_t *dp = (const echs_instant_t*)rdlst.dt;
+	const size_t nd = rdlst.ndt;
+	goptr_t res;
+
+	CHECK_RESIZE(grd, 64U, nd);
+	memcpy(grd + ngrd, dp, nd * sizeof(*dp));
+	res = ngrd, ngrd += nd;
+	return res;
+}
+
+static echs_instant_t
+get_grd(goptr_t d)
+{
+	return grd[d];
 }
 
 
@@ -371,9 +403,11 @@ snarf_rrule(const char *s, size_t z)
 }
 
 static struct dtlst_s
-snarf_xdate(const char *line, size_t llen)
+snarf_dtlst(const char *line, size_t llen)
 {
-	struct dtlst_s res = {0UL, ngxd};
+	static size_t zdt;
+	static echs_instant_t *dt;
+	size_t ndt = 0UL;
 
 	for (const char *sp = line, *const ep = line + llen, *eod;
 	     sp < ep; sp = eod + 1U) {
@@ -385,31 +419,10 @@ snarf_xdate(const char *line, size_t llen)
 		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
 			continue;
 		}
-		add_to_gxd(in);
-		res.ndt++;
+		CHECK_RESIZE(dt, 64U, 1U);
+		dt[ndt++] = in;
 	}
-	return res;
-}
-
-static struct dtlst_s
-snarf_rdate(const char *line, size_t llen)
-{
-	struct dtlst_s res = {0UL, ngrd};
-
-	for (const char *sp = line, *const ep = line + llen, *eod;
-	     sp < ep; sp = eod + 1U) {
-		echs_instant_t in;
-
-		if (UNLIKELY((eod = strchr(sp, ',')) == NULL)) {
-			eod = ep;
-		}
-		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
-			continue;
-		}
-		add_to_grd(in);
-		res.ndt++;
-	}
-	return res;
+	return (struct dtlst_s){ndt, (goptr_t)dt};
 }
 
 static void
@@ -451,33 +464,32 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_XDATE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
-		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_xdate(lp, ep - lp)) {
-			if (l.ndt == 0UL) {
-				break;
-			}
-			if (!ve->xd.ndt) {
-				ve->xd.dt = l.dt;
-			}
-			ve->xd.ndt += l.ndt;
-		}
-		break;
 	case FLD_RDATE:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
 		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_rdate(lp, ep - lp)) {
+		with (struct dtlst_s l = snarf_dtlst(lp, ep - lp)) {
 			if (l.ndt == 0UL) {
 				break;
 			}
-			if (!ve->rd.ndt) {
-				ve->rd.dt = l.dt;
+			switch (c->fld) {
+				goptr_t go;
+			case FLD_XDATE:
+				go = add_to_gxd(l);
+				if (!ve->xd.ndt) {
+					ve->xd.dt = go;
+				}
+				ve->xd.ndt += l.ndt;
+				break;
+			case FLD_RDATE:
+				go = add_to_grd(l);
+				if (!ve->rd.ndt) {
+					ve->rd.dt = go;
+				}
+				ve->xd.ndt += l.ndt;
+				break;
 			}
-			ve->rd.ndt += l.ndt;
 		}
 		break;
 	case FLD_RRULE:
