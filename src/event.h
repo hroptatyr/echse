@@ -53,31 +53,31 @@ struct echs_event_s {
 
 
 /* convenience */
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_event_0_p(echs_event_t e)
 {
 	return echs_instant_0_p(e.from);
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 {
 	return echs_instant_lt_p(e1.from, e2.from);
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
 	return e1.uid == e2.uid && echs_instant_eq_p(e1.from, e2.from);
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_event_le_p(echs_event_t e1, echs_event_t e2)
 {
 	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
 }
 
-static inline __attribute__((pure, const)) echs_event_t
+static inline __attribute__((const, pure)) echs_event_t
 echs_nul_event(void)
 {
 	static const echs_event_t nul = {

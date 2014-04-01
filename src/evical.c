@@ -484,7 +484,7 @@ next_evical_vevent(echs_evstrm_t s)
 
 #define T	echs_event_t
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 compare(T e1, T e2)
 {
 	return echs_instant_lt_p(e1.from, e2.from);

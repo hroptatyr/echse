@@ -96,56 +96,56 @@ extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
 #define ECHS_ALL_DAY	(0xffU)
 #define ECHS_ALL_SEC	(0x3ffU)
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_all_day_p(echs_instant_t i)
 {
 	return i.H == ECHS_ALL_DAY;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_all_sec_p(echs_instant_t i)
 {
 	return i.ms == ECHS_ALL_SEC;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_0_p(echs_instant_t x)
 {
 	return x.u == 0U;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_lt_p(echs_instant_t x, echs_instant_t y)
 {
 	return x.u < y.u;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_le_p(echs_instant_t x, echs_instant_t y)
 {
 	return !(x.u > y.u);
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_eq_p(echs_instant_t x, echs_instant_t y)
 {
 	return x.u == y.u;
 }
 
-static inline __attribute__((pure, const)) echs_instant_t
+static inline __attribute__((const, pure)) echs_instant_t
 echs_nul_instant(void)
 {
 	static const echs_instant_t nul = {.u = 0UL};
 	return nul;
 }
 
-static inline __attribute__((pure, const)) echs_instant_t
+static inline __attribute__((const, pure)) echs_instant_t
 echs_min_instant(void)
 {
 	return echs_nul_instant();
 }
 
-static inline __attribute__((pure, const)) echs_instant_t
+static inline __attribute__((const, pure)) echs_instant_t
 echs_max_instant(void)
 {
 	static const echs_instant_t i = {.u = -1ULL};
