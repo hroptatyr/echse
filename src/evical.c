@@ -55,9 +55,17 @@
 #include "evrrul-gp.c"
 
 typedef struct vearr_s *vearr_t;
-typedef uintptr_t rr_t;
-typedef uintptr_t xd_t;
-typedef uintptr_t rd_t;
+typedef uintptr_t goptr_t;
+
+struct dtlst_s {
+	size_t ndt;
+	goptr_t dt;
+};
+
+struct rrlst_s {
+	size_t nr;
+	goptr_t r;
+};
 
 struct rrulsp_s {
 	echs_freq_t freq;
@@ -84,15 +92,12 @@ struct rrulsp_s {
 
 struct ical_vevent_s {
 	echs_event_t ev;
-	/* pointers into the global rrul array */
-	size_t nrr;
-	rr_t rr;
-	/* pointers into the global xdat array */
-	size_t nxd;
-	xd_t xd;
-	/* pointers into the global rdat array */
-	size_t nrd;
-	xd_t rd;
+	/* pointers into the global rrul/xrul array */
+	struct rrlst_s rr;
+	struct rrlst_s xr;
+	/* points into the global xdat/rdat array */
+	struct dtlst_s rd;
+	struct dtlst_s xd;
 };
 
 struct vearr_s {
@@ -101,19 +106,24 @@ struct vearr_s {
 };
 
 
-/* global rr array */
+/* global rrule array */
 static size_t zgrr;
-static rr_t ngrr;
+static goptr_t ngrr;
 static struct rrulsp_s *grr;
+
+/* global exrule array */
+static size_t zgxr;
+static goptr_t ngxr;
+static struct rrulsp_s *gxr;
 
 /* global exdate array */
 static size_t zgxd;
-static xd_t ngxd;
+static goptr_t ngxd;
 static echs_instant_t *gxd;
 
 /* global rdate array */
 static size_t zgrd;
-static rd_t ngrd;
+static goptr_t ngrd;
 static echs_instant_t *grd;
 
 #define CHECK_RESIZE(id, z)						\
@@ -126,30 +136,40 @@ static echs_instant_t *grd;
 		g##id = realloc(g##id, (zg##id *= 2U) * sizeof(*g##id)); \
 	}
 
-static rr_t
+static goptr_t
 add_to_grr(struct rrulsp_s rr)
 {
-	rr_t res;
+	goptr_t res;
 
 	CHECK_RESIZE(rr, 16U);
 	grr[res = ngrr++] = rr;
 	return res;
 }
 
-static xd_t
+static goptr_t
+add_to_gxr(struct rrulsp_s xr)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(xr, 16U);
+	gxr[res = ngxr++] = xr;
+	return res;
+}
+
+static goptr_t
 add_to_gxd(echs_instant_t xd)
 {
-	xd_t res;
+	goptr_t res;
 
 	CHECK_RESIZE(xd, 64U);
 	gxd[res = ngxd++] = xd;
 	return res;
 }
 
-static rd_t
+static goptr_t
 add_to_grd(echs_instant_t rd)
 {
-	rd_t res;
+	goptr_t res;
 
 	CHECK_RESIZE(rd, 64U);
 	grd[res = ngrd++] = rd;
@@ -392,12 +412,12 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		for (struct rrulsp_s rr;
 		     (rr = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
 			/* bang to global array */
-			rr_t x = add_to_grr(rr);
+			goptr_t x = add_to_grr(rr);
 
-			if (!ve->rr) {
-				ve->rr = x;
+			if (!ve->rr.r) {
+				ve->rr.r = x;
 			}
-			ve->nrr++;
+			ve->rr.nr++;
 			break;
 		}
 		break;
@@ -646,8 +666,10 @@ make_echs_evical(const char *fn)
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
 		for (size_t i = 0U; i < a->nev; i++) {
-			if (a->ev[i].nrr || a->ev[i].nrd) {
-				/* it's an rrule */
+			if (a->ev[i].rr.nr || a->ev[i].rd.ndt) {
+				/* it's an rrule, we won't check for
+				 * exdates or exrules because they make
+				 * no sense without an rrule to go with */
 				echs_evstrm_t tmp;
 
 				if ((tmp = make_evrrul(a->ev + i)) != NULL) {
