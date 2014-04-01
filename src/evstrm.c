@@ -243,6 +243,21 @@ echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 	return make_evmux(strm, nstrm);
 }
 
+echs_evstrm_t
+make_echs_evmux(echs_evstrm_t s[], size_t n)
+{
+	echs_evstrm_t *strm;
+	size_t nstrm = n;
+
+	if (UNLIKELY(s == NULL || n == 0UL)) {
+		return NULL;
+	}
+	/* otherwise make a copy of S and then pass it to
+	 * our make_evstrm(), it's the right signature already */
+	strm = malloc(n * sizeof(*strm));
+	return make_evmux(strm, nstrm);
+}
+
 
 /* file prober and ctor */
 #include "evical.h"

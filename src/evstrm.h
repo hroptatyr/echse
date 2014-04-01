@@ -67,8 +67,12 @@ extern echs_evstrm_t make_echs_evstrm_from_file(const char *fn);
 extern echs_evstrm_t echs_evstrm_mux(echs_evstrm_t s, ...);
 
 /**
- * Muxer, same as `echs_evstrm_vmux()' but for an array S of size N. */
+ * Muxer, same as `echs_evstrm_mux()' but for an array S of size N. */
 extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
+
+/**
+ * Muxer, same as `echs_evstrm_vmux()' but don't clone the event streams. */
+extern echs_evstrm_t make_echs_evmux(echs_evstrm_t s[], size_t n);
 
 
 static inline echs_event_t
