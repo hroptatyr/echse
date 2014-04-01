@@ -501,10 +501,11 @@ clo:
 /* our event class */
 struct evical_s {
 	echs_evstrm_class_t class;
-	/* event array */
-	evarr_t ea;
 	/* our iterator state */
 	size_t i;
+	/* array size and data */
+	size_t nev;
+	echs_event_t ev[];
 };
 
 static echs_event_t next_evical_vevent(echs_evstrm_t);
@@ -520,13 +521,15 @@ static const struct echs_evstrm_class_s evical_cls = {
 static const echs_event_t nul;
 
 static echs_evstrm_t
-make_evical_vevent(evarr_t a)
+make_evical_vevent(const echs_event_t *ev, size_t nev)
 {
-	struct evical_s *res = malloc(sizeof(*res));
+	const size_t zev = nev * sizeof(*ev);
+	struct evical_s *res = malloc(sizeof(*res) + zev);
 
 	res->class = &evical_cls;
-	res->ea = a;
 	res->i = 0U;
+	res->nev = nev;
+	memcpy(res->ev, ev, zev);
 	return (echs_evstrm_t)res;
 }
 
@@ -535,9 +538,6 @@ free_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
 
-	if (LIKELY(this->ea != NULL)) {
-		free(this->ea);
-	}
 	free(this);
 	return;
 }
@@ -546,16 +546,8 @@ static echs_evstrm_t
 clone_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
-	evarr_t a;
 
-	if (UNLIKELY(this->ea == NULL)) {
-		return NULL;
-	}
-	with (size_t z = this->ea->nev * sizeof(*a->ev) + sizeof(a)) {
-		a = malloc(z);
-		memcpy(a, this->ea, z);
-	}
-	return make_evical_vevent(a);
+	return make_evical_vevent(this->ev + this->i, this->nev - this->i);
 }
 
 static echs_event_t
@@ -563,10 +555,10 @@ next_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
 
-	if (UNLIKELY(this->i >= this->ea->nev)) {
+	if (UNLIKELY(this->i >= this->nev)) {
 		return nul;
 	}
-	return this->ea->ev[this->i++];
+	return this->ev[this->i++];
 }
 
 
