@@ -40,6 +40,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include "evical.h"
@@ -52,12 +54,10 @@
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 
-typedef struct evarr_s *evarr_t;
-
-struct evarr_s {
-	size_t nev;
-	echs_event_t ev[];
-};
+typedef struct vearr_s *vearr_t;
+typedef uintptr_t rr_t;
+typedef uintptr_t xd_t;
+typedef uintptr_t rd_t;
 
 struct rrulsp_s {
 	echs_freq_t freq;
@@ -80,6 +80,80 @@ struct rrulsp_s {
 	bitint383_t pos;
 	bitint383_t easter;
 };
+
+struct ical_vevent_s {
+	echs_event_t ev;
+	/* pointers into the global rrul array */
+	size_t nrr;
+	rr_t rr;
+	/* pointers into the global xdat array */
+	size_t nxd;
+	xd_t xd;
+	/* pointers into the global rdat array */
+	size_t nrd;
+	xd_t rd;
+};
+
+struct vearr_s {
+	size_t nev;
+	struct ical_vevent_s ev[];
+};
+
+
+/* global rr array */
+static size_t zgrr;
+static rr_t ngrr;
+static struct rrulsp_s *grr;
+
+/* global exdate array */
+static size_t zgxd;
+static xd_t ngxd;
+static echs_instant_t *gxd;
+
+/* global rdate array */
+static size_t zgrd;
+static rd_t ngrd;
+static echs_instant_t *grd;
+
+#define CHECK_RESIZE(id, z)						\
+	if (UNLIKELY(!ng##id)) {					\
+		/* leave the first one out */				\
+		g##id = malloc((zg##id = z) * sizeof(*g##id));		\
+		memset(g##id, 0, sizeof(*g##id));			\
+		ng##id = 1U;						\
+	} else if (UNLIKELY(ng##id >= zg##id)) {			\
+		g##id = realloc(g##id, (zg##id *= 2U) * sizeof(*g##id)); \
+	}
+
+static rr_t
+add_to_grr(struct rrulsp_s rr)
+{
+	rr_t res;
+
+	CHECK_RESIZE(rr, 16U);
+	grr[res = ngrr++] = rr;
+	return res;
+}
+
+static xd_t
+add_to_gxd(echs_instant_t xd)
+{
+	xd_t res;
+
+	CHECK_RESIZE(xd, 64U);
+	gxd[res = ngxd++] = xd;
+	return res;
+}
+
+static rd_t
+add_to_grd(echs_instant_t rd)
+{
+	rd_t res;
+
+	CHECK_RESIZE(rd, 64U);
+	grd[res = ngrd++] = rd;
+	return res;
+}
 
 
 static echs_instant_t
@@ -151,7 +225,7 @@ snarf_wday(const char *s)
 	return MIR;
 }
 
-static void
+static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
 	struct rrulsp_s rr = {FREQ_NONE};
@@ -268,11 +342,11 @@ snarf_rrule(const char *s, size_t z)
 			break;
 		}
 	}
-	return;
+	return rr;
 }
 
 static void
-snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
+snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 	const char *lp;
 	const char *ep = line + llen;
@@ -297,37 +371,50 @@ snarf_fld(echs_event_t ev[static 1U], const char *line, size_t llen)
 		/* how did we get here */
 		return;
 	case FLD_DTSTART:
-		ev->from = snarf_value(lp);
+		ve->ev.from = snarf_value(lp);
 		break;
 	case FLD_DTEND:
-		ev->till = snarf_value(lp);
+		ve->ev.till = snarf_value(lp);
+		break;
+	case FLD_XDATE:
+		ve->ev.from = snarf_value(lp);
 		break;
 	case FLD_RRULE:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
 		/* otherwise snarf him */
-		snarf_rrule(lp, ep - lp);
+		for (struct rrulsp_s rr;
+		     (rr = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
+			/* bang to global array */
+			rr_t x = add_to_grr(rr);
+
+			if (!ve->rr) {
+				ve->rr = x;
+			}
+			ve->nrr++;
+			break;
+		}
 		break;
 	case FLD_SUMM:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
 		with (obint_t uid = intern(lp, ep - lp)) {
-			ev->uid = uid;
+			ve->ev.uid = uid;
 		}
 		break;
 	case FLD_DESC:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
-		ev->desc = bufpool(lp, ep - lp).str;
+		ve->ev.desc = bufpool(lp, ep - lp).str;
 		break;
 	}
 	return;
 }
 
-static evarr_t
+static vearr_t
 read_ical(const char *fn)
 {
 	FILE *fp;
@@ -337,9 +424,9 @@ read_ical(const char *fn)
 		ST_UNK,
 		ST_VEVENT,
 	} st = ST_UNK;
-	echs_event_t ev;
-	evarr_t a = NULL;
-	size_t nev = 0UL;
+	struct ical_vevent_s ve;
+	size_t nve = 0UL;
+	vearr_t a = NULL;
 
 	if ((fp = fopen(fn, "r")) == NULL) {
 		return NULL;
@@ -374,34 +461,35 @@ read_ical(const char *fn)
 			if (!strncmp(line, beg, sizeof(beg) - 1)) {
 				/* yep, set state to vevent */
 				st = ST_VEVENT;
-				ev = echs_nul_event();
+				/* and rinse our bucket */
+				memset(&ve, 0, sizeof(ve));
 			}
 			break;
 		case ST_VEVENT:
 			if (!strncmp(line, end, sizeof(end) - 1)) {
 				/* oh, ok, better stop the parsing then
 				 * and reset the state machine */
-				if (a == NULL || nev >= a->nev) {
+				if (a == NULL || nve >= a->nev) {
 					/* resize */
-					const size_t nu = 2 * nev ?: 64U;
+					const size_t nu = 2 * nve ?: 64U;
 					size_t nz = nu * sizeof(*a->ev);
 
 					a = realloc(a, nz + sizeof(a));
 					a->nev = nu;
 				}
 				/* assign */
-				a->ev[nev++] = ev;
+				a->ev[nve++] = ve;
 				/* reset to unknown state */
 				st = ST_UNK;
 				break;
 			}
 			/* otherwise interpret the line */
-			snarf_fld(&ev, line, nrd);
+			snarf_fld(&ve, line, nrd);
 			break;
 		}
 	}
 	/* massage result array */
-	a->nev = nev;
+	a->nev = nve;
 	/* clean up reader resources */
 	free(line);
 clo:
