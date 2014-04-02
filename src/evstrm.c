@@ -158,6 +158,9 @@ free_evmux(echs_evstrm_t s)
 	struct evmux_s *this = (struct evmux_s*)s;
 
 	if (LIKELY(this->s != NULL)) {
+		for (size_t i = 0; i < this->ns; i++) {
+			free_echs_evstrm(this->s[i]);
+		}
 		free(this->s);
 	}
 	free(this);
