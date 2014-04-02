@@ -309,7 +309,7 @@ snarf_rrule(const char *s, size_t z)
 				rr.count = (unsigned int)tmp;
 				break;
 			case KEY_INTER:
-				rr.inter = (unsigned int)tmp;
+				rr.inter = (unsigned int)tmp - 1U;
 				break;
 			}
 			break;
