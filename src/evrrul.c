@@ -298,4 +298,60 @@ clone_evrrul(echs_evstrm_t s)
 	return (echs_evstrm_t)new;
 }
 
+
+size_t
+rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	unsigned int y = tgt->y;
+	unsigned int m[12U];
+	size_t nm;
+	int d[12U];
+	size_t nd;
+	size_t res = 0UL;
+
+	with (unsigned int tmpm) {
+		nm = 0UL;
+		for (bitint_iter_t mi = 0U;
+		     nm < countof(m) && (tmpm = bui31_next(&mi, rr->mon), mi);
+		     m[nm++] = tmpm);
+
+		/* fill up with a default */
+		if (!nm) {
+			m[nm++] = tgt->m;
+		}
+	}
+	with (int tmpd) {
+		nd = 0UL;
+		for (bitint_iter_t di = 0U;
+		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
+		     d[nd++] = tmpd);
+
+		/* fill up with the default */
+		if (!nd) {
+			d[nd++] = tgt->d;
+		}
+	}
+
+	/* now just fill up the array */
+	for (;; y++) {
+		for (size_t i = 0UL; i < nm; i++) {
+			for (size_t j = 0UL; j < nd; j++) {
+				tgt[res].y = y;
+				tgt[res].m = m[i];
+				if (d[j] > 0) {
+					tgt[res].d = d[j];
+				} else {
+					tgt[res].d = mdays[m[i]] + 1U + d[j];
+				}
+				tgt[res] = echs_instant_fixup(tgt[res]);
+				if (++res >= nti) {
+					goto fin;
+				}
+			}
+		}
+	}
+fin:
+	return res;
+}
+
 /* evrrul.c ends here */

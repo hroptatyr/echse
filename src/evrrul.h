@@ -164,4 +164,7 @@ struct rrulsp_s {
 extern echs_evstrm_t
 echs_yearly(evrrul_param_t param, echs_mon_t mon, unsigned int dom);
 
+extern size_t
+rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
+
 #endif	/* INCLUDED_evrrul_h_ */
