@@ -800,16 +800,6 @@ nul:
 }
 
 
-#define T	echs_event_t
-
-static inline __attribute__((const, pure)) bool
-compare(T e1, T e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
-
-#include "wikisort.c"
-
 echs_evstrm_t
 make_echs_evical(const char *fn)
 {
@@ -843,7 +833,7 @@ make_echs_evical(const char *fn)
 
 		if (nev) {
 			/* sort them */
-			WikiSort(ev, nev);
+			echs_event_sort(ev, nev);
 			/* and materialise into event stream */
 			s[ns++] = make_evical_vevent(ev, nev);
 		}
