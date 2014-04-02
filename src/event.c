@@ -1,4 +1,4 @@
-/*** event.h -- some echs_event_t functionality
+/*** event.c -- some echs_event_t functionality
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -34,63 +34,27 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_event_h_
-#define INCLUDED_event_h_
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include "event.h"
 
-#include <stddef.h>
-#include <stdbool.h>
-#include "instant.h"
-
-typedef struct echs_event_s echs_event_t;
-typedef uintptr_t echs_evuid_t;
-
-struct echs_event_s {
-	echs_instant_t from;
-	echs_instant_t till;
-	echs_evuid_t uid;
-	const char *desc;
-};
-
-
-/* externals */
-/**
- * Sort an array EV of NEV elements stable and in-place. */
-extern void echs_event_sort(echs_event_t *restrict ev, size_t nev);
-
-
-/* convenience */
-static inline __attribute__((const, pure)) bool
-echs_event_0_p(echs_event_t e)
-{
-	return echs_instant_0_p(e.from);
-}
+#define T	echs_event_t
 
 static inline __attribute__((const, pure)) bool
-echs_event_lt_p(echs_event_t e1, echs_event_t e2)
+compare(T e1, T e2)
 {
 	return echs_instant_lt_p(e1.from, e2.from);
 }
 
-static inline __attribute__((const, pure)) bool
-echs_event_eq_p(echs_event_t e1, echs_event_t e2)
+#include "wikisort.c"
+
+
+void
+echs_event_sort(echs_event_t *restrict ev, size_t nev)
 {
-	return e1.uid == e2.uid && echs_instant_eq_p(e1.from, e2.from);
+	WikiSort(ev, nev);
+	return;
 }
 
-static inline __attribute__((const, pure)) bool
-echs_event_le_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
-}
-
-static inline __attribute__((const, pure)) echs_event_t
-echs_nul_event(void)
-{
-	static const echs_event_t nul = {
-		.from = {.u = 0UL},
-		.till = {.u = 0UL}
-	};
-	return nul;
-}
-
-#endif	/* INCLUDED_event_h_ */
+/* event.c ends here */
