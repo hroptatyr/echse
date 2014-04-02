@@ -299,6 +299,52 @@ clone_evrrul(echs_evstrm_t s)
 }
 
 
+struct fill_1yly_s {
+	unsigned int y;
+	const unsigned int m;
+	const int d;
+
+	const unsigned int inter;
+};
+
+static size_t
+fill_1yly(echs_instant_t *restrict tgt, size_t nti, struct fill_1yly_s param)
+{
+	size_t tries = nti;
+	size_t res;
+
+	for (res = 0U; res < nti && --tries > 0U; param.y += param.inter) {
+		int d;
+
+		d = param.d;
+		if (d > 0 && (unsigned int)d <= mdays[param.m]) {
+			;
+		} else if (d < 0 && mdays[param.m] + 1U + d > 0) {
+			d += mdays[param.m] + 1U;
+		} else if (UNLIKELY(param.m == 2U && !(param.y % 4U))) {
+			/* fix up leap years */
+			switch (d) {
+			case -29:
+				d = 1;
+			case 29:
+				break;
+			default:
+				goto invalid;
+			}
+		} else {
+		invalid:
+			continue;
+		}
+		/* assign and increment */
+		tgt[res].y = param.y;
+		tgt[res].m = param.m;
+		tgt[res].d = (unsigned int)d;
+		res++;
+		tries = nti;
+	}
+	return res;
+}
+
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
@@ -330,6 +376,12 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (!nd) {
 			d[nd++] = tgt->d;
 		}
+	}
+
+	if (LIKELY(nd == 1UL && nm == 1UL)) {
+		/* resort to standard refiller */
+		struct fill_1yly_s param = {y, *m, *d, rr->inter + 1U};
+		return fill_1yly(tgt, nti, param);
 	}
 
 	/* now just fill up the array */
