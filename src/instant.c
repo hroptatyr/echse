@@ -120,10 +120,11 @@ refix_ym:
 
 	if (UNLIKELY(e.d > (md = mdays[e.m]))) {
 		/* leap year handling */
-		if (UNLIKELY(e.m == 2U && (e.y % 4U) == 0U)) {
-			md++;
-		}
-		if (LIKELY((e.d -= md) > 0U)) {
+		if (UNLIKELY(e.m == 2U && (e.y % 4U) == 0U && e.d == ++md)) {
+			/* that's ok then */
+			;
+		} else {
+			e.d -= md;
 			e.m++;
 			goto refix_ym;
 		}
