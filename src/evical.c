@@ -128,6 +128,9 @@ add_to_grr(struct rrulsp_s rr)
 static const struct rrulsp_s*
 get_grr(goptr_t d)
 {
+	if (UNLIKELY(grr == NULL)) {
+		return NULL;
+	}
 	return grr + d;
 }
 
@@ -144,6 +147,9 @@ add_to_gxr(struct rrulsp_s xr)
 static const struct rrulsp_s*
 get_gxr(goptr_t d)
 {
+	if (UNLIKELY(gxr == NULL)) {
+		return NULL;
+	}
 	return gxr + d;
 }
 
@@ -163,6 +169,9 @@ add_to_gxd(struct dtlst_s xdlst)
 static echs_instant_t
 get_gxd(goptr_t d)
 {
+	if (UNLIKELY(gxd == NULL)) {
+		return echs_nul_instant();
+	}
 	return gxd[d];
 }
 
@@ -179,10 +188,60 @@ add_to_grd(struct dtlst_s rdlst)
 	return res;
 }
 
+static void
+bang_to_grd(goptr_t tgt, struct dtlst_s rdlst)
+{
+	const echs_instant_t *dp = (const echs_instant_t*)rdlst.dt;
+	const size_t nd = rdlst.ndt;
+
+	if (UNLIKELY(grd == NULL)) {
+		/* huh? */
+		return;
+	}
+	memcpy(grd + tgt, dp, nd * sizeof(*dp));
+	return;
+}
+
 static echs_instant_t
 get_grd(goptr_t d)
 {
+	if (UNLIKELY(grd == NULL)) {
+		return echs_nul_instant();
+	}
 	return grd[d];
+}
+
+
+/* this should be somewhere else, evrrul.c maybe? */
+static size_t
+refill(echs_instant_t *restrict tgt, size_t nti, const struct ical_vevent_s *ve)
+{
+/* useful table at:
+ * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
+ * we're trying to follow that one closely. */
+	const struct rrulsp_s *rr;
+	size_t res = 0UL;
+
+	if (UNLIKELY((rr = get_grr(ve->rr.r)) == NULL)) {
+		return 0UL;
+	} else if (UNLIKELY(rr->freq == FREQ_NONE)) {
+		return 0UL;
+	}
+	/* fill up with the proto event's start d/t */
+	for (size_t i = 0U; i < nti; i++) {
+		tgt[i] = ve->ev.from;
+	}
+
+	switch (rr->freq) {
+	default:
+		break;
+
+	case FREQ_YEARLY:
+		/* easiest */
+		res = rrul_fill_yly(tgt, nti, rr);
+		break;
+	}
+	return res;
 }
 
 
@@ -669,8 +728,12 @@ next_evical_vevent(echs_evstrm_t s)
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
-	/* the actual complete vevent */
+	/* the actual complete vevent (includes proto-event) */
 	struct ical_vevent_s ve;
+	/* proto-duration */
+	echs_idiff_t dur;
+	/* iterator state */
+	size_t rdi;
 };
 
 static echs_event_t next_evrrul(echs_evstrm_t);
@@ -690,6 +753,7 @@ make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
+	res->rdi = 0UL;
 	return (echs_evstrm_t)res;
 }
 
@@ -714,7 +778,36 @@ static echs_event_t
 next_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
+	echs_event_t res;
+	echs_instant_t in;
 
+	/* it's easier when we just have some precalc'd rdates */
+	if (this->rdi >= this->ve.rd.ndt) {
+		/* we have to refill the rdate cache */
+		echs_instant_t cch[16U];
+		size_t ncch;
+
+		if ((ncch = refill(cch, countof(cch), &this->ve)) == 0UL) {
+			goto nul;
+		} else if (this->ve.rd.ndt == 0UL) {
+			struct dtlst_s l = {ncch, (uintptr_t)cch};
+			this->ve.rd.dt = add_to_grd(l);
+			this->ve.rd.ndt = ncch;
+		} else {
+			struct dtlst_s l = {ncch, (uintptr_t)cch};
+			bang_to_grd(this->ve.rd.dt, l);
+		}
+		/* reset counter */
+		this->rdi = 0U;
+	}
+	/* get the starting instant */
+	in = get_grd(this->ve.rd.dt + this->rdi++);
+	/* construct the result */
+	res = this->ve.ev;
+	res.from = in;
+	res.till = echs_instant_add(in, this->dur);
+	return res;
+nul:
 	return nul;
 }
 
