@@ -40,6 +40,7 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -91,6 +92,10 @@ extern echs_instant_t echs_instant_fixup(echs_instant_t);
 extern echs_idiff_t echs_instant_diff(echs_instant_t end, echs_instant_t beg);
 
 extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
+
+/**
+ * Sort an array IN of NIN elements stable and in-place. */
+extern void echs_instant_sort(echs_instant_t *restrict in, size_t nin);
 
 
 #define ECHS_ALL_DAY	(0xffU)
