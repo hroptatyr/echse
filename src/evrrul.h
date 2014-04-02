@@ -37,7 +37,11 @@
 #if !defined INCLUDED_evrrul_h_
 #define INCLUDED_evrrul_h_
 
+#include <stddef.h>
 #include "evstrm.h"
+#include "bitint.h"
+
+typedef const struct rrulsp_s *rrulsp_t;
 
 typedef enum {
 	MIR = (0U),
@@ -132,6 +136,29 @@ typedef struct {
 	unsigned int count;
 	unsigned int interval;
 } evrrul_param_t;
+
+struct rrulsp_s {
+	echs_freq_t freq;
+	unsigned int count;
+	unsigned int inter;
+	echs_instant_t until;
+
+	bitint31_t dom;
+	bitint383_t doy;
+
+	/* we'll store mon->1, tue->2, ..., 1mon->8, 2mon->15, ...
+	 * -1mon->-1, -1tue->-2, ..., -2mon->-8, -3mon->-15, ... */
+	bitint383_t dow;
+
+	bituint31_t mon;
+	bitint63_t wk;
+
+	bituint31_t H;
+	bituint63_t M, S;
+
+	bitint383_t pos;
+	bitint383_t easter;
+};
 
 
 extern echs_evstrm_t
