@@ -188,20 +188,6 @@ add_to_grd(struct dtlst_s rdlst)
 	return res;
 }
 
-static void
-bang_to_grd(goptr_t tgt, struct dtlst_s rdlst)
-{
-	const echs_instant_t *dp = (const echs_instant_t*)rdlst.dt;
-	const size_t nd = rdlst.ndt;
-
-	if (UNLIKELY(grd == NULL)) {
-		/* huh? */
-		return;
-	}
-	memcpy(grd + tgt, dp, nd * sizeof(*dp));
-	return;
-}
-
 static echs_instant_t
 get_grd(goptr_t d)
 {
@@ -209,39 +195,6 @@ get_grd(goptr_t d)
 		return echs_nul_instant();
 	}
 	return grd[d];
-}
-
-
-/* this should be somewhere else, evrrul.c maybe? */
-static size_t
-refill(echs_instant_t *restrict tgt, size_t nti, const struct ical_vevent_s *ve)
-{
-/* useful table at:
- * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
- * we're trying to follow that one closely. */
-	const struct rrulsp_s *rr;
-	size_t res = 0UL;
-
-	if (UNLIKELY((rr = get_grr(ve->rr.r)) == NULL)) {
-		return 0UL;
-	} else if (UNLIKELY(rr->freq == FREQ_NONE)) {
-		return 0UL;
-	}
-	/* fill up with the proto event's start d/t */
-	for (size_t i = 0U; i < nti; i++) {
-		tgt[i] = ve->ev.from;
-	}
-
-	switch (rr->freq) {
-	default:
-		break;
-
-	case FREQ_YEARLY:
-		/* easiest */
-		res = rrul_fill_yly(tgt, nti, rr);
-		break;
-	}
-	return res;
 }
 
 
@@ -734,6 +687,9 @@ struct evrrul_s {
 	echs_idiff_t dur;
 	/* iterator state */
 	size_t rdi;
+	/* unrolled cache */
+	size_t ncch;
+	echs_instant_t cch[64U];
 };
 
 static echs_event_t next_evrrul(echs_evstrm_t);
@@ -754,6 +710,7 @@ make_evrrul(const struct ical_vevent_s *ve)
 	res->class = &evrrul_cls;
 	res->ve = *ve;
 	res->rdi = 0UL;
+	res->ncch = 0UL;
 	return (echs_evstrm_t)res;
 }
 
@@ -770,38 +727,69 @@ static echs_evstrm_t
 clone_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
+	struct evrrul_s *clon = malloc(sizeof(*this));
 
-	return make_evrrul(&this->ve);
+	*clon = *this;
+	return (echs_evstrm_t)clon;
+}
+
+/* this should be somewhere else, evrrul.c maybe? */
+static size_t
+refill(struct evrrul_s *restrict strm)
+{
+/* useful table at:
+ * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
+ * we're trying to follow that one closely. */
+	const struct rrulsp_s *rr;
+	echs_instant_t proto;
+
+	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
+		return 0UL;
+	} else if (UNLIKELY(rr->freq == FREQ_NONE)) {
+		return 0UL;
+	} else if (strm->ncch) {
+		/* preset with last event */
+		proto = strm->cch[strm->ncch - 1U];
+	} else {
+		/* preset with the proto event */
+		proto = strm->ve.ev.from;
+	}
+	/* fill up with the proto instant */
+
+	for (size_t i = 0U; i < countof(strm->cch); i++) {
+		strm->cch[i] = proto;
+	}
+
+	switch (rr->freq) {
+	default:
+		break;
+
+	case FREQ_YEARLY:
+		/* easiest */
+		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		break;
+	}
+	return strm->ncch;
 }
 
 static echs_event_t
 next_evrrul(echs_evstrm_t s)
 {
-	struct evrrul_s *this = (struct evrrul_s*)s;
+	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 	echs_event_t res;
 	echs_instant_t in;
 
 	/* it's easier when we just have some precalc'd rdates */
-	if (this->rdi >= this->ve.rd.ndt) {
+	if (this->rdi >= this->ncch) {
 		/* we have to refill the rdate cache */
-		echs_instant_t cch[16U];
-		size_t ncch;
-
-		if ((ncch = refill(cch, countof(cch), &this->ve)) == 0UL) {
+		if (refill(this) == 0UL) {
 			goto nul;
-		} else if (this->ve.rd.ndt == 0UL) {
-			struct dtlst_s l = {ncch, (uintptr_t)cch};
-			this->ve.rd.dt = add_to_grd(l);
-			this->ve.rd.ndt = ncch;
-		} else {
-			struct dtlst_s l = {ncch, (uintptr_t)cch};
-			bang_to_grd(this->ve.rd.dt, l);
 		}
 		/* reset counter */
 		this->rdi = 0U;
 	}
 	/* get the starting instant */
-	in = get_grd(this->ve.rd.dt + this->rdi++);
+	in = this->cch[this->rdi++];
 	/* construct the result */
 	res = this->ve.ev;
 	res.from = in;
