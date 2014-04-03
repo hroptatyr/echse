@@ -159,7 +159,9 @@ free_evmux(echs_evstrm_t s)
 
 	if (LIKELY(this->s != NULL)) {
 		for (size_t i = 0; i < this->ns; i++) {
-			free_echs_evstrm(this->s[i]);
+			if (UNLIKELY(this->s[i] != NULL)) {
+				free_echs_evstrm(this->s[i]);
+			}
 		}
 		free(this->s);
 	}
