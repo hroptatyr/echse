@@ -112,11 +112,8 @@ fill_1yly(echs_instant_t *restrict tgt, size_t nti, struct fill_1yly_s param)
 	echs_instant_t until = param.until;
 	size_t res;
 
-	if (UNLIKELY(param.count && param.count < nti)) {
+	if (UNLIKELY(param.count < nti)) {
 		nti = param.count;
-	}
-	if (LIKELY(echs_instant_0_p(until))) {
-		until = echs_max_instant();
 	}
 	for (res = 0U; res < nti && --tries > 0U; param.y += param.inter) {
 		int d;
