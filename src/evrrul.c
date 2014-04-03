@@ -201,9 +201,13 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		};
 		return fill_1yly(tgt, nti, param);
 	}
+#endif
 
 	/* fill up the array the hard way */
-	for (;; y += rr->inter) {
+	for (res = 0UL; res < nti; y += rr->inter) {
+		bitint383_t cand = {0U};
+		int yd;
+
 		for (size_t i = 0UL; i < nm; i++) {
 			for (size_t j = 0UL; j < nd; j++) {
 				int dd = d[j];
@@ -230,18 +234,22 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					}
 					goto fin;
 				}
-				tgt[res].y = y;
-				tgt[res].m = m[i];
-				tgt[res].d = (unsigned int)dd;
 
-				if (UNLIKELY(echs_instant_lt_p(
-						     rr->until, tgt[res]))) {
-					goto fin;
-				}
+				/* it's a candidate */
+				ass_bi383(&cand, (m[i] - 1U) * 32U + dd);
 				tries = nti;
-				if (++res >= nti) {
-					goto fin;
-				}
+			}
+		}
+
+		/* now check the bitset */
+		for (bitint_iter_t all = 0UL;
+		     res < nti && (yd = bi383_next(&all, &cand), all); res++) {
+			tgt[res].y = y;
+			tgt[res].m = yd / 32U + 1U;
+			tgt[res].d = yd % 32U;
+
+			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+				goto fin;
 			}
 		}
 	}
