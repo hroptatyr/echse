@@ -105,6 +105,15 @@ bitint_test_12_CPPFLAGS += $(echse_CFLAGS)
 bitint_test_12_LDFLAGS = $(echse_LIBS)
 TESTS += bitint_test_12.clit
 
+TESTS += rrul_01.clit
+TESTS += rrul_02.clit
+TESTS += rrul_03.clit
+TESTS += rrul_04.clit
+TESTS += rrul_05.clit
+TESTS += rrul_06.clit
+TESTS += rrul_07.clit
+TESTS += rrul_08.clit
+
 
 ## our friendly helpers
 check_PROGRAMS += clitoris

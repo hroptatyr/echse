@@ -1,0 +1,19 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_04.ics"
+2000-02-29	Leap Day
+2000-02-29	Leap Day 2
+2004-02-29	Leap Day
+2004-02-29	Leap Day 2
+2008-02-29	Leap Day
+2008-02-29	Leap Day 2
+2012-02-29	Leap Day
+2012-02-29	Leap Day 2
+2016-02-29	Leap Day
+2016-02-29	Leap Day 2
+2020-02-29	Leap Day
+2020-02-29	Leap Day 2
+2024-02-29	Leap Day
+2028-02-29	Leap Day
+2032-02-29	Leap Day
+$
