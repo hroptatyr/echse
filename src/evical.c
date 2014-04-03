@@ -767,6 +767,9 @@ refill(struct evrrul_s *restrict strm)
 	case FREQ_YEARLY:
 		/* easiest */
 		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		if (LIKELY(strm->ncch)) {
+			echs_instant_sort(strm->cch, strm->ncch);
+		}
 		break;
 	}
 	return strm->ncch;
