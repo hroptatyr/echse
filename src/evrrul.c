@@ -303,6 +303,17 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 		}
 
+		for (bitint_iter_t doyi = 0UL;
+		     (yd = bi383_next(&doyi, &rr->doy), doyi);) {
+			struct md_s md;
+
+			if (!(md = yd_to_md(y, yd)).m) {
+				continue;
+			}
+			/* otherwise it's looking good */
+			ass_bi383(&cand, (md.m - 1U) * 32U + md.d);
+		}
+
 		for (size_t i = 0UL; i < nm; i++) {
 			for (size_t j = 0UL; j < nd; j++) {
 				int dd = d[j];
