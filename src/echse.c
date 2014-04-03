@@ -90,6 +90,12 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 	     !echs_event_0_p(e = echs_evstrm_next(smux)); n++) {
 		char fbuf[32U];
 
+		if (echs_instant_lt_p(e.from, from)) {
+			continue;
+		} else if (echs_instant_lt_p(till, e.from)) {
+			break;
+		}
+		/* otherwise print */
 		dt_strf(fbuf, sizeof(fbuf), e.from);
 		printf("%s\t%s\n", fbuf, obint_name(e.uid));
 	}
