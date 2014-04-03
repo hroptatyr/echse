@@ -154,12 +154,19 @@ fill_1yly(echs_instant_t *restrict tgt, size_t nti, struct fill_1yly_s param)
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
+	size_t tries = nti;
 	unsigned int y = tgt->y;
 	unsigned int m[12U];
 	size_t nm;
 	int d[12U];
 	size_t nd;
 	size_t res = 0UL;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -195,18 +202,43 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		return fill_1yly(tgt, nti, param);
 	}
 
-	/* now just fill up the array */
-	for (;; y++) {
+	/* fill up the array the hard way */
+	for (;; y += rr->inter) {
 		for (size_t i = 0UL; i < nm; i++) {
 			for (size_t j = 0UL; j < nd; j++) {
+				int dd = d[j];
+
+				if (dd > 0 && (unsigned int)dd <= mdays[m[i]]) {
+					;
+				} else if (dd < 0 &&
+					   mdays[m[i]] + 1U + dd > 0) {
+					dd += mdays[m[i]] + 1U;
+				} else if (UNLIKELY(m[i] == 2U && !(y % 4U))) {
+					/* fix up leap years */
+					switch (dd) {
+					case -29:
+						dd = 1;
+					case 29:
+						break;
+					default:
+						goto invalid;
+					}
+				} else {
+				invalid:
+					if (LIKELY(--tries > 0)) {
+						continue;
+					}
+					goto fin;
+				}
 				tgt[res].y = y;
 				tgt[res].m = m[i];
-				if (d[j] > 0) {
-					tgt[res].d = d[j];
-				} else {
-					tgt[res].d = mdays[m[i]] + 1U + d[j];
+				tgt[res].d = (unsigned int)dd;
+
+				if (UNLIKELY(echs_instant_lt_p(
+						     rr->until, tgt[res]))) {
+					goto fin;
 				}
-				tgt[res] = echs_instant_fixup(tgt[res]);
+				tries = nti;
 				if (++res >= nti) {
 					goto fin;
 				}
