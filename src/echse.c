@@ -88,7 +88,10 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 	/* just get it out now */
 	for (echs_event_t e;
 	     !echs_event_0_p(e = echs_evstrm_next(smux)); n++) {
-		printf("VEVENT %u: %s\n", n, obint_name(e.uid));
+		char fbuf[32U];
+
+		dt_strf(fbuf, sizeof(fbuf), e.from);
+		printf("%s\t%s\n", fbuf, obint_name(e.uid));
 	}
 	free_echs_evstrm(smux);
 	return 0;
