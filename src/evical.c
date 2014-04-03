@@ -755,11 +755,11 @@ refill(struct evrrul_s *restrict strm)
 		proto = strm->ve.ev.from;
 	}
 	/* fill up with the proto instant */
-
 	for (size_t i = 0U; i < countof(strm->cch); i++) {
 		strm->cch[i] = proto;
 	}
 
+	/* now go and see who can help us */
 	switch (rr->freq) {
 	default:
 		break;
@@ -767,10 +767,11 @@ refill(struct evrrul_s *restrict strm)
 	case FREQ_YEARLY:
 		/* easiest */
 		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
-		if (LIKELY(strm->ncch)) {
-			echs_instant_sort(strm->cch, strm->ncch);
-		}
 		break;
+	}
+
+	if (LIKELY(strm->ncch)) {
+		echs_instant_sort(strm->cch, strm->ncch);
 	}
 	return strm->ncch;
 }
