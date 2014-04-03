@@ -42,12 +42,44 @@
 #include "evrrul.h"
 #include "nifty.h"
 
-
-/* generic date converters */
+struct md_s {
+	unsigned int m;
+	unsigned int d;
+};
+
 static const unsigned int mdays[] = {
 	0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
 };
 
+#define M	(MON)
+#define T	(TUE)
+#define W	(WED)
+#define R	(THU)
+#define F	(FRI)
+#define A	(SAT)
+#define S	(SUN)
+
+static const echs_wday_t __jan01_28y_wday[] = {
+	/* 1904 - 1910 */
+	F, S, M, T, W, F, A,
+	/* 1911 - 1917 */
+	S, M, W, R, F, A, M,
+	/* 1918 - 1924 */
+	T, W, R, A, S, M, T,
+	/* 1925 - 1931 */
+	R, F, A, S, T, W, R,
+};
+
+#undef M
+#undef T
+#undef W
+#undef R
+#undef F
+#undef A
+#undef S
+
+
+/* generic date converters */
 static echs_wday_t
 __get_wday(echs_instant_t i)
 {
@@ -90,6 +122,114 @@ __ymcw_to_inst(echs_instant_t y)
 		}
 	}
 	res.d = tgtd;
+	return res;
+}
+
+static inline __attribute__((pure)) echs_wday_t
+get_jan01_wday(unsigned int year)
+{
+/* get the weekday of jan01 in YEAR
+ * using the 28y cycle thats valid till the year 2399
+ * 1920 = 16 mod 28 */
+	return __jan01_28y_wday[year % 28U];
+}
+
+static int
+ywd_get_jan01_hang(echs_wday_t j01)
+{
+/* Mon means hang of 0, Tue -1, Wed -2, Thu -3, Fri 3, Sat 2, Sun 1 */
+	int res;
+
+	if (UNLIKELY((res = 1 - (int)j01) < -3)) {
+		return (int)(7U + res);
+	}
+	return res;
+}
+
+static inline __attribute__((const, pure))  unsigned int
+get_isowk(unsigned int y)
+{
+	switch (y % 28U) {
+	default:
+		break;
+	case 16:
+		/* 1920, 1948, ... */
+	case 21:
+		/* 1925, 1953, ... */
+	case 27:
+		/* 1931, 1959, ... */
+	case 4:
+		/* 1936, 1964, ... */
+	case 10:
+		/* 1942, 1970, ... */
+		return 53;
+	}
+	return 52;
+}
+
+static unsigned int
+ywd_get_yday(unsigned int y, int w, int d)
+{
+/* since everything is in ISO 8601 format, getting the doy is a matter of
+ * counting how many days there are in a week. */
+	/* this one's special as it needs the hang helper slot */
+	echs_wday_t j01 = get_jan01_wday(y);
+	int hang = ywd_get_jan01_hang(j01);
+
+	if (UNLIKELY(w < 0)) {
+		w += 1 + get_isowk(y);
+	}
+	return 7U * (w - 1) + d + hang;
+}
+
+static struct md_s
+yd_to_md(unsigned int y, int doy)
+{
+/* Freundt algo, stolen from dateutils */
+#define GET_REM(x)	(rem[x])
+	static const uint8_t rem[] = {
+		19, 19, 18, 14, 13, 11, 10, 8, 7, 6, 4, 3, 1, 0
+
+	};
+	unsigned int m;
+	unsigned int d;
+	unsigned int beef;
+	unsigned int cake;
+
+	/* get 32-adic doys */
+	m = (doy + 19) / 32U;
+	d = (doy + 19) % 32U;
+	beef = GET_REM(m);
+	cake = GET_REM(m + 1);
+
+	/* put leap years into cake */
+	if (UNLIKELY(!(y % 4U)/*leapp(y)*/ && cake < 16U)) {
+		/* note how all leap-affected cakes are < 16 */
+		beef += beef < 16U;
+		cake++;
+	}
+
+	if (d <= cake) {
+		d = doy - ((m - 1) * 32 - 19 + beef);
+	} else {
+		d = doy - (m++ * 32 - 19 + cake);
+	}
+	return (struct md_s){m, d};
+#undef GET_REM
+}
+
+static struct md_s
+ywd_to_md(unsigned int y, int w, int d)
+{
+	unsigned int yday = ywd_get_yday(y, w, d);
+	struct md_s res = yd_to_md(y, yday);
+
+	if (UNLIKELY(res.m == 0)) {
+		res.m = 12;
+		res.d--;
+	} else if (UNLIKELY(res.m == 13)) {
+		res.m = 1;
+	}
 	return res;
 }
 
@@ -145,6 +285,23 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	for (res = 0UL; res < nti && --tries > 0U; y += rr->inter) {
 		bitint383_t cand = {0U};
 		int yd;
+
+		for (bitint_iter_t wki = 0UL;
+		     (yd = bi63_next(&wki, rr->wk), wki);) {
+			int dow;
+			for (bitint_iter_t dowi = 0UL;
+			     (dow = bi383_next(&dowi, &rr->dow), dowi);) {
+				struct md_s md;
+
+				if (dow <= MIR || dow > SUN) {
+					continue;
+				} else if (!(md = ywd_to_md(y, yd, dow)).m) {
+					continue;
+				}
+				/* otherwise it's looking good */
+				ass_bi383(&cand, (md.m - 1U) * 32U + md.d);
+			}
+		}
 
 		for (size_t i = 0UL; i < nm; i++) {
 			for (size_t j = 0UL; j < nd; j++) {
