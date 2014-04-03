@@ -116,7 +116,7 @@ static echs_instant_t *grd;
 	}
 
 static goptr_t
-add_to_grr(struct rrulsp_s rr)
+add1_to_grr(struct rrulsp_s rr)
 {
 	goptr_t res;
 
@@ -125,7 +125,18 @@ add_to_grr(struct rrulsp_s rr)
 	return res;
 }
 
-static const struct rrulsp_s*
+static goptr_t
+add_to_grr(const struct rrulsp_s *rr, size_t nrr)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(grr, 16U, nrr);
+	memcpy(grr + (res = ngrr), rr, nrr * sizeof(*rr));
+	ngrr += nrr;
+	return res;
+}
+
+static struct rrulsp_s*
 get_grr(goptr_t d)
 {
 	if (UNLIKELY(grr == NULL)) {
@@ -135,7 +146,7 @@ get_grr(goptr_t d)
 }
 
 static goptr_t
-add_to_gxr(struct rrulsp_s xr)
+add1_to_gxr(struct rrulsp_s xr)
 {
 	goptr_t res;
 
@@ -144,7 +155,18 @@ add_to_gxr(struct rrulsp_s xr)
 	return res;
 }
 
-static const struct rrulsp_s*
+static goptr_t
+add_to_gxr(const struct rrulsp_s *xr, size_t nxr)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gxr, 16U, nxr);
+	memcpy(gxr + (res = ngxr), xr, nxr * sizeof(*xr));
+	ngxr += nxr;
+	return res;
+}
+
+static struct rrulsp_s*
 get_gxr(goptr_t d)
 {
 	if (UNLIKELY(gxr == NULL)) {
@@ -503,7 +525,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			switch (c->fld) {
 			case FLD_RRULE:
 				/* bang to global array */
-				x = add_to_grr(r);
+				x = add1_to_grr(r);
 
 				if (!ve->rr.nr++) {
 					ve->rr.r = x;
@@ -511,7 +533,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 				break;
 			case FLD_XRULE:
 				/* bang to global array */
-				x = add_to_gxr(r);
+				x = add1_to_gxr(r);
 
 				if (!ve->xr.nr++) {
 					ve->xr.r = x;
@@ -739,6 +761,19 @@ clone_evrrul(echs_evstrm_t s)
 	struct evrrul_s *clon = malloc(sizeof(*this));
 
 	*clon = *this;
+	/* we have to clone rrules and exrules though */
+	if (this->ve.rr.nr) {
+		const size_t nr = this->ve.rr.nr;
+		const struct rrulsp_s *r = get_grr(this->ve.rr.r);
+
+		clon->ve.rr.r = add_to_grr(r, nr);
+	}
+	if (this->ve.xr.nr) {
+		const size_t nr = this->ve.xr.nr;
+		const struct rrulsp_s *r = get_gxr(this->ve.xr.r);
+
+		clon->ve.xr.r = add_to_gxr(r, nr);
+	}
 	return (echs_evstrm_t)clon;
 }
 
@@ -749,7 +784,7 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	const struct rrulsp_s *rr;
+	struct rrulsp_s *restrict rr;
 	echs_instant_t proto;
 
 	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
@@ -758,7 +793,7 @@ refill(struct evrrul_s *restrict strm)
 		return 0UL;
 	} else if (strm->ncch) {
 		/* preset with last event */
-		proto = strm->cch[strm->ncch - 1U];
+		proto = strm->cch[strm->ncch];
 	} else {
 		/* preset with the proto event */
 		proto = strm->ve.ev.from;
@@ -781,6 +816,13 @@ refill(struct evrrul_s *restrict strm)
 
 	if (LIKELY(strm->ncch)) {
 		echs_instant_sort(strm->cch, strm->ncch);
+
+		if (strm->ncch < countof(strm->cch)) {
+			rr->count = 0;
+		} else {
+			/* update the rrule to the partial set we've got */
+			rr->count -= --strm->ncch;
+		}
 	}
 	return strm->ncch;
 }
