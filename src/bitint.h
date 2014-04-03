@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /* the next types can take ordinary integers, or, if more than 1 is
  * tried to be assigned they degrade to bitsets */
@@ -62,6 +63,14 @@ typedef struct {
 	uint32_t pos[12U];
 	int32_t neg[12U];
 } bitint383_t;
+
+/**
+ * Assign X to bitset/integer BI. */
+extern void ass_bi383(bitint383_t *restrict bi, int x);
+
+/**
+ * Iterate over integers in BI. */
+extern int bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi);
 
 
 /**
@@ -88,7 +97,7 @@ ass_bui31(bituint31_t bi, unsigned int x)
 static inline bitint31_t
 ass_bi31(bitint31_t bi, int x)
 {
-/* LSB set in pos: on integer (in neg)
+/* LSB set in pos: one integer (in neg)
  * nothing set -> nothing set
  * otherwise bitset */
 	if (bi.pos == 0U && bi.neg == 0) {
@@ -111,6 +120,18 @@ ass_bi31(bitint31_t bi, int x)
 		bi.neg |= 1U << (unsigned int)(-x);
 	}
 	return bi;
+}
+
+static inline bool
+bui31_has_bits_p(bituint31_t bi)
+{
+	return bi != 0U;
+}
+
+static inline bool
+bi31_has_bits_p(bitint31_t bi)
+{
+	return bi.pos != 0U || bi.neg != 0;
 }
 
 /**
@@ -162,10 +183,23 @@ ass_bi63(bitint63_t bi, int x)
 	return bi;
 }
 
-/**
- * Assign X to bitset/integer BI. */
-extern void ass_bi383(bitint383_t *restrict bi, int x);
+static inline bool
+bui63_has_bits_p(bituint63_t bi)
+{
+	return bi != 0ULL;
+}
 
+static inline bool
+bi63_has_bits_p(bitint63_t bi)
+{
+	return bi.pos != 0ULL || bi.neg != 0LL;
+}
+
+static inline bool
+bi383_has_bits_p(const bitint383_t bi[static 1U])
+{
+	return *bi->pos != 0U;
+}
 
 static inline unsigned int
 bui31_next(bitint_iter_t *restrict iter, bituint31_t bi)
@@ -284,9 +318,5 @@ bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
 	}
 	return res;
 }
-
-/**
- * Iterate over integers in BI. */
-extern int bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi);
 
 #endif	/* INCLUDED_bitint_h_ */

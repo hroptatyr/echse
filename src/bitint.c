@@ -99,10 +99,7 @@ bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi)
 	int res;
 
 	if (!(*bi->pos & 0b1U)) {
-		if (!*iter) {
-			/* we've checked bi->pos already */
-			;
-		} else if (*iter >= *bi->pos >> 1U) {
+		if (UNLIKELY(*iter >= *bi->pos >> 1U)) {
 			goto term;
 		}
 		res = bi->neg[(*iter)++];

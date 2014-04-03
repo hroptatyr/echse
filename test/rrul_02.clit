@@ -1,0 +1,7 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_02.ics"
+2013-01-01	New year's day
+2013-03-29	Good Friday
+2013-12-26	Boxing day
+$
