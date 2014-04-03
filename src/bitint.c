@@ -73,7 +73,14 @@ ass_bi383(bitint383_t *restrict bi, int x)
 		goto bitset;
 	} else if ((i = *bi->pos >> 1U) < countof(bi->pos)) {
 		/* i is our candidate now, yay */
-		/* just store it here and get on with life */
+		/* just store it here and get on with life
+		 * check for dupes though */
+		for (size_t j = 0U; j < i; j++) {
+			if (UNLIKELY(bi->neg[j] == x)) {
+				/* dupe, bugger off */
+				return;
+			}
+		}
 		*bi->pos += 2U;
 		bi->neg[i] = x;
 		return;
