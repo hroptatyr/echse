@@ -305,14 +305,24 @@ struct fill_1yly_s {
 	const int d;
 
 	const unsigned int inter;
+	const unsigned int count;
+	const echs_instant_t until;
 };
 
 static size_t
 fill_1yly(echs_instant_t *restrict tgt, size_t nti, struct fill_1yly_s param)
 {
 	size_t tries = nti;
+	echs_instant_t until = param.until;
 	size_t res;
 
+	if (UNLIKELY(param.count && param.count < nti)) {
+		nti = param.count;
+		printf("count %zu\n", nti);
+	}
+	if (LIKELY(echs_instant_0_p(until))) {
+		until = echs_max_instant();
+	}
 	for (res = 0U; res < nti && --tries > 0U; param.y += param.inter) {
 		int d;
 
@@ -339,6 +349,10 @@ fill_1yly(echs_instant_t *restrict tgt, size_t nti, struct fill_1yly_s param)
 		tgt[res].y = param.y;
 		tgt[res].m = param.m;
 		tgt[res].d = (unsigned int)d;
+
+		if (UNLIKELY(echs_instant_lt_p(until, tgt[res]))) {
+			break;
+		}
 		res++;
 		tries = nti;
 	}
@@ -380,7 +394,12 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 	if (LIKELY(nd == 1UL && nm == 1UL)) {
 		/* resort to standard refiller */
-		struct fill_1yly_s param = {y, *m, *d, rr->inter + 1U};
+		struct fill_1yly_s param = {
+			y, *m, *d,
+			.count = rr->count,
+			.inter = rr->inter + 1U,
+			.until = rr->until,
+		};
 		return fill_1yly(tgt, nti, param);
 	}
 
