@@ -113,6 +113,11 @@ TESTS += rrul_05.clit
 TESTS += rrul_06.clit
 TESTS += rrul_07.clit
 TESTS += rrul_08.clit
+TESTS += rrul_08.clit
+EXTRA_DIST += sample_03.ics
+EXTRA_DIST += sample_04.ics
+EXTRA_DIST += sample_05.ics
+EXTRA_DIST += sample_06.ics
 
 
 ## our friendly helpers
