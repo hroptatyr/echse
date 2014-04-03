@@ -270,7 +270,12 @@ snarf_wday(const char *s)
 static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
-	struct rrulsp_s rr = {FREQ_NONE};
+	struct rrulsp_s rr = {
+		.freq = FREQ_NONE,
+		.count = -1U,
+		.inter = 1U,
+		.until = echs_max_instant(),
+	};
 
 	for (const char *sp = s, *const ep = s + z, *eofld;
 	     sp < ep; sp = eofld + 1) {
@@ -303,13 +308,15 @@ snarf_rrule(const char *s, size_t z)
 
 		case KEY_COUNT:
 		case KEY_INTER:
-			tmp = atol(++kv);
+			if (!(tmp = atol(++kv))) {
+				goto bogus;
+			}
 			switch (c->key) {
 			case KEY_COUNT:
 				rr.count = (unsigned int)tmp;
 				break;
 			case KEY_INTER:
-				rr.inter = (unsigned int)tmp - 1U;
+				rr.inter = (unsigned int)tmp;
 				break;
 			}
 			break;
@@ -389,6 +396,8 @@ snarf_rrule(const char *s, size_t z)
 		}
 	}
 	return rr;
+bogus:
+	return (struct rrulsp_s){FREQ_NONE};
 }
 
 static struct dtlst_s

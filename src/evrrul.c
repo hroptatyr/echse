@@ -192,7 +192,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		struct fill_1yly_s param = {
 			y, *m, *d,
 			.count = rr->count,
-			.inter = rr->inter + 1U,
+			.inter = rr->inter,
 			.until = rr->until,
 		};
 		return fill_1yly(tgt, nti, param);
