@@ -105,12 +105,18 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	int d[12U];
 	size_t nd;
 	size_t res = 0UL;
+	bool ymdp;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
 	}
+
+	/* check if we're ymd only */
+	ymdp = !bi63_has_bits_p(rr->wk) &&
+		!bi383_has_bits_p(&rr->dow) &&
+		!bi383_has_bits_p(&rr->doy);
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -119,7 +125,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     m[nm++] = tmpm);
 
 		/* fill up with a default */
-		if (!nm) {
+		if (!nm && ymdp) {
 			m[nm++] = tgt->m;
 		}
 	}
@@ -130,13 +136,13 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     d[nd++] = tmpd + 1);
 
 		/* fill up with the default */
-		if (!nd) {
+		if (!nd && ymdp) {
 			d[nd++] = tgt->d;
 		}
 	}
 
 	/* fill up the array the hard way */
-	for (res = 0UL; res < nti; y += rr->inter) {
+	for (res = 0UL; res < nti && --tries > 0U; y += rr->inter) {
 		bitint383_t cand = {0U};
 		int yd;
 
