@@ -158,6 +158,11 @@ free_evmux(echs_evstrm_t s)
 	struct evmux_s *this = (struct evmux_s*)s;
 
 	if (LIKELY(this->s != NULL)) {
+		for (size_t i = 0; i < this->ns; i++) {
+			if (UNLIKELY(this->s[i] != NULL)) {
+				free_echs_evstrm(this->s[i]);
+			}
+		}
 		free(this->s);
 	}
 	free(this);
@@ -240,6 +245,24 @@ echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 			strm[nstrm++] = stmp;
 		}
 	}
+	return make_evmux(strm, nstrm);
+}
+
+echs_evstrm_t
+make_echs_evmux(echs_evstrm_t s[], size_t n)
+{
+	echs_evstrm_t *strm;
+	size_t nstrm = n;
+
+	if (UNLIKELY(s == NULL || n == 0UL)) {
+		return NULL;
+	} else if (UNLIKELY(n == 1UL)) {
+		return *s;
+	}
+	/* otherwise make a copy of S and then pass it to
+	 * our make_evstrm(), it's the right signature already */
+	strm = malloc(n * sizeof(*strm));
+	memcpy(strm, s, n * sizeof(*s));
 	return make_evmux(strm, nstrm);
 }
 

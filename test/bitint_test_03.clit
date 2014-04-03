@@ -1,0 +1,10 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ bitint_test_03
+1 13
+80010 0
+80010 10
+80010 11
+80012 11
+80012 15
+$

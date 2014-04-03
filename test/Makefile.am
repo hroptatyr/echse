@@ -41,6 +41,95 @@ evical_prntdesc_CPPFLAGS += $(echse_CFLAGS)
 evical_prntdesc_LDADD = $(echse_LIBS)
 TESTS += evical_prnt_02.clit
 
+check_PROGRAMS += evrrul_y_01
+evrrul_y_01_CPPFLAGS = $(AM_CPPFLAGS)
+evrrul_y_01_CPPFLAGS += $(echse_CFLAGS)
+evrrul_y_01_LDADD = $(echse_LIBS)
+TESTS += evrrul_y_01.clit
+
+check_PROGRAMS += evrrul_y_02
+evrrul_y_02_CPPFLAGS = $(AM_CPPFLAGS)
+evrrul_y_02_CPPFLAGS += $(echse_CFLAGS)
+evrrul_y_02_LDADD = $(echse_LIBS)
+TESTS += evrrul_y_02.clit
+
+check_PROGRAMS += evrrul_y_03
+evrrul_y_03_CPPFLAGS = $(AM_CPPFLAGS)
+evrrul_y_03_CPPFLAGS += $(echse_CFLAGS)
+evrrul_y_03_LDADD = $(echse_LIBS)
+TESTS += evrrul_y_03.clit
+
+check_PROGRAMS += evrrul_y_04
+evrrul_y_04_CPPFLAGS = $(AM_CPPFLAGS)
+evrrul_y_04_CPPFLAGS += $(echse_CFLAGS)
+evrrul_y_04_LDADD = $(echse_LIBS)
+TESTS += evrrul_y_04.clit
+
+check_PROGRAMS += bitint_test_01
+bitint_test_01_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_01_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_01.clit
+
+check_PROGRAMS += bitint_test_02
+bitint_test_02_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_02_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_02.clit
+
+check_PROGRAMS += bitint_test_03
+bitint_test_03_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_03_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_03.clit
+
+check_PROGRAMS += bitint_test_04
+bitint_test_04_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_04_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_04.clit
+
+check_PROGRAMS += bitint_test_05
+bitint_test_05_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_05_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_05.clit
+
+check_PROGRAMS += bitint_test_06
+bitint_test_06_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_06_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_06.clit
+
+check_PROGRAMS += bitint_test_07
+bitint_test_07_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_07_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_07.clit
+
+check_PROGRAMS += bitint_test_08
+bitint_test_08_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_08_CPPFLAGS += $(echse_CFLAGS)
+TESTS += bitint_test_08.clit
+
+check_PROGRAMS += bitint_test_09
+bitint_test_09_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_09_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_09_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_09.clit
+
+check_PROGRAMS += bitint_test_10
+bitint_test_10_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_10_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_10_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_10.clit
+
+check_PROGRAMS += bitint_test_11
+bitint_test_11_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_11_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_11_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_11.clit
+
+check_PROGRAMS += bitint_test_12
+bitint_test_12_CPPFLAGS = $(AM_CPPFLAGS)
+bitint_test_12_CPPFLAGS += $(echse_CFLAGS)
+bitint_test_12_LDFLAGS = $(echse_LIBS)
+TESTS += bitint_test_12.clit
+
+
 ## our friendly helpers
 check_PROGRAMS += clitoris
 clitoris_CPPFLAGS = $(AM_CPPFLAGS)

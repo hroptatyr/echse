@@ -46,6 +46,16 @@ static const unsigned int doy[] = {
 	365U, 396U, 424U, 455U, 485U, 516U, 546U, 577U, 608U, 638U, 669U, 699U,
 };
 
+#define T	echs_instant_t
+
+static inline __attribute__((const, pure)) bool
+compare(T i1, T i2)
+{
+	return echs_instant_lt_p(i1, i2);
+}
+
+#include "wikisort.c"
+
 
 echs_instant_t
 echs_instant_fixup(echs_instant_t e)
@@ -110,10 +120,11 @@ refix_ym:
 
 	if (UNLIKELY(e.d > (md = mdays[e.m]))) {
 		/* leap year handling */
-		if (UNLIKELY(e.m == 2U && (e.y % 4U) == 0U)) {
-			md++;
-		}
-		if (LIKELY((e.d -= md) > 0U)) {
+		if (UNLIKELY(e.m == 2U && (e.y % 4U) == 0U && e.d == ++md)) {
+			/* that's ok then */
+			;
+		} else {
+			e.d -= md;
 			e.m++;
 			goto refix_ym;
 		}
@@ -202,6 +213,13 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 
 	res.d += msd;
 	return echs_instant_fixup(res);
+}
+
+void
+echs_instant_sort(echs_instant_t *restrict in, size_t nin)
+{
+	WikiSort(in, nin);
+	return;
 }
 
 /* instant.c ends here */

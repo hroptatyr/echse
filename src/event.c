@@ -1,4 +1,4 @@
-/*** evstrm.h -- streams of events
+/*** event.c -- some echs_event_t functionality
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -34,64 +34,27 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_evstrm_h_
-#define INCLUDED_evstrm_h_
-
-#include <stddef.h>
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include "event.h"
 
-typedef struct echs_evstrm_s *echs_evstrm_t;
-typedef const struct echs_evstrm_class_s *echs_evstrm_class_t;
+#define T	echs_event_t
 
-struct echs_evstrm_class_s {
-	/** next method */
-	echs_event_t(*next)(echs_evstrm_t);
-	/** clone method */
-	echs_evstrm_t(*clone)(echs_evstrm_t);
-	/** dtor method */
-	void(*free)(echs_evstrm_t);
-};	
-
-struct echs_evstrm_s {
-	const echs_evstrm_class_t class;
-	char data[];
-};
-
-
-/**
- * Stream ctor.  Probe file FN and return stream or NULL. */
-extern echs_evstrm_t make_echs_evstrm_from_file(const char *fn);
-
-/**
- * Muxer, produce an evstrm that iterates over all evstrms given. */
-extern echs_evstrm_t echs_evstrm_mux(echs_evstrm_t s, ...);
-
-/**
- * Muxer, same as `echs_evstrm_mux()' but for an array S of size N. */
-extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
-
-/**
- * Muxer, same as `echs_evstrm_vmux()' but don't clone the event streams. */
-extern echs_evstrm_t make_echs_evmux(echs_evstrm_t s[], size_t n);
-
-
-static inline echs_event_t
-echs_evstrm_next(echs_evstrm_t s)
+static inline __attribute__((const, pure)) bool
+compare(T e1, T e2)
 {
-	return s->class->next(s);
+	return echs_instant_lt_p(e1.from, e2.from);
 }
 
-static inline void
-free_echs_evstrm(echs_evstrm_t s)
+#include "wikisort.c"
+
+
+void
+echs_event_sort(echs_event_t *restrict ev, size_t nev)
 {
-	s->class->free(s);
+	WikiSort(ev, nev);
 	return;
 }
 
-static inline echs_evstrm_t
-clone_echs_evstrm(echs_evstrm_t s)
-{
-	return s->class->clone(s);
-}
-
-#endif	/* INCLUDED_evstrm_h_ */
+/* event.c ends here */

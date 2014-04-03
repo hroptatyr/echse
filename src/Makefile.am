@@ -29,18 +29,25 @@ libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += intern.c intern.h
 libechse_la_SOURCES += bufpool.c bufpool.h
-libechse_la_SOURCES += event.h
+libechse_la_SOURCES += event.c event.h
 libechse_la_SOURCES += evstrm.c evstrm.h
 libechse_la_SOURCES += evical.c evical.h
+libechse_la_SOURCES += evrrul.c evrrul.h
 libechse_la_SOURCES += boobs.h
+libechse_la_SOURCES += bitint.c bitint.h
 libechse_la_SOURCES += nifty.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += -lm
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
-EXTRA_libechse_la_SOURCES = wikisort.c
+EXTRA_libechse_la_SOURCES = $(libechse_la_built_sources)
+EXTRA_libechse_la_SOURCES += wikisort.c
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
+BUILT_SOURCES += $(libechse_la_built_sources)
+libechse_la_built_sources =
+libechse_la_built_sources += evical-gp.c
+libechse_la_built_sources += evrrul-gp.c
 
 bin_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h echse.yuck
@@ -62,8 +69,8 @@ version.c: version.c.in $(top_builddir)/.version
 			--use-reference --reference $(top_builddir)/.version $<
 
 ## gperf rule
-SUFFIXES += .gperf
-.gperf.c:
+SUFFIXES += .erf
+.erf.c:
 	$(AM_V_GEN) $(GPERF) -L ANSI-C "$<" --output-file "$@"
 
 ## yuck rule

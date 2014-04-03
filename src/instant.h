@@ -40,6 +40,7 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -92,44 +93,68 @@ extern echs_idiff_t echs_instant_diff(echs_instant_t end, echs_instant_t beg);
 
 extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
 
+/**
+ * Sort an array IN of NIN elements stable and in-place. */
+extern void echs_instant_sort(echs_instant_t *restrict in, size_t nin);
+
 
 #define ECHS_ALL_DAY	(0xffU)
 #define ECHS_ALL_SEC	(0x3ffU)
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_all_day_p(echs_instant_t i)
 {
 	return i.H == ECHS_ALL_DAY;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_all_sec_p(echs_instant_t i)
 {
 	return i.ms == ECHS_ALL_SEC;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_0_p(echs_instant_t x)
 {
 	return x.u == 0U;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_lt_p(echs_instant_t x, echs_instant_t y)
 {
 	return x.u < y.u;
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_le_p(echs_instant_t x, echs_instant_t y)
 {
 	return !(x.u > y.u);
 }
 
-static inline __attribute__((pure)) bool
+static inline __attribute__((const, pure)) bool
 echs_instant_eq_p(echs_instant_t x, echs_instant_t y)
 {
 	return x.u == y.u;
+}
+
+static inline __attribute__((const, pure)) echs_instant_t
+echs_nul_instant(void)
+{
+	static const echs_instant_t nul = {.u = 0UL};
+	return nul;
+}
+
+static inline __attribute__((const, pure)) echs_instant_t
+echs_min_instant(void)
+{
+	return echs_nul_instant();
+}
+
+static inline __attribute__((const, pure)) echs_instant_t
+echs_max_instant(void)
+{
+	static const echs_instant_t i = {.u = -1ULL};
+	return i;
 }
 
 #endif	/* INCLUDED_instant_h_ */

@@ -1,0 +1,20 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ bitint_test_08
+got 36
+
+got 36
+got 40
+
+got 36
+got 40
+got -4
+
+got 0
+got 1
+got 36
+got 40
+got -4
+got -33
+
+$

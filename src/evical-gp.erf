@@ -1,0 +1,41 @@
+%{
+typedef enum {
+	FLD_UNK,
+	FLD_DTSTART,
+	FLD_DTEND,
+	FLD_DURA,
+	FLD_RRULE,
+	FLD_XRULE,
+	FLD_RDATE,
+	FLD_XDATE,
+	FLD_SUMM,
+	FLD_DESC,
+} ical_fld_t;
+
+%}
+%7bit
+%readonly-tables
+%enum
+%switch=1
+%struct-type
+%define slot-name fldstr
+%define hash-function-name __evical_fld_hash
+%define lookup-function-name __evical_fld
+%null-strings
+%compare-strncmp
+
+struct ical_fld_cell_s {
+	const char *fldstr;
+	ical_fld_t fld;
+};
+
+%%
+DTSTART, FLD_DTSTART
+DTEND, FLD_DTEND
+DURATION, FLD_DURA
+RRULE, FLD_RRULE
+RDATE, FLD_RDATE
+EXRULE, FLD_XRULE
+EXDATE, FLD_XDATE
+SUMMARY, FLD_SUMM
+DESCRIPTION, FLD_DESC
