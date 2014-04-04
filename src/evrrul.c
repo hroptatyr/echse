@@ -80,38 +80,69 @@ static const echs_wday_t __jan01_28y_wday[] = {
 
 
 /* generic date converters */
-static echs_wday_t
-__get_wday(echs_instant_t i)
+static __attribute__((const, pure)) echs_wday_t
+ymd_get_wday(unsigned int y, unsigned int m, unsigned int d)
 {
 /* sakamoto method, stolen from dateutils */
 	static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-	unsigned int year = i.y;
 	unsigned int res;
 
-	year -= i.m < 3;
-	res = year + year / 4U - year / 100U + year / 400U;
-	res += t[i.m - 1U] + i.d;
+	y -= m < 3;
+	res = y + y / 4U - y / 100U + y / 400U;
+	res += t[m - 1U] + d;
 	return (echs_wday_t)(((unsigned int)res % 7U) ?: SUN);
 }
 
-static echs_instant_t
-__ymcw_to_inst(echs_instant_t y)
+static int
+__get_mcnt(unsigned int y, unsigned int m, echs_wday_t w)
+{
+/* get the number of weekdays W in Y-M, which is the max count
+ * for a weekday W in ymcw dates in year Y and month M */
+	echs_wday_t wd1 = ymd_get_wday(y, m, 1U);
+	unsigned int md = mdays[m];
+	/* the maximum number of WD01s in Y-M */
+	unsigned int wd01cnt = (md - 1U) / 7U + 1;
+	/* modulus */
+	unsigned int wd01mod = (md - 1U) % 7U;
+
+	/* we need sun on 0 */
+	if (w == SUN) {
+		w = MIR;
+	}
+	/* now the next WD01MOD days also have WD01CNT occurrences
+	 * if wd01 + wd01mod exceeds the DAYS_PER_WEEK barrier wrap
+	 * around by extending W to W + DAYS_PER_WEEK */
+	if ((w >= wd1 && w <= wd1 + wd01mod) ||
+	    (w + 7U) <= wd1 + wd01mod) {
+		return wd01cnt;
+	} else {
+		return wd01cnt - 1;
+	}
+}
+
+static unsigned int
+ymcw_get_dom(unsigned int y, unsigned int m, int c, echs_wday_t w)
 {
 /* convert instant with CW coded D slot in Y to Gregorian insants. */
-	unsigned int c = y.d >> 4U;
-	unsigned int w = y.d & 0x07U;
-	echs_instant_t res = y;
 	/* get month's first's weekday */
-	echs_wday_t wd1 = __get_wday((res.d = 1U, res));
+	echs_wday_t wd1 = ymd_get_wday(y, m, 1U);
+	unsigned int max = __get_mcnt(y, m, w);
 	unsigned int add;
 	unsigned int tgtd;
+
+	/* quick sanity check */
+	if (c > (int)max) {
+		return 0U;
+	} else if (c < 0 && (c += max + 1) <= 0) {
+		return 0U;
+	}
 
 	/* now just like in the __wday_after() code, we want the number of days
 	 * to add so that wd(res + X) == W above,
 	 * this is a simple modulo subtraction */
-	add = ((unsigned int)w + 7U - (unsigned int)wd1) % 7;
-	if ((tgtd = 1U + add + (c - 1) * 7U) > mdays[res.m]) {
-		if (UNLIKELY(tgtd == 29U && !(res.y % 4U))) {
+	add = ((unsigned int)w + 7U - (unsigned int)wd1) % 7U;
+	if ((tgtd = 1U + add + (c - 1) * 7U) > mdays[m]) {
+		if (UNLIKELY(tgtd == 29U && !(y % 4U))) {
 			/* ah, leap year innit
 			 * no need to check for Feb because months are
 			 * usually longer than 29 days and we wouldn't be
@@ -121,8 +152,7 @@ __ymcw_to_inst(echs_instant_t y)
 			tgtd -= 7U;
 		}
 	}
-	res.d = tgtd;
-	return res;
+	return tgtd;
 }
 
 static inline __attribute__((pure)) echs_wday_t
@@ -219,7 +249,7 @@ yd_to_md(unsigned int y, int doy)
 }
 
 static struct md_s
-ywd_to_md(unsigned int y, int w, int d)
+ywd_to_md(unsigned int y, int w, echs_wday_t d)
 {
 	unsigned int yday = ywd_get_yday(y, w, d);
 	struct md_s res = yd_to_md(y, yday);
@@ -233,18 +263,206 @@ ywd_to_md(unsigned int y, int w, int d)
 	return res;
 }
 
+static unsigned int
+ycw_get_yday(unsigned int y, int c, echs_wday_t w)
+{
+/* this differs from ywd in that we're actually looking for the C-th
+ * occurrence of W in year Y
+ * this is the inverse of dateutils' ymcw.c:__ymcw_get_yday()
+ * look there for details */
+	echs_wday_t j01w = ymd_get_wday(y, 1, 1);
+	unsigned int diff = j01w <= w ? w - j01w : 7 + w - j01w;
+
+	/* if W == j01w, the first W is the first yday
+	 * the second W is the 8th yday, etc.
+	 * so the first W is on 1 + diff */
+	if (c > 0) {
+		return 7 * (c - 1) + diff + 1;
+	} else if (c < 0) {
+		/* similarly for negative c,
+		 * there's always the 53rd J01 in Y,
+		 * mapping to the 365th day */
+		unsigned int res = 7U * (53 + c) + diff + 1U;
+
+		switch (diff) {
+		default:
+			break;
+		case 0:
+			return res;
+		case 1:
+			if (UNLIKELY(!(y % 4U)/*leap year*/)) {
+				return res;
+			}
+			break;
+		}
+		return res - 7;
+	}
+	/* otherwise it's bullshit */
+	return 0U;
+}
+
 
 /* recurrence helpers */
+static void
+fill_yly_ywd(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
+{
+	int wk;
+
+	for (bitint_iter_t wki = 0UL;
+	     (wk = bi63_next(&wki, rr->wk), wki);) {
+		/* ywd */
+		int dc;
+
+		for (bitint_iter_t dowi = 0UL;
+		     (dc = bi383_next(&dowi, &rr->dow), dowi);) {
+			struct md_s md;
+			echs_wday_t dow;
+
+			if (dc <= MIR || (dow = (echs_wday_t)dc) > SUN) {
+				continue;
+			} else if (!(md = ywd_to_md(y, wk, dow)).m) {
+				continue;
+			}
+			/* otherwise it's looking good */
+			ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		}
+	}
+	return;
+}
+
+static void
+fill_yly_ymcw(
+	bitint383_t *restrict cand, unsigned int y, rrulsp_t rr,
+	unsigned int m[static 12U], size_t nm)
+{
+	for (size_t i = 0UL; i < nm; i++) {
+		int dc;
+
+		for (bitint_iter_t dowi = 0UL;
+		     (dc = bi383_next(&dowi, &rr->dow), dowi);) {
+			int cnt;
+			unsigned int dom;
+			echs_wday_t dow;
+
+			if (UNLIKELY((cnt = dc / 7) == 0 && dc > 0)) {
+				continue;
+			} else if (cnt == 0) {
+				--cnt;
+			}
+			if ((dow = (echs_wday_t)(dc - cnt * 7)) == MIR) {
+				dow = SUN;
+				cnt--;
+			}
+
+			if (!(dom = ymcw_get_dom(y, m[i], cnt, dow))) {
+				continue;
+			}
+			/* otherwise it's looking good */
+			ass_bi383(cand, (m[i] - 1U) * 32U + dom);
+		}
+	}
+	return;
+}
+
+static void
+fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
+{
+	int dc;
+
+	for (bitint_iter_t dowi = 0UL;
+	     (dc = bi383_next(&dowi, &rr->dow), dowi);) {
+		struct md_s md;
+		unsigned int yd;
+		int cnt;
+		echs_wday_t dow;
+
+		if (UNLIKELY((cnt = dc / 7) == 0 && dc > 0)) {
+			continue;
+		} else if (cnt == 0) {
+			--cnt;
+		}
+		if ((dow = (echs_wday_t)(dc - cnt * 7)) == MIR) {
+			dow = SUN;
+			cnt--;
+		}
+
+		if (!(yd = ycw_get_yday(y, cnt, dow))) {
+			continue;
+		} else if (!(md = yd_to_md(y, yd)).m) {
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+	}
+	return;
+}
+
+static void
+fill_yly_yd(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
+{
+	int yd;
+
+	for (bitint_iter_t doyi = 0UL;
+	     (yd = bi383_next(&doyi, &rr->doy), doyi);) {
+		/* yd */
+		struct md_s md;
+
+		if (!(md = yd_to_md(y, yd)).m) {
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+	}
+	return;
+}
+
+static void
+fill_yly_ymd(
+	bitint383_t *restrict cand, unsigned int y, rrulsp_t UNUSED(rr),
+	unsigned int m[static 12U], size_t nm,
+	int d[static 31U], size_t nd)
+{
+	for (size_t i = 0UL; i < nm; i++) {
+		for (size_t j = 0UL; j < nd; j++) {
+			int dd = d[j];
+
+			if (dd > 0 && (unsigned int)dd <= mdays[m[i]]) {
+				;
+			} else if (dd < 0 &&
+				   mdays[m[i]] + 1U + dd > 0) {
+				dd += mdays[m[i]] + 1U;
+			} else if (UNLIKELY(m[i] == 2U && !(y % 4U))) {
+				/* fix up leap years */
+				switch (dd) {
+				case -29:
+					dd = 1;
+				case 29:
+					break;
+				default:
+					goto invalid;
+				}
+			} else {
+			invalid:
+				continue;
+			}
+
+			/* it's a candidate */
+			ass_bi383(cand, (m[i] - 1U) * 32U + dd);
+		}
+	}
+	return;
+}
+
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	size_t tries = nti;
 	unsigned int y = tgt->y;
 	unsigned int m[12U];
 	size_t nm;
-	int d[12U];
+	int d[31U];
 	size_t nd;
 	size_t res = 0UL;
+	size_t tries;
 	bool ymdp;
 
 	if (UNLIKELY(rr->count < nti)) {
@@ -282,59 +500,25 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* fill up the array the hard way */
-	for (res = 0UL; res < nti && --tries > 0U; y += rr->inter) {
+	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
 		bitint383_t cand = {0U};
 		int yd;
 
-		for (bitint_iter_t wki = 0UL;
-		     (yd = bi63_next(&wki, rr->wk), wki);) {
-			int dow;
-			for (bitint_iter_t dowi = 0UL;
-			     (dow = bi383_next(&dowi, &rr->dow), dowi);) {
-				struct md_s md;
-
-				if (dow <= MIR || dow > SUN) {
-					continue;
-				} else if (!(md = ywd_to_md(y, yd, dow)).m) {
-					continue;
-				}
-				/* otherwise it's looking good */
-				ass_bi383(&cand, (md.m - 1U) * 32U + md.d);
-			}
+		if (bi63_has_bits_p(rr->wk) && bi383_has_bits_p(&rr->dow)) {
+			/* ywd */
+			fill_yly_ywd(&cand, y, rr);
+		} else if (!bi63_has_bits_p(rr->wk) && nm) {
+			/* ymcw */
+			fill_yly_ymcw(&cand, y, rr, m, nm);
+		} else if (!bi63_has_bits_p(rr->wk)) {
+			/* ycw */
+			fill_yly_ycw(&cand, y, rr);
 		}
+		/* extend by yd */
+		fill_yly_yd(&cand, y, rr);
 
-		for (size_t i = 0UL; i < nm; i++) {
-			for (size_t j = 0UL; j < nd; j++) {
-				int dd = d[j];
-
-				if (dd > 0 && (unsigned int)dd <= mdays[m[i]]) {
-					;
-				} else if (dd < 0 &&
-					   mdays[m[i]] + 1U + dd > 0) {
-					dd += mdays[m[i]] + 1U;
-				} else if (UNLIKELY(m[i] == 2U && !(y % 4U))) {
-					/* fix up leap years */
-					switch (dd) {
-					case -29:
-						dd = 1;
-					case 29:
-						break;
-					default:
-						goto invalid;
-					}
-				} else {
-				invalid:
-					if (LIKELY(--tries > 0)) {
-						continue;
-					}
-					goto fin;
-				}
-
-				/* it's a candidate */
-				ass_bi383(&cand, (m[i] - 1U) * 32U + dd);
-				tries = nti;
-			}
-		}
+		/* extend by ymd */
+		fill_yly_ymd(&cand, y, rr, m, nm, d, nd);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
@@ -346,6 +530,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
 				goto fin;
 			}
+			tries = 64U;
 		}
 	}
 fin:

@@ -1,0 +1,40 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_09.ics"
+2000-03-26	YMCW example
+2000-10-29	YMCW example
+2001-03-25	YMCW example
+2001-10-28	YMCW example
+2002-03-31	YMCW example
+2002-10-27	YMCW example
+2003-03-30	YMCW example
+2003-10-26	YMCW example
+2004-03-28	YMCW example
+2004-05-30	YMCW example 2
+2004-10-31	YMCW example
+2005-03-27	YMCW example
+2005-05-29	YMCW example 2
+2005-10-30	YMCW example
+2006-03-26	YMCW example
+2006-10-29	YMCW example
+2007-03-25	YMCW example
+2007-10-28	YMCW example
+2008-03-30	YMCW example
+2008-10-26	YMCW example
+2009-03-29	YMCW example
+2009-05-31	YMCW example 2
+2009-10-25	YMCW example
+2010-03-28	YMCW example
+2010-05-30	YMCW example 2
+2010-10-31	YMCW example
+2011-03-27	YMCW example
+2011-05-29	YMCW example 2
+2011-10-30	YMCW example
+2015-05-31	YMCW example 2
+2016-05-29	YMCW example 2
+2020-05-31	YMCW example 2
+2021-05-30	YMCW example 2
+2022-05-29	YMCW example 2
+2026-05-31	YMCW example 2
+2027-05-30	YMCW example 2
+$
