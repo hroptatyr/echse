@@ -15,7 +15,6 @@ if DESCEND_LIBLTDL
 SUBDIRS += libltdl
 endif  DESCEND_LIBLTDL
 SUBDIRS += src
-SUBDIRS += beef
 SUBDIRS += test
 
 EXTRA_DIST += README.md
