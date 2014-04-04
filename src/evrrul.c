@@ -263,6 +263,44 @@ ywd_to_md(unsigned int y, int w, echs_wday_t d)
 	return res;
 }
 
+static unsigned int
+ycw_get_yday(unsigned int y, int c, echs_wday_t w)
+{
+/* this differs from ywd in that we're actually looking for the C-th
+ * occurrence of W in year Y
+ * this is the inverse of dateutils' ymcw.c:__ymcw_get_yday()
+ * look there for details */
+	echs_wday_t j01w = ymd_get_wday(y, 1, 1);
+	unsigned int diff = j01w <= w ? w - j01w : 7 + w - j01w;
+
+	/* if W == j01w, the first W is the first yday
+	 * the second W is the 8th yday, etc.
+	 * so the first W is on 1 + diff */
+	if (c > 0) {
+		return 7 * (c - 1) + diff + 1;
+	} else if (c < 0) {
+		/* similarly for negative c,
+		 * there's always the 53rd J01 in Y,
+		 * mapping to the 365th day */
+		unsigned int res = 7U * (53 + c) + diff + 1U;
+
+		switch (diff) {
+		default:
+			break;
+		case 0:
+			return res;
+		case 1:
+			if (UNLIKELY(!(y % 4U)/*leap year*/)) {
+				return res;
+			}
+			break;
+		}
+		return res - 7;
+	}
+	/* otherwise it's bullshit */
+	return 0U;
+}
+
 
 /* recurrence helpers */
 static void
@@ -334,18 +372,23 @@ fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
 	for (bitint_iter_t dowi = 0UL;
 	     (dc = bi383_next(&dowi, &rr->dow), dowi);) {
 		struct md_s md;
+		unsigned int yd;
 		int cnt;
 		echs_wday_t dow;
 
-		cnt = --dc / 7;
-		if (UNLIKELY(dc < 0)) {
-			dc = (unsigned int)-dc % 7U;
-		} else {
-			dc = (unsigned int)dc % 7U;
+		if (UNLIKELY((cnt = dc / 7) == 0 && dc > 0)) {
+			continue;
+		} else if (cnt == 0) {
+			--cnt;
 		}
-		dow = (echs_wday_t)(dc + 1U);
+		if ((dow = (echs_wday_t)(dc - cnt * 7)) == MIR) {
+			dow = SUN;
+			cnt--;
+		}
 
-		if (!(md = ywd_to_md(y, cnt, dow)).m) {
+		if (!(yd = ycw_get_yday(y, cnt, dow))) {
+			continue;
+		} else if (!(md = yd_to_md(y, yd)).m) {
 			continue;
 		}
 		/* otherwise it's looking good */
