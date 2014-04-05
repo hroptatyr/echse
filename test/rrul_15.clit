@@ -1,0 +1,76 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_11.ics"
+2000-04-21	Gregorian Easter minus 2
+2000-04-23	Gregorian Easter Sunday/Monday
+2000-04-24	Gregorian Easter Sunday/Monday
+2001-04-13	Gregorian Easter minus 2
+2001-04-15	Gregorian Easter Sunday/Monday
+2001-04-16	Gregorian Easter Sunday/Monday
+2002-03-29	Gregorian Easter minus 2
+2002-03-31	Gregorian Easter Sunday/Monday
+2002-04-01	Gregorian Easter Sunday/Monday
+2003-04-18	Gregorian Easter minus 2
+2003-04-20	Gregorian Easter Sunday/Monday
+2003-04-21	Gregorian Easter Sunday/Monday
+2004-04-09	Gregorian Easter minus 2
+2004-04-11	Gregorian Easter Sunday/Monday
+2004-04-12	Gregorian Easter Sunday/Monday
+2005-03-25	Gregorian Easter minus 2
+2005-03-27	Gregorian Easter Sunday/Monday
+2005-03-28	Gregorian Easter Sunday/Monday
+2006-04-14	Gregorian Easter minus 2
+2006-04-16	Gregorian Easter Sunday/Monday
+2006-04-17	Gregorian Easter Sunday/Monday
+2007-04-06	Gregorian Easter minus 2
+2007-04-08	Gregorian Easter Sunday/Monday
+2007-04-09	Gregorian Easter Sunday/Monday
+2008-03-21	Gregorian Easter minus 2
+2008-03-23	Gregorian Easter Sunday/Monday
+2008-03-24	Gregorian Easter Sunday/Monday
+2009-04-10	Gregorian Easter minus 2
+2009-04-12	Gregorian Easter Sunday/Monday
+2009-04-13	Gregorian Easter Sunday/Monday
+2010-04-02	Gregorian Easter minus 2
+2010-04-04	Gregorian Easter Sunday/Monday
+2010-04-05	Gregorian Easter Sunday/Monday
+2011-04-22	Gregorian Easter minus 2
+2011-04-24	Gregorian Easter Sunday/Monday
+2011-04-25	Gregorian Easter Sunday/Monday
+2012-04-06	Gregorian Easter minus 2
+2012-04-08	Gregorian Easter Sunday/Monday
+2012-04-09	Gregorian Easter Sunday/Monday
+2013-03-29	Gregorian Easter minus 2
+2013-03-31	Gregorian Easter Sunday/Monday
+2013-04-01	Gregorian Easter Sunday/Monday
+2014-04-18	Gregorian Easter minus 2
+2014-04-20	Gregorian Easter Sunday/Monday
+2014-04-21	Gregorian Easter Sunday/Monday
+2015-04-03	Gregorian Easter minus 2
+2015-04-05	Gregorian Easter Sunday/Monday
+2015-04-06	Gregorian Easter Sunday/Monday
+2016-03-25	Gregorian Easter minus 2
+2016-03-27	Gregorian Easter Sunday/Monday
+2016-03-28	Gregorian Easter Sunday/Monday
+2017-04-14	Gregorian Easter minus 2
+2017-04-16	Gregorian Easter Sunday/Monday
+2017-04-17	Gregorian Easter Sunday/Monday
+2018-03-30	Gregorian Easter minus 2
+2018-04-01	Gregorian Easter Sunday/Monday
+2018-04-02	Gregorian Easter Sunday/Monday
+2019-04-19	Gregorian Easter minus 2
+2019-04-21	Gregorian Easter Sunday/Monday
+2019-04-22	Gregorian Easter Sunday/Monday
+2020-04-10	Gregorian Easter minus 2
+2020-04-12	Gregorian Easter Sunday/Monday
+2020-04-13	Gregorian Easter Sunday/Monday
+2021-04-02	Gregorian Easter minus 2
+2021-04-04	Gregorian Easter Sunday/Monday
+2021-04-05	Gregorian Easter Sunday/Monday
+2022-04-15	Gregorian Easter minus 2
+2022-04-17	Gregorian Easter Sunday/Monday
+2022-04-18	Gregorian Easter Sunday/Monday
+2023-04-07	Gregorian Easter minus 2
+2023-04-09	Gregorian Easter Sunday/Monday
+2023-04-10	Gregorian Easter Sunday/Monday
+$
