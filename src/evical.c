@@ -637,7 +637,9 @@ read_ical(const char *fn)
 		}
 	}
 	/* massage result array */
-	a->nev = nve;
+	if (LIKELY(a != NULL)) {
+		a->nev = nve;
+	}
 	/* clean up reader resources */
 	free(line);
 clo:
