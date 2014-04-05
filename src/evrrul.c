@@ -301,6 +301,25 @@ ycw_get_yday(unsigned int y, int c, echs_wday_t w)
 	return 0U;
 }
 
+static unsigned int
+easter_get_yday(unsigned int y)
+{
+/* calculate gregorian easter date */
+	unsigned int a = y % 19U;
+	unsigned int b = y / 4U;
+	unsigned int c = b / 25U + 1;
+	unsigned int d = 3U * c / 4U;
+	unsigned int e;
+
+	e = 19U * a + -((8U * c + 5) / 25U) + d + 15U;
+	e %= 30U;
+	e += (29578U - a - 32U * e) / 1024U;
+	e = e - ((y % 7U) + b - d + e + 2) % 7U;
+	/* e is expressed in terms of Mar, so add the days till 01/Mar
+	 * to obtain the doy */
+	return e + 59 + !(y % 4U);
+}
+
 
 /* recurrence helpers */
 static void
@@ -417,6 +436,31 @@ fill_yly_yd(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
 }
 
 static void
+fill_yly_easter(bitint383_t *restrict cand, unsigned int y, rrulsp_t rr)
+{
+	int offs;
+
+	for (bitint_iter_t easteri = 0UL;
+	     (offs = bi383_next(&easteri, &rr->easter), easteri);) {
+		/* easter offset calendar */
+		unsigned int yd;
+		struct md_s md;
+
+		if (!(yd = easter_get_yday(y))) {
+			continue;
+		} else if (!(yd += offs) || yd > 366) {
+			/* huh? */
+			continue;
+		} else if (!(md = yd_to_md(y, yd)).m) {
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+	}
+	return;
+}
+
+static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y, rrulsp_t UNUSED(rr),
 	unsigned int m[static 12U], size_t nm,
@@ -474,7 +518,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* check if we're ymd only */
 	ymdp = !bi63_has_bits_p(rr->wk) &&
 		!bi383_has_bits_p(&rr->dow) &&
-		!bi383_has_bits_p(&rr->doy);
+		!bi383_has_bits_p(&rr->doy) &&
+		!bi383_has_bits_p(&rr->easter);
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -516,6 +561,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 		/* extend by yd */
 		fill_yly_yd(&cand, y, rr);
+
+		/* extend by easter */
+		fill_yly_easter(&cand, y, rr);
 
 		/* extend by ymd */
 		fill_yly_ymd(&cand, y, rr, m, nm, d, nd);
