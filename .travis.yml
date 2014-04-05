@@ -1,0 +1,8 @@
+language: c
+
+## whitelist
+branches:
+  only:
+    - master
+    - next
+
