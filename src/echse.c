@@ -118,13 +118,27 @@ main(int argc, char *argv[])
 	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
 	} else {
+#if defined HAVE_ANON_STRUCTS_INIT
 		from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+		from = echs_nul_instant();
+		from.y = 2000;
+		from.m = 1;
+		from.d = 1;
+#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->till_arg) {
 		till = dt_strp(argi->till_arg);
 	} else {
+#if defined HAVE_ANON_STRUCTS_INIT
 		till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+		till = echs_nul_instant();
+		till.y = 2037;
+		till.m = 12;
+		till.d = 31;
+#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	switch (argi->cmd) {
