@@ -36,6 +36,10 @@ libechse_la_SOURCES += evrrul.c evrrul.h
 libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += bitint.c bitint.h
 libechse_la_SOURCES += nifty.h
+## 3rd party blake2
+libechse_la_SOURCES += blake2/blake2b.c blake2/blake2.h blake2/blake2-impl.h
+libechse_la_SOURCES += blake2/blake2-config.h
+libechse_la_SOURCES += blake2/blake2b-load-sse2.h blake2/blake2b-load-sse41.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
