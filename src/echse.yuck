@@ -9,3 +9,8 @@ Operate on echse sources.
 Usage: echse merge [FILE]...
 
 Merge echse source FILEs and print resulting stream.
+
+
+Usage: echse genuid [FILE]...
+
+Generate UIDs for ics FILEs.
