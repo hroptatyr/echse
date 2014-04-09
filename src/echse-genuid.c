@@ -103,7 +103,7 @@ echse_fini_genuid(void)
 }
 
 int
-echse_genuid1(const char *fmt, const char *fn)
+echse_genuid1(const char *fmt, const char *fn, bool forcep)
 {
 	size_t fmtz = strlen(fmt);
 	size_t fz = strlen(fn);
@@ -159,7 +159,7 @@ echse_genuid1(const char *fmt, const char *fn)
 		if (!strncmp(line, "BEGIN:VEVENT", 12U)) {
 			seen_uid_p = false;
 		} else if (!strncmp(line, "UID:", 4U)) {
-			if (!seen_uid_p) {
+			if (!seen_uid_p && !forcep) {
 				seen_uid_p = true;
 			} else {
 				continue;

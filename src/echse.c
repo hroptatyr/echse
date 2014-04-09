@@ -107,13 +107,15 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 static int
 cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 {
+	const bool forcep = argi->force_flag;
+	const char *fmt = argi->format_arg ?: "echse/%f/%x@example.com";
 	int rc = 0;
 
 	echse_init_genuid();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
 
-		if (echse_genuid1("echse/%f/%x@gafs,de", fn) < 0) {
+		if (echse_genuid1(fmt, fn, forcep) < 0) {
 			rc++;
 		}
 	}

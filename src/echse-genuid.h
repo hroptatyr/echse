@@ -42,6 +42,6 @@
 extern void echse_init_genuid(void);
 extern void echse_fini_genuid(void);
 
-extern int echse_genuid1(const char *fmt, const char *fn);
+extern int echse_genuid1(const char *fmt, const char *fn, bool forcep);
 
 #endif	/* INCLUDED_echse_genuid_h__h_ */
