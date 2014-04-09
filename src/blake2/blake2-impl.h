@@ -18,9 +18,7 @@
 #include <stdint.h>
 #include "config.h"
 
-#define BLAKE2_IMPL_CAT(x,y) x ## y
-#define BLAKE2_IMPL_EVAL(x,y)  BLAKE2_IMPL_CAT(x,y)
-#define BLAKE2_IMPL_NAME(fun)  BLAKE2_IMPL_EVAL(fun, SUFFIX)
+#define BLAKE2_IMPL_NAME(fun)  fun
 
 static inline uint32_t load32( const void *src )
 {
