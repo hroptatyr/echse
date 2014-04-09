@@ -9,3 +9,13 @@ Operate on echse sources.
 Usage: echse merge [FILE]...
 
 Merge echse source FILEs and print resulting stream.
+
+
+Usage: echse genuid [FILE]...
+
+Generate UIDs for ics FILEs.
+
+  -f, --force       Generate UID lines even if FILE already contains one.
+  --format=SPEC     Use SPEC as format string for UID lines:
+                    %f expands to the current filename,
+                    %x expands to the hash in hex notation
