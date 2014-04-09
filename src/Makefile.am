@@ -56,6 +56,7 @@ libechse_la_built_sources += evrrul-gp.c
 bin_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h echse.yuck
 echse_SOURCES += version.h version.c
+echse_SOURCES += echse-genuid.c echse-genuid.h
 echse_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echse_CPPFLAGS += $(LTDLINCL)
 echse_CPPFLAGS += -DHAVE_VERSION_H
