@@ -40,6 +40,7 @@ libechse_la_SOURCES += nifty.h
 libechse_la_SOURCES += blake2/blake2b.c blake2/blake2.h
 libechse_la_SOURCES += blake2/blake2-impl.h blake2/blake2-config.h
 libechse_la_SOURCES += blake2/blake2b-load-sse2.h blake2/blake2b-load-sse41.h
+libechse_la_SOURCES += blake2/blake2b-round.h
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
