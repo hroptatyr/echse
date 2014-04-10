@@ -93,6 +93,13 @@ ymd_get_wday(unsigned int y, unsigned int m, unsigned int d)
 	return (echs_wday_t)(((unsigned int)res % 7U) ?: SUN);
 }
 
+static __attribute__((const, pure)) echs_wday_t
+yd_get_wday(unsigned int y, unsigned int yd)
+{
+	echs_wday_t j01 = ymd_get_wday(y, 1U, 1U);
+	return (echs_wday_t)(((j01 + --yd) % 7U) ?: SUN);
+}
+
 static int
 __get_mcnt(unsigned int y, unsigned int m, echs_wday_t w)
 {
@@ -419,7 +426,9 @@ fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint383_t *dow)
 }
 
 static void
-fill_yly_yd(bitint383_t *restrict cand, unsigned int y, const bitint383_t *doy)
+fill_yly_yd(
+	bitint383_t *restrict cand, unsigned int y,
+	const bitint383_t *doy, uint8_t wd_mask)
 {
 	int yd;
 
@@ -428,7 +437,12 @@ fill_yly_yd(bitint383_t *restrict cand, unsigned int y, const bitint383_t *doy)
 		/* yd */
 		struct md_s md;
 
-		if (!(md = yd_to_md(y, yd)).m) {
+		if (wd_mask &&
+		    !((wd_mask >> yd_get_wday(y, yd)) & 0b1U)) {
+			/* weekday is masked out */
+			continue;
+		} else if (!(md = yd_to_md(y, yd)).m) {
+			/* something's wrong again */
 			continue;
 		}
 		/* otherwise it's looking good */
@@ -466,7 +480,8 @@ static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
 	unsigned int m[static 12U], size_t nm,
-	int d[static 31U], size_t nd)
+	int d[static 31U], size_t nd,
+	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		for (size_t j = 0UL; j < nd; j++) {
@@ -491,6 +506,11 @@ fill_yly_ymd(
 			invalid:
 				continue;
 			}
+			/* check wd_mask */
+			if (wd_mask &&
+			    !((wd_mask >> ymd_get_wday(y, m[i], dd)) & 0b1U)) {
+				continue;
+			}
 
 			/* it's a candidate */
 			ass_bi383(cand, (m[i] - 1U) * 32U + dd);
@@ -509,6 +529,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t nd;
 	size_t res = 0UL;
 	size_t tries;
+	uint8_t wd_mask = 0U;
 	bool ymdp;
 
 	if (UNLIKELY(rr->count < nti)) {
@@ -545,6 +566,15 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			d[nd++] = tgt->d;
 		}
 	}
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi383_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			}
+		}
+	}
 
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
@@ -562,13 +592,13 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			fill_yly_ycw(&cand, y, &rr->dow);
 		}
 		/* extend by yd */
-		fill_yly_yd(&cand, y, &rr->doy);
+		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
 		/* extend by easter */
 		fill_yly_eastr(&cand, y, &rr->easter);
 
 		/* extend by ymd */
-		fill_yly_ymd(&cand, y, m, nm, d, nd);
+		fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
