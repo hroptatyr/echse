@@ -364,27 +364,15 @@ fill_yly_ymcw(
 	const bitint383_t *dow, unsigned int m[static 12U], size_t nm)
 {
 	for (size_t i = 0UL; i < nm; i++) {
-		int dc;
+		int tmp;
 
 		for (bitint_iter_t dowi = 0UL;
-		     (dc = bi383_next(&dowi, dow), dowi);) {
-			int cnt;
+		     (tmp = bi383_next(&dowi, dow), dowi);) {
 			unsigned int dom;
-			echs_wday_t wd;
+			struct cd_s cd = unpack_cd(tmp);
 
-			if (dc > 0) {
-				if (UNLIKELY((cnt = --dc / 7) == 0)) {
-					continue;
-				}
-				wd = (echs_wday_t)((unsigned int)dc % 7U);
-			} else if (dc < 0) {
-				cnt = ++dc / 7 - 1;
-				wd = (echs_wday_t)((unsigned int)-dc % 7U);
-			} else {
-				/* dc == 0 */
-				continue;
-			}
-			if (!(dom = ymcw_get_dom(y, m[i], cnt, wd))) {
+			if (cd.cnt == 0 ||
+			    !(dom = ymcw_get_dom(y, m[i], cd.cnt, cd.dow))) {
 				continue;
 			}
 			/* otherwise it's looking good */
@@ -397,28 +385,17 @@ fill_yly_ymcw(
 static void
 fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint383_t *dow)
 {
-	int dc;
+	int tmp;
 
 	for (bitint_iter_t dowi = 0UL;
-	     (dc = bi383_next(&dowi, dow), dowi);) {
+	     (tmp = bi383_next(&dowi, dow), dowi);) {
+		struct cd_s cd = unpack_cd(tmp);
 		struct md_s md;
 		unsigned int yd;
-		int cnt;
-		echs_wday_t wd;
 
-		if (dc > 0) {
-			if (UNLIKELY((cnt = --dc / 7) == 0)) {
-				continue;
-			}
-			wd = (echs_wday_t)((unsigned int)dc % 7U);
-		} else if (dc < 0) {
-			cnt = ++dc / 7 - 1;
-			wd = (echs_wday_t)((unsigned int)-dc % 7U);
-		} else {
-			/* dc == 0 */
+		if (cd.cnt == 0) {
 			continue;
-		}
-		if (!(yd = ycw_get_yday(y, cnt, wd))) {
+		} else if (!(yd = ycw_get_yday(y, cd.cnt, cd.dow))) {
 			continue;
 		} else if (!(md = yd_to_md(y, yd)).m) {
 			continue;
