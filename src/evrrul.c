@@ -519,6 +519,49 @@ fill_yly_ymd(
 	return;
 }
 
+static void
+clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
+{
+	bitint383_t res = {0U};
+	bitint_iter_t ci = 0UL;
+	int pos;
+	int prev = 0;
+	unsigned int nbits = 0U;
+
+	if (!bi383_has_bits_p(poss)) {
+		/* nothing to do */
+		return;
+	}
+	for (bitint_iter_t posi = 0UL;
+	     (pos = bi383_next(&posi, poss), posi); prev = pos) {
+		int c = 0;
+
+		if (pos < 0) {
+			if (!nbits) {
+				/* quickly count them bits, singleton */
+				for (bitint_iter_t cnti = 0UL;
+				     (bi383_next(&cnti, cand), cnti); nbits++);
+			}
+			pos = nbits + pos + 1;
+		}
+		if (prev > pos) {
+			/* reset ci */
+			ci = 0UL;
+			prev = 0;
+		}
+		/* just shave bits off of cand */
+		for (int p = pos - prev;
+		     p > 0 && (c = bi383_next(&ci, cand), ci); p--);
+		/* assign if successful */
+		if (LIKELY(c > 0)) {
+			ass_bi383(&res, c);
+		}
+	}
+	/* copy res over */
+	*cand = res;
+	return;
+}
+
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
@@ -599,6 +642,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* extend by ymd */
 		fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
+
+		/* limit by setpos */
+		clr_poss(&cand, &rr->pos);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
