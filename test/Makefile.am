@@ -120,6 +120,7 @@ TESTS += rrul_12.clit
 TESTS += rrul_13.clit
 TESTS += rrul_14.clit
 TESTS += rrul_15.clit
+TESTS += rrul_16.clit
 EXTRA_DIST += sample_03.ics
 EXTRA_DIST += sample_04.ics
 EXTRA_DIST += sample_05.ics
@@ -129,6 +130,7 @@ EXTRA_DIST += sample_08.ics
 EXTRA_DIST += sample_09.ics
 EXTRA_DIST += sample_10.ics
 EXTRA_DIST += sample_11.ics
+EXTRA_DIST += sample_12.ics
 
 
 ## our friendly helpers
