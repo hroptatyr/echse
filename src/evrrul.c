@@ -372,16 +372,18 @@ fill_yly_ymcw(
 			unsigned int dom;
 			echs_wday_t wd;
 
-			if (UNLIKELY((cnt = dc / 7) == 0 && dc > 0)) {
+			if (dc > 0) {
+				if (UNLIKELY((cnt = --dc / 7) == 0)) {
+					continue;
+				}
+				wd = (echs_wday_t)((unsigned int)dc % 7U);
+			} else if (dc < 0) {
+				cnt = ++dc / 7 - 1;
+				wd = (echs_wday_t)((unsigned int)-dc % 7U);
+			} else {
+				/* dc == 0 */
 				continue;
-			} else if (cnt == 0) {
-				--cnt;
 			}
-			if ((wd = (echs_wday_t)(dc - cnt * 7)) == MIR) {
-				wd = SUN;
-				cnt--;
-			}
-
 			if (!(dom = ymcw_get_dom(y, m[i], cnt, wd))) {
 				continue;
 			}
@@ -404,16 +406,18 @@ fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint383_t *dow)
 		int cnt;
 		echs_wday_t wd;
 
-		if (UNLIKELY((cnt = dc / 7) == 0 && dc > 0)) {
+		if (dc > 0) {
+			if (UNLIKELY((cnt = --dc / 7) == 0)) {
+				continue;
+			}
+			wd = (echs_wday_t)((unsigned int)dc % 7U);
+		} else if (dc < 0) {
+			cnt = ++dc / 7 - 1;
+			wd = (echs_wday_t)((unsigned int)-dc % 7U);
+		} else {
+			/* dc == 0 */
 			continue;
-		} else if (cnt == 0) {
-			--cnt;
 		}
-		if ((wd = (echs_wday_t)(dc - cnt * 7)) == MIR) {
-			wd = SUN;
-			cnt--;
-		}
-
 		if (!(yd = ycw_get_yday(y, cnt, wd))) {
 			continue;
 		} else if (!(md = yd_to_md(y, yd)).m) {
