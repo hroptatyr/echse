@@ -1,0 +1,20 @@
+#!/usr/bin/clitors  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_13.ics"
+2001-12-24	Some December Monday
+2003-12-22	Some December Monday
+2004-02-29	Some February Leap Sunday
+2004-02-29	60th Day And Sunday
+2004-12-20	Some December Monday
+2007-12-24	Some December Monday
+2008-12-22	Some December Monday
+2009-03-01	60th Day And Sunday
+2010-12-20	Some December Monday
+2012-12-24	Some December Monday
+2014-12-22	Some December Monday
+2015-03-01	60th Day And Sunday
+2018-12-24	Some December Monday
+2021-12-20	Some December Monday
+2026-03-01	60th Day And Sunday
+2032-02-29	Some February Leap Sunday
+$
