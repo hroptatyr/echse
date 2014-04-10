@@ -332,7 +332,7 @@ easter_get_yday(unsigned int y)
 static void
 fill_yly_ywd(
 	bitint383_t *restrict cand, unsigned int y,
-	const bitint63_t woy, const bitint383_t *dow)
+	const bitint63_t woy, const bitint447_t *dow)
 {
 	int wk;
 
@@ -342,7 +342,7 @@ fill_yly_ywd(
 		int dc;
 
 		for (bitint_iter_t dowi = 0UL;
-		     (dc = bi383_next(&dowi, dow), dowi);) {
+		     (dc = bi447_next(&dowi, dow), dowi);) {
 			struct md_s md;
 			echs_wday_t wd;
 
@@ -361,13 +361,13 @@ fill_yly_ywd(
 static void
 fill_yly_ymcw(
 	bitint383_t *restrict cand, unsigned int y,
-	const bitint383_t *dow, unsigned int m[static 12U], size_t nm)
+	const bitint447_t *dow, unsigned int m[static 12U], size_t nm)
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		int tmp;
 
 		for (bitint_iter_t dowi = 0UL;
-		     (tmp = bi383_next(&dowi, dow), dowi);) {
+		     (tmp = bi447_next(&dowi, dow), dowi);) {
 			unsigned int dom;
 			struct cd_s cd = unpack_cd(tmp);
 
@@ -383,12 +383,12 @@ fill_yly_ymcw(
 }
 
 static void
-fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint383_t *dow)
+fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint447_t *dow)
 {
 	int tmp;
 
 	for (bitint_iter_t dowi = 0UL;
-	     (tmp = bi383_next(&dowi, dow), dowi);) {
+	     (tmp = bi447_next(&dowi, dow), dowi);) {
 		struct cd_s cd = unpack_cd(tmp);
 		struct md_s md;
 		unsigned int yd;
@@ -564,7 +564,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 	/* check if we're ymd only */
 	ymdp = !bi63_has_bits_p(rr->wk) &&
-		!bi383_has_bits_p(&rr->dow) &&
+		!bi447_has_bits_p(&rr->dow) &&
 		!bi383_has_bits_p(&rr->doy) &&
 		!bi383_has_bits_p(&rr->easter);
 
@@ -593,7 +593,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* set up the wday mask */
 	with (int tmp) {
 		for (bitint_iter_t dowi = 0UL;
-		     (tmp = bi383_next(&dowi, &rr->dow), dowi);) {
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
 			if (tmp >= (int)MON && tmp <= (int)SUN) {
 				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
 			}
@@ -605,7 +605,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		bitint383_t cand = {0U};
 		int yd;
 
-		if (bi63_has_bits_p(rr->wk) && bi383_has_bits_p(&rr->dow)) {
+		if (bi63_has_bits_p(rr->wk) && bi447_has_bits_p(&rr->dow)) {
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
 		} else if (!bi63_has_bits_p(rr->wk) && nm) {

@@ -148,7 +148,7 @@ struct rrulsp_s {
 
 	/* we'll store mon->1, tue->2, ..., 1mon->8, 2mon->15, ...
 	 * -1mon->-1, -1tue->-2, ..., -2mon->-8, -3mon->-15, ... */
-	bitint383_t dow;
+	bitint447_t dow;
 
 	bituint31_t mon;
 	bitint63_t wk;

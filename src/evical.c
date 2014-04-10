@@ -358,7 +358,7 @@ snarf_rrule(const char *s, size_t z)
 					continue;
 				}
 				/* otherwise assign */
-				ass_bi383(&rr.dow, pack_cd(CD(tmp, w)));
+				ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 			} while ((kv = strchr(on, ',')) != NULL);
 			break;
 		case BY_MON:
