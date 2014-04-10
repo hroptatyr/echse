@@ -64,6 +64,11 @@ typedef struct {
 	int32_t neg[12U];
 } bitint383_t;
 
+typedef struct {
+	uint32_t pos[14U];
+	int32_t neg[14U];
+} bitint447_t;
+
 /**
  * Assign X to bitset/integer BI. */
 extern void ass_bi383(bitint383_t *restrict bi, int x);
@@ -71,6 +76,14 @@ extern void ass_bi383(bitint383_t *restrict bi, int x);
 /**
  * Iterate over integers in BI. */
 extern int bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi);
+
+/**
+ * Assign X to bitset/integer BI. */
+extern void ass_bi447(bitint447_t *restrict bi, int x);
+
+/**
+ * Iterate over integers in BI. */
+extern int bi447_next(bitint_iter_t *restrict iter, const bitint447_t *bi);
 
 
 /**
@@ -197,6 +210,12 @@ bi63_has_bits_p(bitint63_t bi)
 
 static inline bool
 bi383_has_bits_p(const bitint383_t bi[static 1U])
+{
+	return *bi->pos != 0U;
+}
+
+static inline bool
+bi447_has_bits_p(const bitint447_t bi[static 1U])
 {
 	return *bi->pos != 0U;
 }

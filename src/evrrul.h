@@ -148,7 +148,7 @@ struct rrulsp_s {
 
 	/* we'll store mon->1, tue->2, ..., 1mon->8, 2mon->15, ...
 	 * -1mon->-1, -1tue->-2, ..., -2mon->-8, -3mon->-15, ... */
-	bitint383_t dow;
+	bitint447_t dow;
 
 	bituint31_t mon;
 	bitint63_t wk;
@@ -160,11 +160,31 @@ struct rrulsp_s {
 	bitint383_t easter;
 };
 
+struct cd_s {
+	int cnt;
+	echs_wday_t dow;
+};
+
 
 extern echs_evstrm_t
 echs_yearly(evrrul_param_t param, echs_mon_t mon, unsigned int dom);
 
 extern size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
+
+
+#define CD(args...)	((struct cd_s){args})
+
+static inline int
+pack_cd(struct cd_s cd)
+{
+	return (cd.cnt << 3) | cd.dow;
+}
+
+static inline struct cd_s
+unpack_cd(int cd)
+{
+	return (struct cd_s){cd >> 3, (echs_wday_t)(cd & 0b111U)};
+}
 
 #endif	/* INCLUDED_evrrul_h_ */
