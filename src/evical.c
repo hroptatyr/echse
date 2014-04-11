@@ -744,6 +744,16 @@ make_evrrul(const struct ical_vevent_s *ve)
 	res->ve = *ve;
 	res->rdi = 0UL;
 	res->ncch = 0UL;
+
+	/* copy the proto instant from the proto event */
+	for (size_t i = 0U; i < ve->rr.nr; i++) {
+		struct rrulsp_s *restrict rr;
+
+		if (UNLIKELY((rr = get_grr(ve->rr.r + i)) == NULL)) {
+			continue;
+		}
+		rr->proto = ve->ev.from;
+	}
 	return (echs_evstrm_t)res;
 }
 
@@ -787,20 +797,9 @@ refill(struct evrrul_s *restrict strm)
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
 	const size_t nr = strm->ve.rr.nr;
-	echs_instant_t proto;
 
 	if (UNLIKELY(nr == 0UL)) {
 		return 0UL;
-	} else if (strm->ncch) {
-		/* preset with last event */
-		proto = strm->cch[strm->ncch];
-	} else {
-		/* preset with the proto event */
-		proto = strm->ve.ev.from;
-	}
-	/* fill up with the proto instant */
-	for (size_t i = 0U; i < countof(strm->cch); i++) {
-		strm->cch[i] = proto;
 	}
 
 	/* now go and see who can help us */
@@ -816,10 +815,19 @@ refill(struct evrrul_s *restrict strm)
 		} else if (UNLIKELY(!rr->count)) {
 			continue;
 		}
+
+		/* get cache buffer and size */
 		cch = strm->cch + strm->ncch;
 		ncch = nleft / (nr - i);
+
+		/* fill up with the proto instant */
+		for (size_t j = 0U; j < ncch; j++) {
+			cch[j] = rr->proto;
+		}
+
 		switch (rr->freq) {
 		default:
+			nf = 0UL;
 			break;
 
 		case FREQ_YEARLY:
@@ -833,6 +841,7 @@ refill(struct evrrul_s *restrict strm)
 		} else {
 			/* update the rrule to the partial set we've got */
 			rr->count -= --nf;
+			rr->proto = cch[nf];
 		}
 		nleft -= nf;
 		strm->ncch += nf;
