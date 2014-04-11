@@ -786,12 +786,10 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	struct rrulsp_s *restrict rr;
+	const size_t nr = strm->ve.rr.nr;
 	echs_instant_t proto;
 
-	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
-		return 0UL;
-	} else if (UNLIKELY(rr->freq == FREQ_NONE)) {
+	if (UNLIKELY(nr == 0UL)) {
 		return 0UL;
 	} else if (strm->ncch) {
 		/* preset with last event */
@@ -806,25 +804,41 @@ refill(struct evrrul_s *restrict strm)
 	}
 
 	/* now go and see who can help us */
-	switch (rr->freq) {
-	default:
-		break;
+	strm->ncch = 0UL;
+	for (size_t i = 0UL, nleft = countof(strm->cch); i < nr; i++) {
+		struct rrulsp_s *restrict rr;
+		echs_instant_t *restrict cch;
+		size_t ncch;
+		size_t nf;
 
-	case FREQ_YEARLY:
-		/* easiest */
-		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
-		break;
-	}
+		if (UNLIKELY((rr = get_grr(strm->ve.rr.r + i)) == NULL)) {
+			continue;
+		} else if (UNLIKELY(!rr->count)) {
+			continue;
+		}
+		cch = strm->cch + strm->ncch;
+		ncch = nleft / (nr - i);
+		switch (rr->freq) {
+		default:
+			break;
 
-	if (LIKELY(strm->ncch)) {
-		echs_instant_sort(strm->cch, strm->ncch);
+		case FREQ_YEARLY:
+			/* easiest */
+			nf = rrul_fill_yly(cch, ncch, rr);
+			break;
+		}
 
-		if (strm->ncch < countof(strm->cch)) {
+		if (nf < ncch) {
 			rr->count = 0;
 		} else {
 			/* update the rrule to the partial set we've got */
-			rr->count -= --strm->ncch;
+			rr->count -= --nf;
 		}
+		nleft -= nf;
+		strm->ncch += nf;
+	}
+	if (LIKELY(strm->ncch)) {
+		echs_instant_sort(strm->cch, strm->ncch);
 	}
 	return strm->ncch;
 }
