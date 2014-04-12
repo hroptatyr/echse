@@ -1,0 +1,19 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse merge "${srcdir}/sample_16.ics" --till 2014-12-31
+2000-05-29	Spring Bank Holiday
+2001-05-28	Spring Bank Holiday
+2002-05-27	Spring Bank Holiday
+2003-05-26	Spring Bank Holiday
+2004-05-31	Spring Bank Holiday
+2005-05-30	Spring Bank Holiday
+2006-05-29	Spring Bank Holiday
+2007-05-28	Spring Bank Holiday
+2008-05-26	Spring Bank Holiday
+2009-05-25	Spring Bank Holiday
+2010-05-31	Spring Bank Holiday
+2011-05-30	Spring Bank Holiday
+2012-06-04	Spring Bank Holiday (in-lieu of 2012-05-28)
+2013-05-27	Spring Bank Holiday
+2014-05-26	Spring Bank Holiday
+$

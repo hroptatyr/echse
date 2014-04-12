@@ -192,13 +192,13 @@ add_to_gxd(struct dtlst_s xdlst)
 	return res;
 }
 
-static echs_instant_t
+static echs_instant_t*
 get_gxd(goptr_t d)
 {
 	if (UNLIKELY(gxd == NULL)) {
-		return echs_nul_instant();
+		return NULL;
 	}
-	return gxd[d];
+	return gxd + d;
 }
 
 static goptr_t
@@ -212,15 +212,6 @@ add_to_grd(struct dtlst_s rdlst)
 	memcpy(grd + ngrd, dp, nd * sizeof(*dp));
 	res = ngrd, ngrd += nd;
 	return res;
-}
-
-static echs_instant_t
-get_grd(goptr_t d)
-{
-	if (UNLIKELY(grd == NULL)) {
-		return echs_nul_instant();
-	}
-	return grd[d];
 }
 
 
@@ -853,8 +844,29 @@ refill(struct evrrul_s *restrict strm)
 		rr->count -= --strm->ncch;
 		strm->ve.ev.from = strm->cch[strm->ncch];
 	}
-	if (LIKELY(strm->ncch)) {
-		echs_instant_sort(strm->cch, strm->ncch);
+	if (UNLIKELY(strm->ncch == 0UL)) {
+		return 0UL;
+	}
+	/* otherwise sort the array, just in case */
+	echs_instant_sort(strm->cch, strm->ncch);
+
+	/* also check if we need to rid some dates due to xdates */
+	if (UNLIKELY(strm->ve.xd.ndt > 0UL)) {
+		const echs_instant_t *xd = get_gxd(strm->ve.xd.dt);
+		echs_instant_t *restrict rd = strm->cch;
+		const echs_instant_t *const exd = xd + strm->ve.xd.ndt;
+		const echs_instant_t *const erd = rd + strm->ncch;
+
+		assert(xd != NULL);
+		for (; xd < exd; xd++, rd++) {
+			/* fast forward to xd (we assume it's sorted) */
+			for (; rd < erd && echs_instant_lt_p(*rd, *xd); rd++);
+			/* now we're either on xd or past it */
+			if (echs_instant_eq_p(*rd, *xd)) {
+				/* leave rd out then */
+				*rd = echs_nul_instant();
+			}
+		}
 	}
 	return strm->ncch;
 }
@@ -868,6 +880,7 @@ next_evrrul(echs_evstrm_t s)
 
 	/* it's easier when we just have some precalc'd rdates */
 	if (this->rdi >= this->ncch) {
+	refill:
 		/* we have to refill the rdate cache */
 		if (refill(this) == 0UL) {
 			goto nul;
@@ -876,7 +889,12 @@ next_evrrul(echs_evstrm_t s)
 		this->rdi = 0U;
 	}
 	/* get the starting instant */
-	in = this->cch[this->rdi++];
+	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi++]))) {
+		/* we might have run out of steam */
+		if (UNLIKELY(this->rdi >= this->ncch)) {
+			goto refill;
+		}
+	}
 	/* construct the result */
 	res = this->ve.ev;
 	res.from = in;
@@ -904,17 +922,27 @@ make_echs_evical(const char *fn)
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
 		for (size_t i = 0U; i < a->nev; i++) {
-			if (a->ev[i].rr.nr || a->ev[i].rd.ndt) {
-				/* it's an rrule, we won't check for
-				 * exdates or exrules because they make
-				 * no sense without an rrule to go with */
-				echs_evstrm_t tmp;
+			const struct ical_vevent_s *ve = a->ev + i;
+			echs_evstrm_t tmp;
+			echs_instant_t *xd;
 
-				if ((tmp = make_evrrul(a->ev + i)) != NULL) {
-					s[ns++] = tmp;
-				}
-			} else {
+			if (!ve->rr.nr && !ve->rd.ndt) {
+				/* not an rrule but a normal vevent
+				 * just him to the list */
 				ev[nev++] = a->ev[i].ev;
+				continue;
+			}
+			/* it's an rrule, we won't check for
+			 * exdates or exrules because they make
+			 * no sense without an rrule to go with */
+			/* check for exdates here, and sort them */
+			if (UNLIKELY(ve->xd.ndt > 1UL &&
+				     (xd = get_gxd(ve->xd.dt)) != NULL)) {
+				echs_instant_sort(xd, ve->xd.ndt);
+			}
+
+			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
+				s[ns++] = tmp;
 			}
 		}
 
