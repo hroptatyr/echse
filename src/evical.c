@@ -54,6 +54,10 @@
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 
+#if !defined assert
+# define assert(x)
+#endif	/* !assert */
+
 typedef struct vearr_s *vearr_t;
 typedef uintptr_t goptr_t;
 
@@ -736,7 +740,7 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-make_evrrul(const struct ical_vevent_s *ve)
+__make_evrrul(const struct ical_vevent_s *ve)
 {
 	struct evrrul_s *res = malloc(sizeof(*res));
 
@@ -745,6 +749,36 @@ make_evrrul(const struct ical_vevent_s *ve)
 	res->rdi = 0UL;
 	res->ncch = 0UL;
 	return (echs_evstrm_t)res;
+}
+
+static echs_evstrm_t
+make_evrrul(const struct ical_vevent_s *ve)
+{
+	switch (ve->rr.nr) {
+	case 0:
+		return NULL;
+	case 1:
+		return __make_evrrul(ve);
+	default:
+		break;
+	}
+	with (echs_evstrm_t s[ve->rr.nr]) {
+		size_t nr = 0UL;
+
+		for (size_t i = 0U; i < ve->rr.nr; i++) {
+			struct ical_vevent_s ve_tmp = *ve;
+
+			if (UNLIKELY(ve_tmp.rr.nr == 0UL)) {
+				continue;
+			}
+			ve_tmp.rr.r += i;
+			ve_tmp.rr.nr = 1U;
+			s[nr++] = __make_evrrul(&ve_tmp);
+		}
+
+		return make_echs_evmux(s, nr);
+	}
+	return NULL;
 }
 
 static void
@@ -787,27 +821,23 @@ refill(struct evrrul_s *restrict strm)
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
 	struct rrulsp_s *restrict rr;
-	echs_instant_t proto;
 
+	assert(strm->vr.rr.nr > 0UL);
 	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
 		return 0UL;
-	} else if (UNLIKELY(rr->freq == FREQ_NONE)) {
+	} else if (UNLIKELY(!rr->count)) {
 		return 0UL;
-	} else if (strm->ncch) {
-		/* preset with last event */
-		proto = strm->cch[strm->ncch];
-	} else {
-		/* preset with the proto event */
-		proto = strm->ve.ev.from;
 	}
+
 	/* fill up with the proto instant */
-	for (size_t i = 0U; i < countof(strm->cch); i++) {
-		strm->cch[i] = proto;
+	for (size_t j = 0U; j < countof(strm->cch); j++) {
+		strm->cch[j] = strm->ve.ev.from;
 	}
 
 	/* now go and see who can help us */
 	switch (rr->freq) {
 	default:
+		strm->ncch = 0UL;
 		break;
 
 	case FREQ_YEARLY:
@@ -816,15 +846,15 @@ refill(struct evrrul_s *restrict strm)
 		break;
 	}
 
+	if (strm->ncch < countof(strm->cch)) {
+		rr->count = 0;
+	} else {
+		/* update the rrule to the partial set we've got */
+		rr->count -= --strm->ncch;
+		strm->ve.ev.from = strm->cch[strm->ncch];
+	}
 	if (LIKELY(strm->ncch)) {
 		echs_instant_sort(strm->cch, strm->ncch);
-
-		if (strm->ncch < countof(strm->cch)) {
-			rr->count = 0;
-		} else {
-			/* update the rrule to the partial set we've got */
-			rr->count -= --strm->ncch;
-		}
 	}
 	return strm->ncch;
 }
