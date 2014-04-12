@@ -192,13 +192,13 @@ add_to_gxd(struct dtlst_s xdlst)
 	return res;
 }
 
-static echs_instant_t
+static echs_instant_t*
 get_gxd(goptr_t d)
 {
 	if (UNLIKELY(gxd == NULL)) {
-		return echs_nul_instant();
+		return NULL;
 	}
-	return gxd[d];
+	return gxd + d;
 }
 
 static goptr_t
@@ -212,15 +212,6 @@ add_to_grd(struct dtlst_s rdlst)
 	memcpy(grd + ngrd, dp, nd * sizeof(*dp));
 	res = ngrd, ngrd += nd;
 	return res;
-}
-
-static echs_instant_t
-get_grd(goptr_t d)
-{
-	if (UNLIKELY(grd == NULL)) {
-		return echs_nul_instant();
-	}
-	return grd[d];
 }
 
 
@@ -904,17 +895,27 @@ make_echs_evical(const char *fn)
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
 		for (size_t i = 0U; i < a->nev; i++) {
-			if (a->ev[i].rr.nr || a->ev[i].rd.ndt) {
-				/* it's an rrule, we won't check for
-				 * exdates or exrules because they make
-				 * no sense without an rrule to go with */
-				echs_evstrm_t tmp;
+			const struct ical_vevent_s *ve = a->ev + i;
+			echs_evstrm_t tmp;
+			echs_instant_t *xd;
 
-				if ((tmp = make_evrrul(a->ev + i)) != NULL) {
-					s[ns++] = tmp;
-				}
-			} else {
+			if (!ve->rr.nr && !ve->rd.ndt) {
+				/* not an rrule but a normal vevent
+				 * just him to the list */
 				ev[nev++] = a->ev[i].ev;
+				continue;
+			}
+			/* it's an rrule, we won't check for
+			 * exdates or exrules because they make
+			 * no sense without an rrule to go with */
+			/* check for exdates here, and sort them */
+			if (UNLIKELY(ve->xd.ndt > 1UL &&
+				     (xd = get_gxd(ve->xd.dt)) != NULL)) {
+				echs_instant_sort(xd, ve->xd.ndt);
+			}
+
+			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
+				s[ns++] = tmp;
 			}
 		}
 
