@@ -844,8 +844,29 @@ refill(struct evrrul_s *restrict strm)
 		rr->count -= --strm->ncch;
 		strm->ve.ev.from = strm->cch[strm->ncch];
 	}
-	if (LIKELY(strm->ncch)) {
-		echs_instant_sort(strm->cch, strm->ncch);
+	if (UNLIKELY(strm->ncch == 0UL)) {
+		return 0UL;
+	}
+	/* otherwise sort the array, just in case */
+	echs_instant_sort(strm->cch, strm->ncch);
+
+	/* also check if we need to rid some dates due to xdates */
+	if (UNLIKELY(strm->ve.xd.ndt > 0UL)) {
+		const echs_instant_t *xd = get_gxd(strm->ve.xd.dt);
+		echs_instant_t *restrict rd = strm->cch;
+		const echs_instant_t *const exd = xd + strm->ve.xd.ndt;
+		const echs_instant_t *const erd = rd + strm->ncch;
+
+		assert(xd != NULL);
+		for (; xd < exd; xd++, rd++) {
+			/* fast forward to xd (we assume it's sorted) */
+			for (; rd < erd && echs_instant_lt_p(*rd, *xd); rd++);
+			/* now we're either on xd or past it */
+			if (echs_instant_eq_p(*rd, *xd)) {
+				/* leave rd out then */
+				*rd = echs_nul_instant();
+			}
+		}
 	}
 	return strm->ncch;
 }
@@ -859,6 +880,7 @@ next_evrrul(echs_evstrm_t s)
 
 	/* it's easier when we just have some precalc'd rdates */
 	if (this->rdi >= this->ncch) {
+	refill:
 		/* we have to refill the rdate cache */
 		if (refill(this) == 0UL) {
 			goto nul;
@@ -867,7 +889,12 @@ next_evrrul(echs_evstrm_t s)
 		this->rdi = 0U;
 	}
 	/* get the starting instant */
-	in = this->cch[this->rdi++];
+	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi++]))) {
+		/* we might have run out of steam */
+		if (UNLIKELY(this->rdi >= this->ncch)) {
+			goto refill;
+		}
+	}
 	/* construct the result */
 	res = this->ve.ev;
 	res.from = in;
