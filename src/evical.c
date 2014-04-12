@@ -54,6 +54,10 @@
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 
+#if !defined assert
+# define assert(x)
+#endif	/* !assert */
+
 typedef struct vearr_s *vearr_t;
 typedef uintptr_t goptr_t;
 
@@ -736,7 +740,7 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-make_evrrul(const struct ical_vevent_s *ve)
+__make_evrrul(const struct ical_vevent_s *ve)
 {
 	struct evrrul_s *res = malloc(sizeof(*res));
 
@@ -744,17 +748,37 @@ make_evrrul(const struct ical_vevent_s *ve)
 	res->ve = *ve;
 	res->rdi = 0UL;
 	res->ncch = 0UL;
-
-	/* copy the proto instant from the proto event */
-	for (size_t i = 0U; i < ve->rr.nr; i++) {
-		struct rrulsp_s *restrict rr;
-
-		if (UNLIKELY((rr = get_grr(ve->rr.r + i)) == NULL)) {
-			continue;
-		}
-		rr->proto = ve->ev.from;
-	}
 	return (echs_evstrm_t)res;
+}
+
+static echs_evstrm_t
+make_evrrul(const struct ical_vevent_s *ve)
+{
+	switch (ve->rr.nr) {
+	case 0:
+		return NULL;
+	case 1:
+		return __make_evrrul(ve);
+	default:
+		break;
+	}
+	with (echs_evstrm_t s[ve->rr.nr]) {
+		size_t nr = 0UL;
+
+		for (size_t i = 0U; i < ve->rr.nr; i++) {
+			struct ical_vevent_s ve_tmp = *ve;
+
+			if (UNLIKELY(ve_tmp.rr.nr == 0UL)) {
+				continue;
+			}
+			ve_tmp.rr.r += i;
+			ve_tmp.rr.nr = 1U;
+			s[nr++] = __make_evrrul(&ve_tmp);
+		}
+
+		return make_echs_evmux(s, nr);
+	}
+	return NULL;
 }
 
 static void
@@ -796,55 +820,38 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	const size_t nr = strm->ve.rr.nr;
+	struct rrulsp_s *restrict rr;
 
-	if (UNLIKELY(nr == 0UL)) {
+	assert(strm->vr.rr.nr > 0UL);
+	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
+		return 0UL;
+	} else if (UNLIKELY(!rr->count)) {
 		return 0UL;
 	}
 
+	/* fill up with the proto instant */
+	for (size_t j = 0U; j < countof(strm->cch); j++) {
+		strm->cch[j] = strm->ve.ev.from;
+	}
+
 	/* now go and see who can help us */
-	strm->ncch = 0UL;
-	for (size_t i = 0UL, nleft = countof(strm->cch); i < nr; i++) {
-		struct rrulsp_s *restrict rr;
-		echs_instant_t *restrict cch;
-		size_t ncch;
-		size_t nf;
+	switch (rr->freq) {
+	default:
+		strm->ncch = 0UL;
+		break;
 
-		if (UNLIKELY((rr = get_grr(strm->ve.rr.r + i)) == NULL)) {
-			continue;
-		} else if (UNLIKELY(!rr->count)) {
-			continue;
-		}
+	case FREQ_YEARLY:
+		/* easiest */
+		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		break;
+	}
 
-		/* get cache buffer and size */
-		cch = strm->cch + strm->ncch;
-		ncch = nleft / (nr - i);
-
-		/* fill up with the proto instant */
-		for (size_t j = 0U; j < ncch; j++) {
-			cch[j] = rr->proto;
-		}
-
-		switch (rr->freq) {
-		default:
-			nf = 0UL;
-			break;
-
-		case FREQ_YEARLY:
-			/* easiest */
-			nf = rrul_fill_yly(cch, ncch, rr);
-			break;
-		}
-
-		if (nf < ncch) {
-			rr->count = 0;
-		} else {
-			/* update the rrule to the partial set we've got */
-			rr->count -= --nf;
-			rr->proto = cch[nf];
-		}
-		nleft -= nf;
-		strm->ncch += nf;
+	if (strm->ncch < countof(strm->cch)) {
+		rr->count = 0;
+	} else {
+		/* update the rrule to the partial set we've got */
+		rr->count -= --strm->ncch;
+		strm->ve.ev.from = strm->cch[strm->ncch];
 	}
 	if (LIKELY(strm->ncch)) {
 		echs_instant_sort(strm->cch, strm->ncch);

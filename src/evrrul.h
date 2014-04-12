@@ -138,8 +138,6 @@ typedef struct {
 } evrrul_param_t;
 
 struct rrulsp_s {
-	echs_instant_t proto;
-
 	echs_freq_t freq;
 	unsigned int count;
 	unsigned int inter;
