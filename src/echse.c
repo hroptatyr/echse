@@ -43,12 +43,30 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <time.h>
 
 #include "echse.h"
 #include "echse-genuid.h"
 #include "dt-strpf.h"
 #include "nifty.h"
+
+
+static __attribute__((format(printf, 1, 2))) void
+serror(const char *fmt, ...)
+{
+	va_list vap;
+	va_start(vap, fmt);
+	vfprintf(stderr, fmt, vap);
+	va_end(vap);
+	if (errno) {
+		fputc(':', stderr);
+		fputc(' ', stderr);
+		fputs(strerror(errno), stderr);
+	}
+	fputc('\n', stderr);
+	return;
+}
 
 
 #if defined STANDALONE
@@ -71,9 +89,12 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 			const char *fn = argi->args[i];
 			echs_evstrm_t s = make_echs_evstrm_from_file(fn);
 
-			if (LIKELY(s != NULL)) {
-				sarr[ns++] = s;
+			if (UNLIKELY(s == NULL)) {
+				serror("\
+echse: Error: cannot open file `%s'", fn);
+				continue;
 			}
+			sarr[ns++] = s;
 		}
 		/* now mux them all into one */
 		smux = echs_evstrm_vmux(sarr, ns);
