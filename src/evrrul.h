@@ -158,6 +158,7 @@ struct rrulsp_s {
 
 	bitint383_t pos;
 	bitint383_t easter;
+	bitint383_t add;
 };
 
 struct cd_s {
