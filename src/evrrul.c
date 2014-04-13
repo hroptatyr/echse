@@ -327,6 +327,18 @@ easter_get_yday(unsigned int y)
 	return e + 59 + !(y % 4U);
 }
 
+static unsigned int
+pack_cand(unsigned int m, unsigned int d)
+{
+	return (--m) * 32U + d;
+}
+
+static struct md_s
+unpack_cand(unsigned int c)
+{
+	return (struct md_s){c / 32U + 1U, c % 32U};
+}
+
 
 /* recurrence helpers */
 static void
@@ -352,7 +364,7 @@ fill_yly_ywd(
 				continue;
 			}
 			/* otherwise it's looking good */
-			ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+			ass_bi383(cand, pack_cand(md.m, md.d));
 		}
 	}
 	return;
@@ -376,7 +388,7 @@ fill_yly_ymcw(
 				continue;
 			}
 			/* otherwise it's looking good */
-			ass_bi383(cand, (m[i] - 1U) * 32U + dom);
+			ass_bi383(cand, pack_cand(m[i], dom));
 		}
 	}
 	return;
@@ -401,7 +413,7 @@ fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint447_t *dow)
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -427,7 +439,7 @@ fill_yly_yd(
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -452,7 +464,7 @@ fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -494,7 +506,7 @@ fill_yly_ymd(
 			}
 
 			/* it's a candidate */
-			ass_bi383(cand, (m[i] - 1U) * 32U + dd);
+			ass_bi383(cand, pack_cand(m[i], dd));
 		}
 	}
 	return;
