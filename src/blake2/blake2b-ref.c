@@ -277,7 +277,7 @@ static int blake2b_compress( blake2b_state *S, const uint8_t block[BLAKE2B_BLOCK
 }
 
 /* inlen now in bytes */
-int blake2b_update( blake2b_state *S, const uint8_t *in, uint64_t inlen )
+int blake2b_update( blake2b_state *S, const uint8_t *in, size_t inlen )
 {
   while( inlen > 0 )
   {
