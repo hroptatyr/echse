@@ -17,19 +17,33 @@ ass_bs(bitint_t *restrict bi, int x)
 static void
 ass_int(bitint_t *restrict bi, int x)
 {
+/* perform an insertion sort, with the special order
+ * defined by the iterator, also use that sortedness
+ * to check for dupes */
 	/* i is our candidate now, yay */
 	size_t i = *bi->pos >> 1U;
+	size_t j;
 
-	/* just store it here and get on with life
-	 * check for dupes though */
-	for (size_t j = 0U; j < i; j++) {
-		if (UNLIKELY(bi->neg[j] == x)) {
-			/* dupe, bugger off */
-			return;
-		}
+	if (x >= 0) {
+		for (j = 0UL; j < i && bi->neg[j] >= 0 && bi->neg[j] < x; j++);
+	} else {
+		for (j = 0UL; j < i && bi->neg[j] > x; j++);
 	}
+	/* now there's either j == i, in which case there's
+	 * trivially no dupes, or j < i, then there's no
+	 * dupes iff bi->neg[j] != x */
+	if (j < i && UNLIKELY(bi->neg[j] == x)) {
+		/* dupe, just get on with life */
+		return;
+	} else if (j < i) {
+		/* move the bobs >= j one slot further down the road */
+		const size_t nmv = (i - j) * sizeof(*bi->neg);
+		memmove(bi->neg + j + 1U, bi->neg + j, nmv);
+	}
+	/* now it's trivial, just insert at i == j */
+	bi->neg[j] = x;
+	/* ... and up the counter */
 	*bi->pos += 2U;
-	bi->neg[i] = x;
 	return;
 }
 

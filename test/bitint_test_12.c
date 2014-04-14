@@ -14,6 +14,8 @@ main(int argc, char *argv[])
 	ass_bi383(&x, 36);
 	ass_bi383(&x, -48);
 	ass_bi383(&x, 59);
+	ass_bi383(&x, 59);
+	ass_bi383(&x, -61);
 	ass_bi383(&x, -61);
 	for (bitint_iter_t i = 0U; (v = bi383_next(&i, &x), i);) {
 		printf("got %d\n", v);
