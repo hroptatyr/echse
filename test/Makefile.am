@@ -142,6 +142,9 @@ EXTRA_DIST += sample_15.ics
 EXTRA_DIST += sample_16.ics
 EXTRA_DIST += sample_17.ics
 
+TESTS += genuid_01.clit
+TESTS += genuid_02.clit
+
 
 ## our friendly helpers
 check_PROGRAMS += clitoris

@@ -1,0 +1,23 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse genuid "${srcdir}/sample_01.ics"
+BEGIN:VCALENDAR
+VERSION:1.0
+BEGIN:VEVENT
+DTSTART:20140323T090000
+DTEND:20140323T100000
+UID:echse/sample_01.ics/0321588897c31f25@example.com
+SUMMARY:March meeting
+DESCRIPTION:Just a catch-up thing really.
+PRIORITY:3
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20140423T090000
+DTEND:20140423T120000
+UID:echse/sample_01.ics/c72f85004f139487@example.com
+SUMMARY:Flight home
+DESCRIPTION:Make sure to pack bags beforehand.
+PRIORITY:3
+END:VEVENT
+END:VCALENDAR
+$
