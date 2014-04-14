@@ -181,7 +181,7 @@ int blake2b_init( blake2b_state *S, size_t outlen )
 }
 
 
-int blake2b_init_key( blake2b_state *S, size_t outlen, const void *key, const uint8_t keylen )
+int blake2b_init_key( blake2b_state *S, size_t outlen, const void *key, size_t keylen )
 {
   blake2b_param P[1];
 
