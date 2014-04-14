@@ -160,7 +160,7 @@ int blake2b_init_param( blake2b_state *S, const blake2b_param *P )
 
 
 
-int blake2b_init( blake2b_state *S, const uint8_t outlen )
+int blake2b_init( blake2b_state *S, size_t outlen )
 {
   blake2b_param P[1];
 
@@ -181,7 +181,7 @@ int blake2b_init( blake2b_state *S, const uint8_t outlen )
 }
 
 
-int blake2b_init_key( blake2b_state *S, const uint8_t outlen, const void *key, const uint8_t keylen )
+int blake2b_init_key( blake2b_state *S, size_t outlen, const void *key, const uint8_t keylen )
 {
   blake2b_param P[1];
 
@@ -308,7 +308,7 @@ int blake2b_update( blake2b_state *S, const uint8_t *in, uint64_t inlen )
 }
 
 /* Is this correct? */
-int blake2b_final( blake2b_state *S, uint8_t *out, uint8_t outlen )
+int blake2b_final( blake2b_state *S, uint8_t *out, size_t outlen )
 {
   uint8_t buffer[BLAKE2B_OUTBYTES];
 
@@ -333,7 +333,7 @@ int blake2b_final( blake2b_state *S, uint8_t *out, uint8_t outlen )
 }
 
 /* inlen, at least, should be uint64_t. Others can be size_t. */
-int blake2b( uint8_t *out, const void *in, const void *key, const uint8_t outlen, const uint64_t inlen, uint8_t keylen )
+int blake2b( uint8_t *out, const void *in, const void *key, size_t outlen, size_t inlen, size_t keylen )
 {
   blake2b_state S[1];
 
