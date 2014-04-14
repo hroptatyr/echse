@@ -70,9 +70,7 @@ $ echse merge "${srcdir}/sample_17.ics" --till 2020-12-31
 2016-11-07	November Days
 2016-11-10	November Days
 2017-05-26	Some Day
-2017-05-26	Some Day
 2017-06-05	Some Day
-2017-11-09	November Days
 2017-11-06	November Days
 2017-11-09	November Days
 2018-05-25	Some Day

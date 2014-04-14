@@ -571,16 +571,7 @@ add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 
 		if (UNLIKELY(add == 0)) {
 			/* ah, copying requested then */
-			if (!bi383_has_bits_p(&res)) {
-				/* very quick copy indeed */
-				res = *cand;
-				continue;
-			}
-			/* otherwise traverse cand properly,
-			 * if only we could rely on the sortedness of bi383 */
-			for (bitint_iter_t ci = 0UL;
-			     (c = bi383_next(&ci, cand), ci);
-			     ass_bi383(&res, c));
+			res = *cand;
 			continue;
 		}
 
@@ -615,7 +606,8 @@ add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	unsigned int y = tgt->y;
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
 	unsigned int m[12U];
 	size_t nm;
 	int d[31U];
@@ -645,7 +637,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* fill up with a default */
 		if (!nm && ymdp) {
-			m[nm++] = tgt->m;
+			m[nm++] = proto.m;
 		}
 	}
 	with (int tmpd) {
@@ -656,7 +648,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* fill up with the default */
 		if (!nd && ymdp) {
-			d[nd++] = tgt->d;
+			d[nd++] = proto.d;
 		}
 	}
 	/* set up the wday mask */
@@ -701,7 +693,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
-		     res < nti && (yd = bi383_next(&all, &cand), all); res++) {
+		     res < nti && (yd = bi383_next(&all, &cand), all);) {
 			tgt[res].y = y;
 			tgt[res].m = yd / 32U + 1U;
 			tgt[res].d = yd % 32U;
@@ -709,7 +701,11 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
 				goto fin;
 			}
+			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
+				continue;
+			}
 			tries = 64U;
+			res++;
 		}
 	}
 fin:
