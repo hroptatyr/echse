@@ -571,16 +571,7 @@ add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 
 		if (UNLIKELY(add == 0)) {
 			/* ah, copying requested then */
-			if (!bi383_has_bits_p(&res)) {
-				/* very quick copy indeed */
-				res = *cand;
-				continue;
-			}
-			/* otherwise traverse cand properly,
-			 * if only we could rely on the sortedness of bi383 */
-			for (bitint_iter_t ci = 0UL;
-			     (c = bi383_next(&ci, cand), ci);
-			     ass_bi383(&res, c));
+			res = *cand;
 			continue;
 		}
 
