@@ -24,6 +24,7 @@ noinst_HEADERS += version.h
 ## ourself as .so
 noinst_LTLIBRARIES += libechse.la
 libechse_la_SOURCES = echse.h
+EXTRA_libechse_la_SOURCES = $(libechse_la_built_sources)
 libechse_la_SOURCES += instant.c instant.h
 libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
@@ -35,6 +36,7 @@ libechse_la_SOURCES += evical.c evical.h
 libechse_la_SOURCES += evrrul.c evrrul.h
 libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += bitint.c bitint.h
+EXTRA_libechse_la_SOURCES += bitint-bobs.c
 libechse_la_SOURCES += nifty.h
 ## 3rd party blake2
 libechse_la_SOURCES += blake2/blake2b.c blake2/blake2.h
@@ -46,7 +48,6 @@ libechse_la_CPPFLAGS += $(LTDLINCL)
 libechse_la_LDFLAGS = $(AM_LDFLAGS)
 libechse_la_LDFLAGS += -lm
 libechse_la_LDFLAGS += $(LIBLTDL) -export-dynamic
-EXTRA_libechse_la_SOURCES = $(libechse_la_built_sources)
 EXTRA_libechse_la_SOURCES += wikisort.c
 EXTRA_libechse_la_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += $(libechse_la_built_sources)

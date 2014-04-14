@@ -45,37 +45,15 @@
 #define NEG_BITZ	(sizeof(*(bitint383_t){}.neg) * 8U)
 
 
-static void
-ass_bs383(bitint383_t *restrict bi, int x)
-{
-	if (x > 0) {
-		unsigned int p = (unsigned int)x % POS_BITZ;
-		unsigned int j = (unsigned int)x / POS_BITZ;
+#define bitint_t	bitint383_t
+#define ass_bs		ass_bs383
+#define ass_int		ass_int383
+#include "bitint-bobs.c"
 
-		bi->pos[j] |= 1U << p;
-	} else {
-		unsigned int p = (unsigned int)(-x) % NEG_BITZ;
-		unsigned int j = (unsigned int)(-x) / NEG_BITZ;
-		bi->neg[j] |= 1U << p;
-	}
-	return;
-}
-
-static void
-ass_bs447(bitint447_t *restrict bi, int x)
-{
-	if (x > 0) {
-		unsigned int p = (unsigned int)x % POS_BITZ;
-		unsigned int j = (unsigned int)x / POS_BITZ;
-
-		bi->pos[j] |= 1U << p;
-	} else {
-		unsigned int p = (unsigned int)(-x) % NEG_BITZ;
-		unsigned int j = (unsigned int)(-x) / NEG_BITZ;
-		bi->neg[j] |= 1U << p;
-	}
-	return;
-}
+#define bitint_t	bitint447_t
+#define ass_bs		ass_bs447
+#define ass_int		ass_int447
+#include "bitint-bobs.c"
 
 
 void
@@ -91,18 +69,8 @@ ass_bi383(bitint383_t *restrict bi, int x)
 	/* maybe it's natively stored */
 	if (*bi->pos & 0b1U) {
 		goto bitset;
-	} else if ((i = *bi->pos >> 1U) < countof(bi->pos)) {
-		/* i is our candidate now, yay */
-		/* just store it here and get on with life
-		 * check for dupes though */
-		for (size_t j = 0U; j < i; j++) {
-			if (UNLIKELY(bi->neg[j] == x)) {
-				/* dupe, bugger off */
-				return;
-			}
-		}
-		*bi->pos += 2U;
-		bi->neg[i] = x;
+	} else if (*bi->pos >> 1U < countof(bi->pos)) {
+		ass_int383(bi, x);
 		return;
 	}
 	/* otherwise, bi needs degrading, copy to tmp first */
@@ -206,18 +174,8 @@ ass_bi447(bitint447_t *restrict bi, int x)
 	/* maybe it's natively stored */
 	if (*bi->pos & 0b1U) {
 		goto bitset;
-	} else if ((i = *bi->pos >> 1U) < countof(bi->pos)) {
-		/* i is our candidate now, yay */
-		/* just store it here and get on with life
-		 * check for dupes though */
-		for (size_t j = 0U; j < i; j++) {
-			if (UNLIKELY(bi->neg[j] == x)) {
-				/* dupe, bugger off */
-				return;
-			}
-		}
-		*bi->pos += 2U;
-		bi->neg[i] = x;
+	} else if (*bi->pos >> 1U < countof(bi->pos)) {
+		ass_int447(bi, x);
 		return;
 	}
 	/* otherwise, bi needs degrading, copy to tmp first */
