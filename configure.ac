@@ -54,6 +54,16 @@ AC_ARG_VAR([GPERF], [full path to the gperf tool])
 ## check if yuck is globally available
 AX_CHECK_YUCK
 
+case "${featflags}" in
+(*"msse2"*)
+	have_simd="yes"
+	;;
+(*)
+	have_simd="no"
+	;;
+esac
+AM_CONDITIONAL([HAVE_SIMD], [test "${have_simd}" = "yes"])
+
 ## libtool goddess^Wgoodness
 SXE_CHECK_LIBTOOL
 LT_CONFIG_LTDL_DIR([libltdl])

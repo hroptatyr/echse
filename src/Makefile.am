@@ -39,7 +39,12 @@ libechse_la_SOURCES += bitint.c bitint.h
 EXTRA_libechse_la_SOURCES += bitint-bobs.c
 libechse_la_SOURCES += nifty.h
 ## 3rd party blake2
-libechse_la_SOURCES += blake2/blake2b.c blake2/blake2.h
+libechse_la_SOURCES += blake2/blake2.h
+if HAVE_SIMD
+libechse_la_SOURCES += blake2/blake2b.c
+else
+libechse_la_SOURCES += blake2/blake2b-ref.c
+endif
 libechse_la_SOURCES += blake2/blake2-impl.h blake2/blake2-config.h
 libechse_la_SOURCES += blake2/blake2b-load-sse2.h blake2/blake2b-load-sse41.h
 libechse_la_SOURCES += blake2/blake2b-round.h
