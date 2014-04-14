@@ -327,6 +327,18 @@ easter_get_yday(unsigned int y)
 	return e + 59 + !(y % 4U);
 }
 
+static unsigned int
+pack_cand(unsigned int m, unsigned int d)
+{
+	return (--m) * 32U + d;
+}
+
+static struct md_s
+unpack_cand(unsigned int c)
+{
+	return (struct md_s){c / 32U + 1U, c % 32U};
+}
+
 
 /* recurrence helpers */
 static void
@@ -352,7 +364,7 @@ fill_yly_ywd(
 				continue;
 			}
 			/* otherwise it's looking good */
-			ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+			ass_bi383(cand, pack_cand(md.m, md.d));
 		}
 	}
 	return;
@@ -376,7 +388,7 @@ fill_yly_ymcw(
 				continue;
 			}
 			/* otherwise it's looking good */
-			ass_bi383(cand, (m[i] - 1U) * 32U + dom);
+			ass_bi383(cand, pack_cand(m[i], dom));
 		}
 	}
 	return;
@@ -401,7 +413,7 @@ fill_yly_ycw(bitint383_t *restrict cand, unsigned int y, const bitint447_t *dow)
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -427,7 +439,7 @@ fill_yly_yd(
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -452,7 +464,7 @@ fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 			continue;
 		}
 		/* otherwise it's looking good */
-		ass_bi383(cand, (md.m - 1U) * 32U + md.d);
+		ass_bi383(cand, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -494,7 +506,7 @@ fill_yly_ymd(
 			}
 
 			/* it's a candidate */
-			ass_bi383(cand, (m[i] - 1U) * 32U + dd);
+			ass_bi383(cand, pack_cand(m[i], dd));
 		}
 	}
 	return;
@@ -536,6 +548,63 @@ clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 		/* assign if successful */
 		if (LIKELY(c > 0)) {
 			ass_bi383(&res, c);
+		}
+	}
+	/* copy res over */
+	*cand = res;
+	return;
+}
+
+static void
+add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
+{
+	bitint383_t res = {0U};
+	int add;
+
+	if (!bi383_has_bits_p(poss)) {
+		/* nothing to add */
+		return;
+	}
+	/* go through summands ... */
+	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, poss), posi);) {
+		int c;
+
+		if (UNLIKELY(add == 0)) {
+			/* ah, copying requested then */
+			if (!bi383_has_bits_p(&res)) {
+				/* very quick copy indeed */
+				res = *cand;
+				continue;
+			}
+			/* otherwise traverse cand properly,
+			 * if only we could rely on the sortedness of bi383 */
+			for (bitint_iter_t ci = 0UL;
+			     (c = bi383_next(&ci, cand), ci);
+			     ass_bi383(&res, c));
+			continue;
+		}
+
+		/* and here, go through candidates and add summand ADD */
+		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
+			const struct md_s md = unpack_cand(c);
+			int nu_d = md.d + add;
+			int nu_m = md.m;
+
+		reassess:
+			if (UNLIKELY(nu_m <= 0 || nu_m > 12)) {
+				/* this is for fixups going wrong */
+				continue;
+			} else if (UNLIKELY(nu_d <= 0)) {
+				/* fixup, innit */
+				nu_d += mdays[--nu_m];
+				goto reassess;
+			} else if (UNLIKELY(nu_d > (int)mdays[nu_m])) {
+				/* fixup too, grrr */
+				nu_d -= mdays[nu_m++];
+				goto reassess;
+			}
+			/* otherwise, we can assign directly */
+			ass_bi383(&res, pack_cand(nu_m, nu_d));
 		}
 	}
 	/* copy res over */
@@ -626,6 +695,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* limit by setpos */
 		clr_poss(&cand, &rr->pos);
+
+		/* add/subtract days */
+		add_poss(&cand, &rr->add);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;

@@ -384,6 +384,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_YDAY:
 		case BY_POS:
 		case BY_EASTER:
+		case BY_ADD:
 			/* these ones take +/- values */
 			do {
 				tmp = strtol(++kv, &on, 10);
@@ -402,6 +403,9 @@ snarf_rrule(const char *s, size_t z)
 					break;
 				case BY_EASTER:
 					ass_bi383(&rr.easter, tmp);
+					break;
+				case BY_ADD:
+					ass_bi383(&rr.add, tmp);
 					break;
 				}
 			} while (*(kv = on) == ',');
