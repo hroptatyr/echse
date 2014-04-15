@@ -867,7 +867,7 @@ static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
-	.prnt = prnt_evical_vevent,
+	.prnt1 = prnt_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -960,13 +960,15 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_evstrm_t);
-static void prnt_evrrul(echs_evstrm_t);
+static void prnt_evrrul1(echs_evstrm_t);
+static void prnt_evrrulm(const echs_evstrm_t s[], size_t n);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
-	.prnt = prnt_evrrul,
+	.prnt1 = prnt_evrrul1,
+	.prntm = prnt_evrrulm,
 };
 
 static echs_evstrm_t
@@ -1141,7 +1143,7 @@ nul:
 }
 
 static void
-prnt_evrrul(echs_evstrm_t s)
+prnt_evrrul1(echs_evstrm_t s)
 {
 	const struct evrrul_s *this = (struct evrrul_s*)s;
 	char from[32U];
@@ -1171,6 +1173,26 @@ prnt_evrrul(echs_evstrm_t s)
 		puts(obint_name(this->ve.ev.sum));
 	}
 	prnt_ical_ftr();
+	return;
+}
+
+static void
+prnt_evrrulm(const echs_evstrm_t s[], size_t n)
+{
+/* we know that they all come from one ical_event_s originally,
+ * just merge them temporarily in a evrrul_s object and use prnt1() */
+	struct evrrul_tmp_s {
+		echs_evstrm_class_t class;
+		/* the actual complete vevent (includes proto-event) */
+		struct ical_vevent_s ve;
+		/* proto-duration */
+		echs_idiff_t dur;
+	};
+	struct evrrul_tmp_s this = *(struct evrrul_tmp_s*)*s;
+
+	/* have to fiddle with the nr slot, but we know rules are consecutive */
+	this.ve.rr.nr = n;
+	prnt_evrrul1((echs_evstrm_t)&this);
 	return;
 }
 

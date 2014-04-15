@@ -58,13 +58,21 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_evstrm_t);
-static void prnt_evmux(echs_evstrm_t);
+static void prnt_evmux1(echs_evstrm_t);
+static void prnt_evmuxm(echs_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
-	.prnt = prnt_evmux,
+	.prnt1 = prnt_evmux1,
+};
+
+static const struct echs_evstrm_class_s evmuxm_cls = {
+	.next = next_evmux,
+	.free = free_evmux,
+	.clone = clone_evmux,
+	.prnt1 = prnt_evmuxm,
 };
 
 static __attribute__((nonnull(1))) void
@@ -125,13 +133,22 @@ next_evmux(echs_evstrm_t strm)
 }
 
 static void
-prnt_evmux(echs_evstrm_t strm)
+prnt_evmux1(echs_evstrm_t strm)
 {
 	const struct evmux_s *this = (struct evmux_s*)strm;
 
 	for (size_t i = 0UL; i < this->ns; i++) {
 		echs_evstrm_prnt(this->s[i]);
 	}
+	return;
+}
+
+static void
+prnt_evmuxm(echs_evstrm_t strm)
+{
+	const struct evmux_s *this = (struct evmux_s*)strm;
+
+	this->s[0]->class->prntm(this->s, this->ns);
 	return;
 }
 
@@ -153,8 +170,23 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	res->class = &evmux_cls;
 	res->ns = ns;
 	res->s = s;
+	/* check if we can use the many-items printer */
+	if ((*s)->class->prntm != NULL) {
+		const echs_evstrm_class_t proto = (*s)->class;
+		bool same_class_p = true;
+
+		for (size_t i = 1U; i < ns; i++) {
+			if (s[i]->class != proto) {
+				same_class_p = false;
+				break;
+			}
+		}
+		if (same_class_p) {
+			res->class = &evmuxm_cls;
+		}
+	}
+	/* precache them events */
 	for (size_t i = 0U; i < ns; i++) {
-		/* precache them events */
 		__refill(res, i);
 	}
 	return (echs_evstrm_t)res;

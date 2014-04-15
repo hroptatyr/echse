@@ -50,9 +50,10 @@ struct echs_evstrm_class_s {
 	echs_evstrm_t(*clone)(echs_evstrm_t);
 	/** dtor method */
 	void(*free)(echs_evstrm_t);
-	/** printer method */
-	void(*prnt)(echs_evstrm_t);
-};	
+	/** printer methods */
+	void(*prnt1)(echs_evstrm_t);
+	void(*prntm)(const echs_evstrm_t s[], size_t n);
+};
 
 struct echs_evstrm_s {
 	const echs_evstrm_class_t class;
@@ -86,8 +87,10 @@ echs_evstrm_next(echs_evstrm_t s)
 static inline void
 echs_evstrm_prnt(echs_evstrm_t s)
 {
-	if (s->class->prnt != NULL) {
-		s->class->prnt(s);
+	if (s->class->prnt1 != NULL) {
+		s->class->prnt1(s);
+	} else if (s->class->prntm != NULL) {
+		s->class->prntm(&s, 1UL);
 	}
 	return;
 }
