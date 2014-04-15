@@ -171,6 +171,9 @@ unintern(obint_t UNUSED(ob))
 const char*
 obint_name(obint_t ob)
 {
+	if (UNLIKELY(ob == 0UL)) {
+		return NULL;
+	}
 	return obs + obint_off(ob);
 }
 
