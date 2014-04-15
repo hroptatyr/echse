@@ -998,9 +998,6 @@ make_evrrul(const struct ical_vevent_s *ve)
 		for (size_t i = 0U; i < ve->rr.nr; i++) {
 			struct ical_vevent_s ve_tmp = *ve;
 
-			if (UNLIKELY(ve_tmp.rr.nr == 0UL)) {
-				continue;
-			}
 			ve_tmp.rr.r += i;
 			ve_tmp.rr.nr = 1U;
 			s[nr++] = __make_evrrul(&ve_tmp);
