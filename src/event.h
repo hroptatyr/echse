@@ -48,7 +48,7 @@ struct echs_event_s {
 	echs_instant_t from;
 	echs_instant_t till;
 	echs_evuid_t uid;
-	const char *desc;
+	echs_evuid_t sum;
 };
 
 

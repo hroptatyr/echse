@@ -58,11 +58,13 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_evstrm_t);
+static void prnt_evmux(echs_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
+	.prnt = prnt_evmux,
 };
 
 static __attribute__((nonnull(1))) void
@@ -120,6 +122,17 @@ next_evmux(echs_evstrm_t strm)
 	/* return best but refill besti */
 	__refill(this, besti);
 	return best;
+}
+
+static void
+prnt_evmux(echs_evstrm_t strm)
+{
+	const struct evmux_s *this = (struct evmux_s*)strm;
+
+	for (size_t i = 0UL; i < this->ns; i++) {
+		echs_evstrm_prnt(this->s[i]);
+	}
+	return;
 }
 
 static echs_evstrm_t

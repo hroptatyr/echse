@@ -144,6 +144,36 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 	return rc;
 }
 
+static int
+cmd_test(const struct yuck_cmd_test_s argi[static 1U])
+{
+	fputs("\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n", stdout);
+
+	for (size_t i = 0UL; i < argi->nargs; i++) {
+		const char *fn = argi->args[i];
+		echs_evstrm_t s = make_echs_evstrm_from_file(fn);
+
+		if (UNLIKELY(s == NULL)) {
+			serror("\
+echse: Error: cannot open file `%s'", fn);
+			continue;
+		}
+		/* print the guy */
+		echs_evstrm_prnt(s);
+
+		/* and free him */
+		free_echs_evstrm(s);
+	}
+	fputs("\
+END:VCALENDAR\n", stdout);
+	return 0;
+}
+
+
 int
 main(int argc, char *argv[])
 {
@@ -195,6 +225,9 @@ Try --help for a list of commands.\n", stderr);
 		break;
 	case ECHSE_CMD_GENUID:
 		rc = cmd_genuid((struct yuck_cmd_genuid_s*)argi);
+		break;
+	case ECHSE_CMD_TEST:
+		rc = cmd_test((struct yuck_cmd_test_s*)argi);
 		break;
 	}
 	/* some global resources */
