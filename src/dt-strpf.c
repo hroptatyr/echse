@@ -278,4 +278,25 @@ dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst)
 	return bp - buf;
 }
 
+size_t
+dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
+{
+	char *restrict bp = buf;
+#define bz	(bsz - (bp - buf))
+
+	bp += ui32tostr(bp, bz, inst.y, 4);
+	bp += ui32tostr(bp, bz, inst.m, 2);
+	bp += ui32tostr(bp, bz, inst.d, 2);
+
+	if (LIKELY(!echs_instant_all_day_p(inst))) {
+		*bp++ = 'T';
+		bp += ui32tostr(bp, bz, inst.H, 2);
+		bp += ui32tostr(bp, bz, inst.M, 2);
+		bp += ui32tostr(bp, bz, inst.S, 2);
+		*bp++ = 'Z';
+	}
+	*bp = '\0';
+	return bp - buf;
+}
+
 #endif	/* INCLUDED_dt_strpf_c_ */
