@@ -119,7 +119,7 @@ echse: Error: cannot open file `%s'", fn);
 		}
 		/* otherwise print */
 		dt_strf(fbuf, sizeof(fbuf), e.from);
-		printf("%s\t%s\n", fbuf, obint_name(e.uid));
+		printf("%s\t%s\n", fbuf, obint_name(e.sum));
 	}
 	free_echs_evstrm(smux);
 	return 0;
