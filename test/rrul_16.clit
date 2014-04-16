@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse merge "${srcdir}/sample_12.ics"
+$ echse select "${srcdir}/sample_12.ics"
 2000-02-28	Some February Days
 2000-02-29	Some February Days
 2000-12-20	Some December Days

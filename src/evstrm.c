@@ -58,11 +58,21 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_evstrm_t);
+static void prnt_evmux1(echs_evstrm_t);
+static void prnt_evmuxm(echs_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
+	.prnt1 = prnt_evmux1,
+};
+
+static const struct echs_evstrm_class_s evmuxm_cls = {
+	.next = next_evmux,
+	.free = free_evmux,
+	.clone = clone_evmux,
+	.prnt1 = prnt_evmuxm,
 };
 
 static __attribute__((nonnull(1))) void
@@ -88,9 +98,14 @@ next_evmux(echs_evstrm_t strm)
 
 	if (UNLIKELY(this->s == NULL)) {
 		return (echs_event_t){0};
+	} else if (UNLIKELY(echs_max_instant_p(this->ev[0].from))) {
+		/* precache events, the max instant in ev[0] is the indicator */
+		for (size_t j = 0UL; j < this->ns; j++) {
+			__refill(this, j);
+		}
 	}
 	/* best event so-far is the first non-null event */
-	for (i = 0; i < this->ns; i++) {
+	for (i = 0U; i < this->ns; i++) {
 		best = this->ev[i];
 
 		if (!echs_event_0_p(best)) {
@@ -100,7 +115,11 @@ next_evmux(echs_evstrm_t strm)
 	}
 	/* quick check if we hit the event boundary */
 	if (UNLIKELY(i >= this->ns)) {
-		/* yep, bugger off */
+		/* yep, bugger off, we assume the streams have been
+		 * freed upon __refill() previously, so just free the
+		 * stream array here */
+		free(this->s);
+		this->s = NULL;
 		return nul;
 	}
 	/* otherwise try and find an earlier event */
@@ -122,6 +141,26 @@ next_evmux(echs_evstrm_t strm)
 	return best;
 }
 
+static void
+prnt_evmux1(echs_evstrm_t strm)
+{
+	const struct evmux_s *this = (struct evmux_s*)strm;
+
+	for (size_t i = 0UL; i < this->ns; i++) {
+		echs_evstrm_prnt(this->s[i]);
+	}
+	return;
+}
+
+static void
+prnt_evmuxm(echs_evstrm_t strm)
+{
+	const struct evmux_s *this = (struct evmux_s*)strm;
+
+	this->s[0]->class->prntm(this->s, this->ns);
+	return;
+}
+
 static echs_evstrm_t
 make_evmux(echs_evstrm_t s[], size_t ns)
 {
@@ -140,10 +179,25 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	res->class = &evmux_cls;
 	res->ns = ns;
 	res->s = s;
-	for (size_t i = 0U; i < ns; i++) {
-		/* precache them events */
-		__refill(res, i);
+	/* check if we can use the many-items printer */
+	if ((*s)->class->prntm != NULL) {
+		const echs_evstrm_class_t proto = (*s)->class;
+		bool same_class_p = true;
+
+		for (size_t i = 1U; i < ns; i++) {
+			if (s[i]->class != proto) {
+				same_class_p = false;
+				break;
+			}
+		}
+		if (same_class_p) {
+			res->class = &evmuxm_cls;
+		}
 	}
+	/* we used to precache events here but seeing as not every
+	 * echse command would need the unrolled stream we leave it
+	 * to next_evmux(), put an indicator into the event cache here */
+	res->ev[0].from = echs_max_instant();
 	return (echs_evstrm_t)res;
 
 trivial:

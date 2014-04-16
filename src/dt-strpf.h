@@ -48,4 +48,8 @@ extern echs_instant_t dt_strp(const char *str);
  * Print INST into BUF (of size BSZ) and return its length. */
 extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
 
+/**
+ * Print INST into BUF (of size BSZ) in ical format and return its length. */
+extern size_t dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst);
+
 #endif	/* INCLUDED_dt_strpf_h_ */

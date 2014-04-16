@@ -44,6 +44,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include "evical.h"
 #include "intern.h"
 #include "bufpool.h"
@@ -543,19 +544,30 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			break;
 		}
 		break;
+	case FLD_UID:
 	case FLD_SUMM:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
-		with (obint_t uid = intern(lp, ep - lp)) {
-			ve->ev.uid = uid;
+		with (obint_t ob = intern(lp, ep - lp)) {
+			switch (c->fld) {
+			case FLD_UID:
+				ve->ev.uid = ob;
+				break;
+			case FLD_SUMM:
+				ve->ev.sum = ob;
+				break;
+			}
 		}
 		break;
 	case FLD_DESC:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
 			break;
 		}
+#if 0
+/* we used to have a desc slot, but that went in favour of a uid slot */
 		ve->ev.desc = bufpool(lp, ep - lp).str;
+#endif	/* 0 */
 		break;
 	}
 	return;
@@ -646,6 +658,238 @@ clo:
 	return a;
 }
 
+static void
+prnt_ical_hdr(void)
+{
+	static time_t now;
+	static char stmp[32U];
+
+	puts("BEGIN:VEVENT");
+	if (LIKELY(now)) {
+		;
+	} else {
+		struct tm tm[1U];
+
+		if (LIKELY((now = time(NULL), gmtime_r(&now, tm) != NULL))) {
+			echs_instant_t nowi = {
+				.y = tm->tm_year + 1900,
+				.m = tm->tm_mon + 1,
+				.d = tm->tm_mday,
+				.H = tm->tm_hour,
+				.M = tm->tm_min,
+				.S = tm->tm_sec,
+				.ms = ECHS_ALL_SEC,
+			};
+
+			dt_strf_ical(stmp, sizeof(stmp), nowi);
+		} else {
+			/* screw up the singleton */
+			now = 0;
+			return;
+		}
+	}
+	fputs("DTSTAMP:", stdout);
+	puts(stmp);
+	return;
+}
+
+static void
+prnt_ical_ftr(void)
+{
+	puts("END:VEVENT");
+	return;
+}
+
+static void
+prnt_cd(struct cd_s cd)
+{
+	static const char *w[] = {
+		"MI", "MO", "TU", "WE", "TH", "FR", "SA", "SU"
+	};
+
+	if (cd.cnt) {
+		fprintf(stdout, "%d", cd.cnt);
+	}
+	fputs(w[cd.dow], stdout);
+	return;
+}
+
+static void
+prnt_rrul(rrulsp_t rr)
+{
+	switch (rr->freq) {
+	case FREQ_YEARLY:
+		fputs("FREQ=YEARLY", stdout);
+		break;
+	default:
+		break;
+	}
+	if (rr->inter > 1U) {
+		fprintf(stdout, ";INTERVAL=%u", rr->inter);
+	}
+	with (unsigned int m) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->mon)) {
+			break;
+		}
+		m = bui31_next(&i, rr->mon);
+		fprintf(stdout, ";BYMONTH=%u", m);
+		while (m = bui31_next(&i, rr->mon), i) {
+			fprintf(stdout, ",%u", m);
+		}
+	}
+
+	with (int yw) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi63_has_bits_p(rr->wk)) {
+			break;
+		}
+		yw = bi63_next(&i, rr->wk);
+		fprintf(stdout, ";BYWEEKNO=%d", yw);
+		while (yw = bi63_next(&i, rr->wk), i) {
+			fprintf(stdout, ",%d", yw);
+		}
+	}
+
+	with (int yd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->doy)) {
+			break;
+		}
+		yd = bi383_next(&i, &rr->doy);
+		fprintf(stdout, ";BYYEARDAY=%d", yd);
+		while (yd = bi383_next(&i, &rr->doy), i) {
+			fprintf(stdout, ",%d", yd);
+		}
+	}
+
+	with (int d) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi31_has_bits_p(rr->dom)) {
+			break;
+		}
+		d = bi31_next(&i, rr->dom);
+		fprintf(stdout, ";BYMONTHDAY=%d", d + 1);
+		while (d = bi31_next(&i, rr->dom), i) {
+			fprintf(stdout, ",%d", d + 1);
+		}
+	}
+
+	with (int e) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->easter)) {
+			break;
+		}
+		e = bi383_next(&i, &rr->easter);
+		fprintf(stdout, ";BYEASTER=%d", e);
+		while (e = bi383_next(&i, &rr->easter), i) {
+			fprintf(stdout, ",%d", e);
+		}
+	}
+
+	with (struct cd_s cd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi447_has_bits_p(&rr->dow)) {
+			break;
+		}
+		cd = unpack_cd(bi447_next(&i, &rr->dow));
+		fputs(";BYDAY=", stdout);
+		prnt_cd(cd);
+		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
+			fputc(',', stdout);
+			prnt_cd(cd);
+		}
+	}
+
+	with (int a) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->add)) {
+			break;
+		}
+		a = bi383_next(&i, &rr->add);
+		fprintf(stdout, ";BYADD=%d", a);
+		while (a = bi383_next(&i, &rr->add), i) {
+			fprintf(stdout, ",%d", a);
+		}
+	}
+
+	with (int p) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->pos)) {
+			break;
+		}
+		p = bi383_next(&i, &rr->pos);
+		fprintf(stdout, ";BYPOS=%d", p);
+		while (p = bi383_next(&i, &rr->pos), i) {
+			fprintf(stdout, ",%d", p);
+		}
+	}
+
+	if ((int)rr->count > 0) {
+		fprintf(stdout, ";COUNT=%u", rr->count);
+	}
+	if (rr->until.u < -1ULL) {
+		char until[32U];
+
+		dt_strf_ical(until, sizeof(until), rr->until);
+		fprintf(stdout, ";UNTIL=%s", until);
+	}
+
+	fputc('\n', stdout);
+	return;
+}
+
+static void
+prnt_ev(echs_event_t ev)
+{
+	static unsigned int auto_uid;
+	char stmp[32U] = {':'};
+
+	if (UNLIKELY(echs_nul_instant_p(ev.from))) {
+		return;
+	}
+	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.from);
+	fputs("DTSTART", stdout);
+	if (echs_instant_all_day_p(ev.from)) {
+		fputs(";VALUE=DATE", stdout);
+	}
+	puts(stmp);
+
+	if (LIKELY(!echs_nul_instant_p(ev.till))) {
+		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.till);
+	} else {
+		ev.till = ev.from;
+	}
+	fputs("DTEND", stdout);
+	if (echs_instant_all_day_p(ev.till)) {
+		fputs(";VALUE=DATE", stdout);
+	}
+	puts(stmp);
+
+	/* fill in a missing uid? */
+	auto_uid++;
+	if (ev.uid) {
+		fputs("UID:", stdout);
+		puts(obint_name(ev.uid));
+	} else {
+		/* it's mandatory, so generate one */
+		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
+	}
+	if (ev.sum) {
+		fputs("SUMMARY:", stdout);
+		puts(obint_name(ev.sum));
+	}
+	return;
+}
+
 
 /* our event class */
 struct evical_s {
@@ -660,11 +904,13 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_evstrm_t);
+static void prnt_evical_vevent(echs_evstrm_t);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
+	.prnt1 = prnt_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -710,6 +956,19 @@ next_evical_vevent(echs_evstrm_t s)
 	return this->ev[this->i++];
 }
 
+static void
+prnt_evical_vevent(echs_evstrm_t s)
+{
+	const struct evical_s *this = (struct evical_s*)s;
+
+	for (size_t i = 0UL; i < this->nev; i++) {
+		prnt_ical_hdr();
+		prnt_ev(this->ev[i]);
+		prnt_ical_ftr();
+	}
+	return;
+}
+
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
@@ -727,11 +986,15 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_evstrm_t);
+static void prnt_evrrul1(echs_evstrm_t);
+static void prnt_evrrulm(const echs_evstrm_t s[], size_t n);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
+	.prnt1 = prnt_evrrul1,
+	.prntm = prnt_evrrulm,
 };
 
 static echs_evstrm_t
@@ -763,9 +1026,6 @@ make_evrrul(const struct ical_vevent_s *ve)
 		for (size_t i = 0U; i < ve->rr.nr; i++) {
 			struct ical_vevent_s ve_tmp = *ve;
 
-			if (UNLIKELY(ve_tmp.rr.nr == 0UL)) {
-				continue;
-			}
 			ve_tmp.rr.r += i;
 			ve_tmp.rr.nr = 1U;
 			s[nr++] = __make_evrrul(&ve_tmp);
@@ -906,6 +1166,57 @@ next_evrrul(echs_evstrm_t s)
 	return res;
 nul:
 	return nul;
+}
+
+static void
+prnt_evrrul1(echs_evstrm_t s)
+{
+	const struct evrrul_s *this = (struct evrrul_s*)s;
+
+	prnt_ical_hdr();
+	prnt_ev(this->ve.ev);
+
+	for (size_t i = 0UL; i < this->ve.rr.nr; i++) {
+		rrulsp_t rr = get_grr(this->ve.rr.r + i);
+
+		fputs("RRULE:", stdout);
+		prnt_rrul(rr);
+	}
+	prnt_ical_ftr();
+	return;
+}
+
+static void
+prnt_evrrulm(const echs_evstrm_t s[], size_t n)
+{
+/* we know that they all come from one ical_event_s originally,
+ * just merge them temporarily in a evrrul_s object and use prnt1() */
+	struct evrrul_tmp_s {
+		echs_evstrm_class_t class;
+		/* the actual complete vevent (includes proto-event) */
+		struct ical_vevent_s ve;
+		/* proto-duration */
+		echs_idiff_t dur;
+	};
+	struct evrrul_tmp_s this = *(struct evrrul_tmp_s*)*s;
+
+	/* make sure we talk about a split up VEVENT with multiple rules */
+	for (size_t i = 1U; i < n; i++) {
+		const struct evrrul_tmp_s *that = (const void*)s[i];
+		if (!echs_event_eq_p(this.ve.ev, that->ve.ev)) {
+			goto one_by_one;
+		}
+	}
+	/* have to fiddle with the nr slot, but we know rules are consecutive */
+	this.ve.rr.nr = n;
+	prnt_evrrul1((echs_evstrm_t)&this);
+	return;
+
+one_by_one:
+	for (size_t i = 0U; i < n; i++) {
+		prnt_evrrul1(s[i]);
+	}
+	return;
 }
 
 

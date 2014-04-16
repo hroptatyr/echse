@@ -72,15 +72,40 @@ serror(const char *fmt, ...)
 #if defined STANDALONE
 #include "echse.yucc"
 
-/* date range to scan through */
-static echs_instant_t from;
-static echs_instant_t till;
-
 static int
-cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
+cmd_select(const struct yuck_cmd_select_s argi[static 1U])
 {
+	/* date range to scan through */
+	echs_instant_t from;
+	echs_instant_t till;
 	echs_evstrm_t smux;
 	unsigned int n = 0;
+
+	if (argi->from_arg) {
+		from = dt_strp(argi->from_arg);
+	} else {
+#if defined HAVE_ANON_STRUCTS_INIT
+		from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+		from = echs_nul_instant();
+		from.y = 2000;
+		from.m = 1;
+		from.d = 1;
+#endif	/* HAVE_ANON_STRUCTS_INIT */
+	}
+
+	if (argi->till_arg) {
+		till = dt_strp(argi->till_arg);
+	} else {
+#if defined HAVE_ANON_STRUCTS_INIT
+		till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
+#else  /* !HAVE_ANON_STRUCTS_INIT */
+		till = echs_nul_instant();
+		till.y = 2037;
+		till.m = 12;
+		till.d = 31;
+#endif	/* HAVE_ANON_STRUCTS_INIT */
+	}
 
 	with (echs_evstrm_t sarr[argi->nargs]) {
 		size_t ns = 0UL;
@@ -119,7 +144,7 @@ echse: Error: cannot open file `%s'", fn);
 		}
 		/* otherwise print */
 		dt_strf(fbuf, sizeof(fbuf), e.from);
-		printf("%s\t%s\n", fbuf, obint_name(e.uid));
+		printf("%s\t%s\n", fbuf, obint_name(e.sum));
 	}
 	free_echs_evstrm(smux);
 	return 0;
@@ -144,6 +169,36 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 	return rc;
 }
 
+static int
+cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
+{
+	fputs("\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n", stdout);
+
+	for (size_t i = 0UL; i < argi->nargs; i++) {
+		const char *fn = argi->args[i];
+		echs_evstrm_t s = make_echs_evstrm_from_file(fn);
+
+		if (UNLIKELY(s == NULL)) {
+			serror("\
+echse: Error: cannot open file `%s'", fn);
+			continue;
+		}
+		/* print the guy */
+		echs_evstrm_prnt(s);
+
+		/* and free him */
+		free_echs_evstrm(s);
+	}
+	fputs("\
+END:VCALENDAR\n", stdout);
+	return 0;
+}
+
+
 int
 main(int argc, char *argv[])
 {
@@ -156,32 +211,6 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (argi->from_arg) {
-		from = dt_strp(argi->from_arg);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		from = echs_nul_instant();
-		from.y = 2000;
-		from.m = 1;
-		from.d = 1;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
-	}
-
-	if (argi->till_arg) {
-		till = dt_strp(argi->till_arg);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		till = echs_nul_instant();
-		till.y = 2037;
-		till.m = 12;
-		till.d = 31;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
-	}
-
 	switch (argi->cmd) {
 	default:
 	case ECHSE_CMD_NONE:
@@ -190,11 +219,14 @@ echse: no valid command given\n\
 Try --help for a list of commands.\n", stderr);
 		rc = 1;
 		break;
-	case ECHSE_CMD_MERGE:
-		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
+	case ECHSE_CMD_SELECT:
+		rc = cmd_select((struct yuck_cmd_select_s*)argi);
 		break;
 	case ECHSE_CMD_GENUID:
 		rc = cmd_genuid((struct yuck_cmd_genuid_s*)argi);
+		break;
+	case ECHSE_CMD_MERGE:
+		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
 		break;
 	}
 	/* some global resources */

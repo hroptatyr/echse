@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse merge --till 2015-12-31 "${srcdir}/sample_03.ics"
+$ echse select --till 2015-12-31 "${srcdir}/sample_03.ics"
 2000-12-25	Christmas Day
 2000-12-26	Boxing Day
 2001-12-25	Christmas Day

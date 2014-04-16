@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse merge --till 2009-12-31 "${srcdir}/sample_06.ics"
+$ echse select --till 2009-12-31 "${srcdir}/sample_06.ics"
 2000-04-18	YWD example (neg)
 2000-04-24	YWD example
 2001-04-17	YWD example (neg)

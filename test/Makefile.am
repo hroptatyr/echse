@@ -35,12 +35,6 @@ TESTS += evical_prnt_01.clit
 EXTRA_DIST += sample_01.ics
 EXTRA_DIST += sample_02.ics
 
-check_PROGRAMS += evical_prntdesc
-evical_prntdesc_CPPFLAGS = $(AM_CPPFLAGS)
-evical_prntdesc_CPPFLAGS += $(echse_CFLAGS)
-evical_prntdesc_LDADD = $(echse_LIBS)
-TESTS += evical_prnt_02.clit
-
 check_PROGRAMS += bitint_test_01
 bitint_test_01_CPPFLAGS = $(AM_CPPFLAGS)
 bitint_test_01_CPPFLAGS += $(echse_CFLAGS)
@@ -145,6 +139,8 @@ EXTRA_DIST += sample_17.ics
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit
 
+TESTS += merge_01.clit
+TESTS += merge_02.clit
 
 ## our friendly helpers
 check_PROGRAMS += clitoris

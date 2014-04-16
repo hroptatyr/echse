@@ -48,7 +48,7 @@ struct echs_event_s {
 	echs_instant_t from;
 	echs_instant_t till;
 	echs_evuid_t uid;
-	const char *desc;
+	echs_evuid_t sum;
 };
 
 
@@ -74,7 +74,8 @@ echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 static inline __attribute__((const, pure)) bool
 echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	return e1.uid == e2.uid && echs_instant_eq_p(e1.from, e2.from);
+	return (e1.uid && e1.uid == e2.uid || e1.sum && e1.sum == e2.sum) &&
+		echs_instant_eq_p(e1.from, e2.from);
 }
 
 static inline __attribute__((const, pure)) bool

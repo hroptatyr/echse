@@ -2,14 +2,6 @@ Usage: echse ARG...
 
 Operate on echse sources.
 
-  --from=DT             Start event streams at DT.
-  --till=DT             Finish event streams by DT.
-
-
-Usage: echse merge [FILE]...
-
-Merge echse source FILEs and print resulting stream.
-
 
 Usage: echse genuid [FILE]...
 
@@ -19,3 +11,17 @@ Generate UIDs for ics FILEs.
   --format=SPEC     Use SPEC as format string for UID lines:
                     %f expands to the current filename,
                     %x expands to the hash in hex notation
+
+
+Usage: echse merge [FILE]...
+
+Merge echse source FILEs and print merged output.
+
+
+Usage: echse select [FILE]...
+
+Select events and unroll recurrences in FILEs.
+Print the resulting stream.
+
+  --from=DT             Start event streams at DT.
+  --till=DT             Finish event streams by DT.
