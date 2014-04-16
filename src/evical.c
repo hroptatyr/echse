@@ -1190,9 +1190,22 @@ prnt_evrrulm(const echs_evstrm_t s[], size_t n)
 	};
 	struct evrrul_tmp_s this = *(struct evrrul_tmp_s*)*s;
 
+	/* make sure we talk about a split up VEVENT with multiple rules */
+	for (size_t i = 1U; i < n; i++) {
+		const struct evrrul_tmp_s *that = (const void*)s[i];
+		if (!echs_event_eq_p(this.ve.ev, that->ve.ev)) {
+			goto one_by_one;
+		}
+	}
 	/* have to fiddle with the nr slot, but we know rules are consecutive */
 	this.ve.rr.nr = n;
 	prnt_evrrul1((echs_evstrm_t)&this);
+	return;
+
+one_by_one:
+	for (size_t i = 0U; i < n; i++) {
+		prnt_evrrul1(s[i]);
+	}
 	return;
 }
 
