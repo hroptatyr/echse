@@ -21,6 +21,10 @@ echse is hosted primarily on github:
 echse comes preloaded with a bunch of holiday files and trading hours in
 iCal format (in the [beef][2] branch).
 
+Pronunciation
+-------------
+echse rhymes with hexe, however that is pronounced in your language.
+
 Similar Projects
 ================
 
