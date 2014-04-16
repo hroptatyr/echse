@@ -1,39 +1,59 @@
 Echse
 =====
 
-Event state stream tools.
+A simple toolset to display, unroll, merge or select events and
+recurring events from RFC 5545 calendar files (aka iCalendar), with a
+particular emphasis on financial applications, specifically holiday
+calendars or exchange trading hours.
 
-Vapourware.
+As such, only the VEVENT component and therewithin only a limited number
+of fields are meaningful to echse.  For a full-fledged command-line
+icalendar editor have a look at [calcurse][1]
 
-Formalities
------------
-Let `I` be an instant and `S = {s1, ..., sn}` a fixed set of streams,
-which map an instant to an instant.
+Resources
+---------
+echse is hosted primarily on github:
 
-    i: instant
-    S := {s1, ..., sn} with sj(i) =: ij and ij > i and sj(ij) > ij
-    
-    repeat
-      compute I' := S(i) := {s1(i), ..., sn(i)} = {ij1, ..., ijn}`
-      choose i' := min(I')
-      set i <- i'
++ github: <https://github.com/hroptatyr/echse>
++ issues: <https://github.com/hroptatyr/echse/issues>
++ releases: <https://github.com/hroptatyr/echse/releases>
 
-This will yield a sequence of instants, `i, i', i'', ...` in strict
-chronological order, just like the sequence `i, sj(i), sj(sj(i)), ...`
-and we shall define:
+echse comes preloaded with a bunch of holiday files and trading hours in
+iCal format (in the [beef][2] branch).
 
-    S(k) = (k)' for the element (k) of i > i' > i'' > ... >= (k) > (k)'
+iCalendar extensions
+--------------------
+While one of echse' objectives is to define holidays and trading hours
+in a widely-adopted format (for obvious reasons of interoperability),
+another, even more important objective is to concisely and accurately
+define recurring events.
 
-which then in turn fulfills the definition above of a stream.
+RFC 5545 RRULEs are powerful but yet not powerful enough to capture
+common recurrences such as Easter, or too verbose to capture recurrences
+like the weekday after the fourth Sunday every month (which is either
+the fourth or fifth Monday or the first Monday of the following month).
 
-So for a second set of streams `S' = {s'1, ..., s'm}` we could instead
-of running the union of sets `S` and `S'` cascade the sets like so:
+For that matter, we decided to extend RFC 5545 by additional RRULE
+parts:
 
-    C = {s'1, ..., s'm, S} 
++ BYEASTER=N[,...]  for N in 0 to 366 or -1 to -366, denotes the N-th
+  day after/before easter
++ BYADD=N[,...]  for N in 0 to 366 or -1 to -366, denotes to add N days
+  to all dates in the current set
 
-Now, consider streams that map instants to a tuple `[instant, +/-1]`
-where `+1` denotes entering a state, and `-1' denotes leaving a state.
+Pronunciation
+-------------
+echse rhymes with hexe, however that is pronounced in your language.
 
-The sequence of tuples we get when running the routine above (with the
-obvious modifications) is exactly what's written in sss files.
+Similar Projects
+================
 
+A project focussing on the holiday problem as well is [jollyday][3].
+However, their holiday files are quite inaccurate (as of early 2014).
+Also, they use a non-standard XML-based format that I found to be too
+inflexible, especially when it comes to single exceptional holidays or
+exceptional observance/omittance of holidays.
+
+  [1]: http://calcurse.org
+  [2]: https://github.com/hroptatyr/echse/tree/beef
+  [3]: http://jollyday.sourceforge.net/
