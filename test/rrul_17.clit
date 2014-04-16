@@ -1,6 +1,6 @@
 #!/usr/bin/clitors  ## -*- shell-script -*-
 
-$ echse merge "${srcdir}/sample_13.ics"
+$ echse select "${srcdir}/sample_13.ics"
 2001-12-24	Some December Monday
 2003-12-22	Some December Monday
 2004-02-29	Some February Leap Sunday

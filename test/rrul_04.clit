@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse --from 2014-01-01 merge "${srcdir}/sample_02.ics"  "${srcdir}/sample_01.ics"
+$ echse select --from 2014-01-01 "${srcdir}/sample_02.ics"  "${srcdir}/sample_01.ics"
 2014-03-23T09:00:00	March meeting
 2014-04-23T09:00:00	Flight home
 $
