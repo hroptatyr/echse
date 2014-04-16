@@ -25,3 +25,8 @@ Print the resulting stream.
 
   --from=DT             Start event streams at DT.
   --till=DT             Finish event streams by DT.
+  --format=SPEC         Use concise (one-per-line) output format
+                        %b expands to the beginning of an event
+                        %e expands to the end of an event
+                        %s expands to the summary
+                        %u expands to the uid

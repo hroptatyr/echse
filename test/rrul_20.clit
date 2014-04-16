@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select "${srcdir}/sample_16.ics" --till 2014-12-31
+$ echse select --format "%b\t%s" "${srcdir}/sample_16.ics" --till 2014-12-31
 2000-05-29	Spring Bank Holiday
 2001-05-28	Spring Bank Holiday
 2002-05-27	Spring Bank Holiday

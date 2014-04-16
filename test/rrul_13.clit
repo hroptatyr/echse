@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select "${srcdir}/sample_09.ics"
+$ echse select --format "%b\t%s" "${srcdir}/sample_09.ics"
 2000-03-26	YMCW example
 2000-10-29	YMCW example
 2001-03-25	YMCW example

@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select "${srcdir}/sample_01.ics"
+$ echse select --format "%b\t%s" "${srcdir}/sample_01.ics"
 2014-03-23T09:00:00	March meeting
 2014-04-23T09:00:00	Flight home
 $
