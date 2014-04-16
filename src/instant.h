@@ -175,4 +175,17 @@ echs_max_instant_p(echs_instant_t x)
 	return x.u == -1ULL;
 }
 
+static inline __attribute__((const, pure)) echs_idiff_t
+echs_nul_idiff(void)
+{
+	static const echs_idiff_t nul = {0U, 0U};
+	return nul;
+}
+
+static inline __attribute__((const, pure)) bool
+echs_nul_idiff_p(echs_idiff_t x)
+{
+	return x.dd == 0U && x.msd == 0U;
+}
+
 #endif	/* INCLUDED_instant_h_ */
