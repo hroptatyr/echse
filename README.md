@@ -21,6 +21,26 @@ echse is hosted primarily on github:
 echse comes preloaded with a bunch of holiday files and trading hours in
 iCal format (in the [beef][2] branch).
 
+iCalendar extensions
+--------------------
+While one of echse' objectives is to define holidays and trading hours
+in a widely-adopted format (for obvious reasons of interoperability),
+another, even more important objective is to concisely and accurately
+define recurring events.
+
+RFC 5545 RRULEs are powerful but yet not powerful enough to capture
+common recurrences such as Easter, or too verbose to capture recurrences
+like the weekday after the fourth Sunday every month (which is either
+the fourth or fifth Monday or the first Monday of the following month).
+
+For that matter, we decided to extend RFC 5545 by additional RRULE
+parts:
+
++ BYEASTER=N[,...]  for N in 0 to 366 or -1 to -366, denotes the N-th
+  day after/before easter
++ BYADD=N[,...]  for N in 0 to 366 or -1 to -366, denotes to add N days
+  to all dates in the current set
+
 Pronunciation
 -------------
 echse rhymes with hexe, however that is pronounced in your language.
