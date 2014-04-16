@@ -773,9 +773,9 @@ prnt_rrul(rrulsp_t rr)
 			break;
 		}
 		d = bi31_next(&i, rr->dom);
-		fprintf(stdout, ";BYMONTHDAY=%d", d);
+		fprintf(stdout, ";BYMONTHDAY=%d", d + 1);
 		while (d = bi31_next(&i, rr->dom), i) {
-			fprintf(stdout, ",%d", d);
+			fprintf(stdout, ",%d", d + 1);
 		}
 	}
 
