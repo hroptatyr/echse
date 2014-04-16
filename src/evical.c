@@ -850,6 +850,7 @@ prnt_rrul(rrulsp_t rr)
 static void
 prnt_ev(echs_event_t ev)
 {
+	static unsigned int auto_uid;
 	char stmp[32U] = {':'};
 
 	if (UNLIKELY(echs_nul_instant_p(ev.from))) {
@@ -874,9 +875,13 @@ prnt_ev(echs_event_t ev)
 	puts(stmp);
 
 	/* fill in a missing uid? */
+	auto_uid++;
 	if (ev.uid) {
 		fputs("UID:", stdout);
 		puts(obint_name(ev.uid));
+	} else {
+		/* it's mandatory, so generate one */
+		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
 	}
 	if (ev.sum) {
 		fputs("SUMMARY:", stdout);
