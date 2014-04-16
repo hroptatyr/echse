@@ -98,9 +98,14 @@ next_evmux(echs_evstrm_t strm)
 
 	if (UNLIKELY(this->s == NULL)) {
 		return (echs_event_t){0};
+	} else if (UNLIKELY(echs_max_instant_p(this->ev[0].from))) {
+		/* precache events, the max instant in ev[0] is the indicator */
+		for (size_t j = 0UL; j < this->ns; j++) {
+			__refill(this, j);
+		}
 	}
 	/* best event so-far is the first non-null event */
-	for (i = 0; i < this->ns; i++) {
+	for (i = 0U; i < this->ns; i++) {
 		best = this->ev[i];
 
 		if (!echs_event_0_p(best)) {
@@ -110,7 +115,11 @@ next_evmux(echs_evstrm_t strm)
 	}
 	/* quick check if we hit the event boundary */
 	if (UNLIKELY(i >= this->ns)) {
-		/* yep, bugger off */
+		/* yep, bugger off, we assume the streams have been
+		 * freed upon __refill() previously, so just free the
+		 * stream array here */
+		free(this->s);
+		this->s = NULL;
 		return nul;
 	}
 	/* otherwise try and find an earlier event */
@@ -185,10 +194,10 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 			res->class = &evmuxm_cls;
 		}
 	}
-	/* precache them events */
-	for (size_t i = 0U; i < ns; i++) {
-		__refill(res, i);
-	}
+	/* we used to precache events here but seeing as not every
+	 * echse command would need the unrolled stream we leave it
+	 * to next_evmux(), put an indicator into the event cache here */
+	res->ev[0].from = echs_max_instant();
 	return (echs_evstrm_t)res;
 
 trivial:
