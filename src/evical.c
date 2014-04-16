@@ -847,6 +847,44 @@ prnt_rrul(rrulsp_t rr)
 	return;
 }
 
+static void
+prnt_ev(echs_event_t ev)
+{
+	char stmp[32U] = {':'};
+
+	if (UNLIKELY(echs_nul_instant_p(ev.from))) {
+		return;
+	}
+	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.from);
+	fputs("DTSTART", stdout);
+	if (echs_instant_all_day_p(ev.from)) {
+		fputs(";VALUE=DATE", stdout);
+	}
+	puts(stmp);
+
+	if (LIKELY(!echs_nul_instant_p(ev.till))) {
+		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.till);
+	} else {
+		ev.till = ev.from;
+	}
+	fputs("DTEND", stdout);
+	if (echs_instant_all_day_p(ev.till)) {
+		fputs(";VALUE=DATE", stdout);
+	}
+	puts(stmp);
+
+	/* fill in a missing uid? */
+	if (ev.uid) {
+		fputs("UID:", stdout);
+		puts(obint_name(ev.uid));
+	}
+	if (ev.sum) {
+		fputs("SUMMARY:", stdout);
+		puts(obint_name(ev.sum));
+	}
+	return;
+}
+
 
 /* our event class */
 struct evical_s {
@@ -919,25 +957,8 @@ prnt_evical_vevent(echs_evstrm_t s)
 	const struct evical_s *this = (struct evical_s*)s;
 
 	for (size_t i = 0UL; i < this->nev; i++) {
-		const echs_event_t ev = this->ev[i];
-		char from[32U];
-		char till[32U];
-
 		prnt_ical_hdr();
-		dt_strf_ical(from, sizeof(from), ev.from);
-		dt_strf_ical(till, sizeof(till), ev.till);
-		fputs("DTSTART:", stdout);
-		puts(from);
-		fputs("DTEND:", stdout);
-		puts(till);
-		if (ev.uid) {
-			fputs("UID:", stdout);
-			puts(obint_name(ev.uid));
-		}
-		if (ev.sum) {
-			fputs("SUMMARY:", stdout);
-			puts(obint_name(ev.sum));
-		}
+		prnt_ev(this->ev[i]);
 		prnt_ical_ftr();
 	}
 	return;
@@ -1146,31 +1167,15 @@ static void
 prnt_evrrul1(echs_evstrm_t s)
 {
 	const struct evrrul_s *this = (struct evrrul_s*)s;
-	char from[32U];
-	char till[32U];
 
 	prnt_ical_hdr();
-
-	dt_strf_ical(from, sizeof(from), this->ve.ev.from);
-	dt_strf_ical(till, sizeof(till), this->ve.ev.till);
-	fputs("DTSTART:", stdout);
-	puts(from);
-	fputs("DTEND:", stdout);
-	puts(till);
+	prnt_ev(this->ve.ev);
 
 	for (size_t i = 0UL; i < this->ve.rr.nr; i++) {
 		rrulsp_t rr = get_grr(this->ve.rr.r + i);
 
 		fputs("RRULE:", stdout);
 		prnt_rrul(rr);
-	}
-	if (this->ve.ev.uid) {
-		fputs("UID:", stdout);
-		puts(obint_name(this->ve.ev.uid));
-	}
-	if (this->ve.ev.sum) {
-		fputs("SUMMARY:", stdout);
-		puts(obint_name(this->ve.ev.sum));
 	}
 	prnt_ical_ftr();
 	return;
