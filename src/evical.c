@@ -1277,4 +1277,32 @@ make_echs_evical(const char *fn)
 	return NULL;
 }
 
+void
+echs_prnt_ical_event(echs_event_t ev)
+{
+	prnt_ical_hdr();
+	prnt_ev(ev);
+	prnt_ical_ftr();
+	return;
+}
+
+void
+echs_prnt_ical_init(void)
+{
+	fputs("\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n", stdout);
+	return;
+}
+
+void
+echs_prnt_ical_fini(void)
+{
+	fputs("\
+END:VCALENDAR\n", stdout);
+	return;
+}
+
 /* evical.c ends here */

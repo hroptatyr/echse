@@ -48,6 +48,7 @@
 
 #include "echse.h"
 #include "echse-genuid.h"
+#include "evical.h"
 #include "dt-strpf.h"
 #include "nifty.h"
 
@@ -68,6 +69,126 @@ serror(const char *fmt, ...)
 	return;
 }
 
+static size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
+{
+	if (ssz > dsz) {
+		ssz = dsz - 1U;
+	}
+	memcpy(dst, src, ssz);
+	dst[ssz] = '\0';
+	return ssz;
+}
+
+static void
+select_ical(echs_evstrm_t smux, echs_instant_t from, echs_instant_t till)
+{
+	echs_event_t e;
+
+	/* just get it out now */
+	echs_prnt_ical_init();
+	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+		if (echs_instant_lt_p(e.from, from)) {
+			continue;
+		} else if (echs_instant_lt_p(till, e.from)) {
+			break;
+		}
+		/* otherwise print */
+		echs_prnt_ical_event(e);
+	}
+	echs_prnt_ical_fini();
+	return;
+}
+
+static char*
+select_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
+{
+	char *restrict bp = buf;
+	const char *const ebp = buf + bsz;
+
+	for (const char *fp = fmt; *fp && bp < ebp; fp++) {
+		if (UNLIKELY(*fp == '\\')) {
+			static const char esc[] =
+				"\a\bcd\e\fghijklm\nopq\rs\tu\v";
+
+			if (*++fp && *fp >= 'a' && *fp <= 'v') {
+				*bp++ = esc[*fp - 'a'];
+			} else if (!*fp) {
+				/* huh? trailing lone backslash */
+				break;
+			} else {
+				*bp++ = *fp;
+			}
+		} else if (UNLIKELY(*fp == '%')) {
+			echs_instant_t i;
+			obint_t x;
+
+			switch (*++fp) {
+			case 'b':
+				i = e.from;
+				goto cpy_inst;
+			case 'e':
+				i = e.till;
+				goto cpy_inst;
+			case 's':
+				x = e.sum;
+				goto cpy_obint;
+			case 'u':
+				x = e.uid;
+				goto cpy_obint;
+			case '%':
+				*bp++ = '%';
+			default:
+				continue;
+			}
+
+		cpy_inst:
+			bp += dt_strf(bp, ebp - bp, i);
+			continue;
+		cpy_obint:
+			{
+				const char *nm = obint_name(x);
+				const size_t nz = obint_len(x);
+
+				bp += xstrlncpy(bp, ebp - bp, nm, nz);
+			}
+			continue;
+		} else {
+			*bp++ = *fp;
+		}
+	}
+	return bp;
+}
+
+static void
+select_frmt(
+	echs_evstrm_t smux,
+	echs_instant_t from, echs_instant_t till, const char *fmt)
+{
+	const size_t fmz = strlen(fmt);
+	char fbuf[fmz + 2 * 32U + 2 * 256U];
+	echs_event_t e;
+
+	/* just get it out now */
+	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+		char *restrict bp;
+
+		if (echs_instant_lt_p(e.from, from)) {
+			continue;
+		} else if (echs_instant_lt_p(till, e.from)) {
+			break;
+		}
+		/* otherwise print */
+		bp = select_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
+		/* finalise buf */
+		*bp++ = '\n';
+		*bp++ = '\0';
+
+		fputs(fbuf, stdout);
+	}
+	return;
+}
+
 
 #if defined STANDALONE
 #include "echse.yucc"
@@ -79,7 +200,6 @@ cmd_select(const struct yuck_cmd_select_s argi[static 1U])
 	echs_instant_t from;
 	echs_instant_t till;
 	echs_evstrm_t smux;
-	unsigned int n = 0;
 
 	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
@@ -132,20 +252,12 @@ echse: Error: cannot open file `%s'", fn);
 		/* return early */
 		return 1;
 	}
-	/* just get it out now */
-	for (echs_event_t e;
-	     !echs_event_0_p(e = echs_evstrm_next(smux)); n++) {
-		char fbuf[32U];
-
-		if (echs_instant_lt_p(e.from, from)) {
-			continue;
-		} else if (echs_instant_lt_p(till, e.from)) {
-			break;
-		}
-		/* otherwise print */
-		dt_strf(fbuf, sizeof(fbuf), e.from);
-		printf("%s\t%s\n", fbuf, obint_name(e.sum));
+	if (argi->format_arg == NULL) {
+		select_ical(smux, from, till);
+	} else {
+		select_frmt(smux, from, till, argi->format_arg);
 	}
+
 	free_echs_evstrm(smux);
 	return 0;
 }
@@ -172,12 +284,7 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
-	fputs("\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-CALSCALE:GREGORIAN\n", stdout);
-
+	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
 		echs_evstrm_t s = make_echs_evstrm_from_file(fn);
@@ -193,8 +300,7 @@ echse: Error: cannot open file `%s'", fn);
 		/* and free him */
 		free_echs_evstrm(s);
 	}
-	fputs("\
-END:VCALENDAR\n", stdout);
+	echs_prnt_ical_fini();
 	return 0;
 }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select "${srcdir}/sample_17.ics" --till 2020-12-31
+$ echse select --format "%b\t%s" "${srcdir}/sample_17.ics" --till 2020-12-31
 2000-05-26	Some Day
 2000-06-05	Some Day
 2000-11-06	November Days
