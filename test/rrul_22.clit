@@ -1,0 +1,33 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse select --from 2000-01-01 --till 2000-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics" | grep -vF 'DTSTAMP:'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//GA Financial Solutions//echse//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20000417
+DTEND;VALUE=DATE:20000417
+UID:sample_08_ics_vevent_01@example.com
+SUMMARY:YWD example
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20000423
+DTEND;VALUE=DATE:20000423
+UID:sample_08_ics_vevent_01@example.com
+SUMMARY:YWD example
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20000424
+DTEND;VALUE=DATE:20000424
+UID:sample_08_ics_vevent_01@example.com
+SUMMARY:YWD example
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20000430
+DTEND;VALUE=DATE:20000430
+UID:sample_08_ics_vevent_01@example.com
+SUMMARY:YWD example
+END:VEVENT
+END:VCALENDAR
+$
