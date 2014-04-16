@@ -48,6 +48,7 @@
 
 #include "echse.h"
 #include "echse-genuid.h"
+#include "evical.h"
 #include "dt-strpf.h"
 #include "nifty.h"
 
@@ -172,12 +173,7 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
-	fputs("\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-CALSCALE:GREGORIAN\n", stdout);
-
+	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
 		echs_evstrm_t s = make_echs_evstrm_from_file(fn);
@@ -193,8 +189,7 @@ echse: Error: cannot open file `%s'", fn);
 		/* and free him */
 		free_echs_evstrm(s);
 	}
-	fputs("\
-END:VCALENDAR\n", stdout);
+	echs_prnt_ical_fini();
 	return 0;
 }
 

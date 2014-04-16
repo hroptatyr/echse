@@ -46,7 +46,15 @@
 extern echs_evstrm_t make_echs_evical(const char *fn);
 
 /**
- * Return one event from string S. */
-extern echs_event_t make_echs_ical_event(const char *s, size_t z);
+ * Initialise ical printing. */
+extern void echs_prnt_ical_init(void);
+
+/**
+ * Finish ical printing. */
+extern void echs_prnt_ical_fini(void);
+
+/**
+ * Print a single event in ical format. */
+extern void echs_prnt_ical_event(echs_event_t);
 
 #endif	/* INCLUDED_evical_h_ */
