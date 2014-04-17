@@ -196,9 +196,12 @@ select_frmt(
 static int
 cmd_select(const struct yuck_cmd_select_s argi[static 1U])
 {
+	static const char dflt_fmt[] = "%b\t%s";
 	/* date range to scan through */
 	echs_instant_t from;
 	echs_instant_t till;
+	/* format string to use */
+	const char *fmt = dflt_fmt;
 	echs_evstrm_t smux;
 
 	if (argi->from_arg) {
@@ -252,12 +255,18 @@ echse: Error: cannot open file `%s'", fn);
 		/* return early */
 		return 1;
 	}
-	if (argi->format_arg == NULL) {
-		select_ical(smux, from, till);
-	} else {
-		select_frmt(smux, from, till, argi->format_arg);
-	}
+	if (UNLIKELY(argi->format_arg != NULL)) {
+		fmt = argi->format_arg;
 
+		if (!strcmp(fmt, "ical")) {
+			/* special output format */
+			select_ical(smux, from, till);
+			goto out;
+		}
+	}
+	select_frmt(smux, from, till, fmt);
+
+out:
 	free_echs_evstrm(smux);
 	return 0;
 }
