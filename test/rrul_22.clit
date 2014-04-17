@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select --from 2000-01-01 --till 2000-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics" | grep -vF 'DTSTAMP:'
+$ echse select --format ical --from 2000-01-01 --till 2000-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics" | grep -vF 'DTSTAMP:'
 BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//GA Financial Solutions//echse//EN
