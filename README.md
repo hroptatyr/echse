@@ -1,4 +1,4 @@
-Echse
+echse
 =====
 
 A simple toolset to display, unroll, merge or select events and
