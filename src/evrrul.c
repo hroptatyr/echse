@@ -100,13 +100,25 @@ yd_get_wday(unsigned int y, unsigned int yd)
 	return (echs_wday_t)(((j01 + --yd) % 7U) ?: SUN);
 }
 
+static __attribute__((const, pure)) inline unsigned int
+__get_ndom(unsigned int y, unsigned int m)
+{
+/* return the number of days in month M in year Y. */
+	unsigned int res = mdays[m];
+
+	if (UNLIKELY(!(y % 4U) && m == 2U)) {
+		res++;
+	}
+	return res;
+}
+
 static int
 __get_mcnt(unsigned int y, unsigned int m, echs_wday_t w)
 {
 /* get the number of weekdays W in Y-M, which is the max count
  * for a weekday W in ymcw dates in year Y and month M */
 	echs_wday_t wd1 = ymd_get_wday(y, m, 1U);
-	unsigned int md = mdays[m];
+	unsigned int md = __get_ndom(y, m);
 	/* the maximum number of WD01s in Y-M */
 	unsigned int wd01cnt = (md - 1U) / 7U + 1;
 	/* modulus */
@@ -339,6 +351,25 @@ unpack_cand(unsigned int c)
 	return (struct md_s){c / 32U + 1U, c % 32U};
 }
 
+static inline struct md_s
+inc_md(struct md_s md, const unsigned int y)
+{
+	if (UNLIKELY(++md.d > __get_ndom(y, md.m))) {
+		md.d = 1U;
+		md.m++;
+	}
+	return md;
+}
+
+static inline echs_wday_t
+inc_wd(echs_wday_t wd)
+{
+	if (UNLIKELY(!(++wd % 8U))) {
+		wd = MON;
+	}
+	return wd;
+}
+
 
 /* recurrence helpers */
 static void
@@ -373,7 +404,7 @@ fill_yly_ywd(
 static void
 fill_yly_ymcw(
 	bitint383_t *restrict cand, unsigned int y,
-	const bitint447_t *dow, unsigned int m[static 12U], size_t nm)
+	const bitint447_t *dow, const unsigned int m[static 12U], size_t nm)
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		int tmp;
@@ -425,6 +456,13 @@ fill_yly_yd(
 {
 	int yd;
 
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
 	for (bitint_iter_t doyi = 0UL;
 	     (yd = bi383_next(&doyi, doy), doyi);) {
 		/* yd */
@@ -440,6 +478,65 @@ fill_yly_yd(
 		}
 		/* otherwise it's looking good */
 		ass_bi383(cand, pack_cand(md.m, md.d));
+	}
+	return;
+}
+
+static void
+fill_yly_yd_all(bitint383_t *restrict c, const unsigned int y, uint8_t wd_mask)
+{
+/* the dense verison of fill_yly_yd() where all days in DOY are set */
+	struct md_s md = {1U, 1U};
+
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
+	/* just go through all days of the year keeping track of
+	 * the week day*/
+	for (unsigned int yd = 1U, w = ymd_get_wday(y, 1U, 1U),
+		     nyd = (y % 4U) ? 365U : 366U;
+	     yd <= nyd; yd++, w = inc_wd((echs_wday_t)w), md = inc_md(md, y)) {
+		if (!((wd_mask >> w) & 0b1U)) {
+			/* weekday is masked out */
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(c, pack_cand(md.m, md.d));
+	}
+	return;
+}
+
+static void
+fill_yly_md_all(
+	bitint383_t *restrict c, const unsigned int y,
+	const unsigned int m[static 12U], size_t nm, uint8_t wd_mask)
+{
+/* the dense version of fill_yly_ymd() where all days in M are set */
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
+	for (size_t i = 0U; i < nm; i++) {
+		/* just go through all days of the month keeping track of
+		 * the week day*/
+		const unsigned int nmd = __get_ndom(y, m[i]);
+
+		for (unsigned int md = 1U, w = ymd_get_wday(y, m[i], 1U);
+		     md <= nmd; md++, w = inc_wd((echs_wday_t)w)) {
+			if (!((wd_mask >> w) & 0b1U)) {
+				/* weekday is masked out */
+				continue;
+			}
+			/* otherwise it's looking good */
+			ass_bi383(c, pack_cand(m[i], md));
+		}
 	}
 	return;
 }
@@ -472,8 +569,8 @@ fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
-	unsigned int m[static 12U], size_t nm,
-	int d[static 31U], size_t nd,
+	const unsigned int m[static 12U], size_t nm,
+	const int d[static 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
@@ -556,17 +653,17 @@ clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 }
 
 static void
-add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
+add_poss(bitint383_t *restrict cand, const unsigned int y, const bitint383_t *p)
 {
 	bitint383_t res = {0U};
 	int add;
 
-	if (!bi383_has_bits_p(poss)) {
+	if (!bi383_has_bits_p(p)) {
 		/* nothing to add */
 		return;
 	}
 	/* go through summands ... */
-	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, poss), posi);) {
+	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, p), posi);) {
 		int c;
 
 		if (UNLIKELY(add == 0)) {
@@ -587,11 +684,11 @@ add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 				continue;
 			} else if (UNLIKELY(nu_d <= 0)) {
 				/* fixup, innit */
-				nu_d += mdays[--nu_m];
+				nu_d += __get_ndom(y, --nu_m);
 				goto reassess;
-			} else if (UNLIKELY(nu_d > (int)mdays[nu_m])) {
+			} else if (UNLIKELY(nu_d > (int)__get_ndom(y, nu_m))) {
 				/* fixup too, grrr */
-				nu_d -= mdays[nu_m++];
+				nu_d -= __get_ndom(y, nu_m++);
 				goto reassess;
 			}
 			/* otherwise, we can assign directly */
@@ -657,6 +754,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
 			if (tmp >= (int)MON && tmp <= (int)SUN) {
 				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* use lsb of wd_mask to indicate
+				 * non-0 wday counts, as in nMO,nTU, etc. */
+				wd_mask |= 0b1U;
 			}
 		}
 	}
@@ -666,18 +767,32 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		bitint383_t cand = {0U};
 		int yd;
 
-		if (bi63_has_bits_p(rr->wk) && bi447_has_bits_p(&rr->dow)) {
+		/* stick to note 2 on page 44, RFC 5545 */
+		if (wd_mask && (nd || bi383_has_bits_p(&rr->doy))) {
+			/* yd */
+			fill_yly_yd(&cand, y, &rr->doy, wd_mask);
+		} else if (wd_mask && bi63_has_bits_p(rr->wk)) {
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
-		} else if (!bi63_has_bits_p(rr->wk) && nm) {
-			/* ymcw */
-			fill_yly_ymcw(&cand, y, &rr->dow, m, nm);
-		} else if (!bi63_has_bits_p(rr->wk)) {
-			/* ycw */
-			fill_yly_ycw(&cand, y, &rr->dow);
+		} else if (wd_mask && nm) {
+			/* ymcw or special expand for monthly,
+			 * see note 2 on page 44, RFC 5545 */
+			if (wd_mask & 0b1U) {
+				/* only start ymcw filling when we're sure
+				 * that there are non-0 counts */
+				fill_yly_ymcw(&cand, y, &rr->dow, m, nm);
+			}
+			fill_yly_md_all(&cand, y, m, nm, wd_mask);
+		} else if (wd_mask) {
+			/* ycw or special expand for yearly,
+			 * see note 2 on page 44, RFC 5545 */
+			if (wd_mask & 0b1U) {
+				/* only start ycw filling when we're sure
+				 * that there are non-0 counts */
+				fill_yly_ycw(&cand, y, &rr->dow);
+			}
+			fill_yly_yd_all(&cand, y, wd_mask);
 		}
-		/* extend by yd */
-		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
 		/* extend by easter */
 		fill_yly_eastr(&cand, y, &rr->easter);
@@ -689,7 +804,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		clr_poss(&cand, &rr->pos);
 
 		/* add/subtract days */
-		add_poss(&cand, &rr->add);
+		add_poss(&cand, y, &rr->add);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
