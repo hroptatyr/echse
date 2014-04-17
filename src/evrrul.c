@@ -404,7 +404,7 @@ fill_yly_ywd(
 static void
 fill_yly_ymcw(
 	bitint383_t *restrict cand, unsigned int y,
-	const bitint447_t *dow, unsigned int m[static 12U], size_t nm)
+	const bitint447_t *dow, const unsigned int m[static 12U], size_t nm)
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		int tmp;
@@ -538,8 +538,8 @@ fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
-	unsigned int m[static 12U], size_t nm,
-	int d[static 31U], size_t nd,
+	const unsigned int m[static 12U], size_t nm,
+	const int d[static 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
