@@ -25,7 +25,7 @@ echse is hosted primarily on github:
 + releases: <https://github.com/hroptatyr/echse/releases>
 
 echse comes preloaded with a bunch of holiday files and trading hours in
-iCal format (in the [beef][2] branch).
+iCalendar format (see [echse beef][2] page for further information).
 
 iCalendar extensions
 --------------------
@@ -61,5 +61,5 @@ inflexible, especially when it comes to single exceptional holidays or
 exceptional observance/omittance of holidays.
 
   [1]: http://calcurse.org
-  [2]: https://github.com/hroptatyr/echse/tree/beef
+  [2]: http://www.fresse.org/echse/beef.html
   [3]: http://jollyday.sourceforge.net/
