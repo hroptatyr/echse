@@ -511,6 +511,37 @@ fill_yly_yd_all(bitint383_t *restrict c, const unsigned int y, uint8_t wd_mask)
 }
 
 static void
+fill_yly_md_all(
+	bitint383_t *restrict c, const unsigned int y,
+	const unsigned int m[static 12U], size_t nm, uint8_t wd_mask)
+{
+/* the dense version of fill_yly_ymd() where all days in M are set */
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
+	for (size_t i = 0U; i < nm; i++) {
+		/* just go through all days of the month keeping track of
+		 * the week day*/
+		const unsigned int nmd = __get_ndom(y, m[i]);
+
+		for (unsigned int md = 1U, w = ymd_get_wday(y, m[i], 1U);
+		     md <= nmd; md++, w = inc_wd((echs_wday_t)w)) {
+			if (!((wd_mask >> w) & 0b1U)) {
+				/* weekday is masked out */
+				continue;
+			}
+			/* otherwise it's looking good */
+			ass_bi383(c, pack_cand(m[i], md));
+		}
+	}
+	return;
+}
+
+static void
 fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 {
 	int offs;
@@ -744,8 +775,14 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
 		} else if (wd_mask && nm) {
-			/* ymcw */
-			fill_yly_ymcw(&cand, y, &rr->dow, m, nm);
+			/* ymcw or special expand for monthly,
+			 * see note 2 on page 44, RFC 5545 */
+			if (wd_mask & 0b1U) {
+				/* only start ymcw filling when we're sure
+				 * that there are non-0 counts */
+				fill_yly_ymcw(&cand, y, &rr->dow, m, nm);
+			}
+			fill_yly_md_all(&cand, y, m, nm, wd_mask);
 		} else if (wd_mask) {
 			/* ycw or special expand for yearly,
 			 * see note 2 on page 44, RFC 5545 */
