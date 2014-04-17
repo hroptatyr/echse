@@ -339,6 +339,29 @@ unpack_cand(unsigned int c)
 	return (struct md_s){c / 32U + 1U, c % 32U};
 }
 
+static inline struct md_s
+inc_md(struct md_s md, const unsigned int y)
+{
+	if (LIKELY(++md.d <= mdays[md.m])) {
+		;
+	} else if (UNLIKELY(!(y % 4U) && md.m == 2U && md.d == 29U)) {
+		;
+	} else {
+		md.d = 1U;
+		md.m++;
+	}
+	return md;
+}
+
+static inline echs_wday_t
+inc_wd(echs_wday_t wd)
+{
+	if (UNLIKELY(!(++wd % 8U))) {
+		wd = MON;
+	}
+	return wd;
+}
+
 
 /* recurrence helpers */
 static void
@@ -425,6 +448,13 @@ fill_yly_yd(
 {
 	int yd;
 
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
 	for (bitint_iter_t doyi = 0UL;
 	     (yd = bi383_next(&doyi, doy), doyi);) {
 		/* yd */
@@ -440,6 +470,34 @@ fill_yly_yd(
 		}
 		/* otherwise it's looking good */
 		ass_bi383(cand, pack_cand(md.m, md.d));
+	}
+	return;
+}
+
+static void
+fill_yly_yd_all(bitint383_t *restrict c, const unsigned int y, uint8_t wd_mask)
+{
+/* the dense verison of fill_yly_yd() where all days in DOY are set */
+	struct md_s md = {1U, 1U};
+
+	if (UNLIKELY(!(wd_mask >> 1U))) {
+		/* quick exit
+		 * lowest bit doesn't count as it indicates
+		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
+		return;
+	}
+
+	/* just go through all days of the year keeping track of
+	 * the week day*/
+	for (unsigned int yd = 1U, w = ymd_get_wday(y, 1U, 1U),
+		     nyd = (y % 4U) ? 365U : 366U;
+	     yd <= nyd; yd++, w = inc_wd((echs_wday_t)w), md = inc_md(md, y)) {
+		if (!((wd_mask >> w) & 0b1U)) {
+			/* weekday is masked out */
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(c, pack_cand(md.m, md.d));
 	}
 	return;
 }
@@ -657,6 +715,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
 			if (tmp >= (int)MON && tmp <= (int)SUN) {
 				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* use lsb of wd_mask to indicate
+				 * non-0 wday counts, as in nMO,nTU, etc. */
+				wd_mask |= 0b1U;
 			}
 		}
 	}
@@ -666,18 +728,26 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		bitint383_t cand = {0U};
 		int yd;
 
-		if (bi63_has_bits_p(rr->wk) && bi447_has_bits_p(&rr->dow)) {
+		/* stick to note 2 on page 44, RFC 5545 */
+		if (wd_mask && (nd || bi383_has_bits_p(&rr->doy))) {
+			/* yd */
+			fill_yly_yd(&cand, y, &rr->doy, wd_mask);
+		} else if (wd_mask && bi63_has_bits_p(rr->wk)) {
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
-		} else if (!bi63_has_bits_p(rr->wk) && nm) {
+		} else if (wd_mask && nm) {
 			/* ymcw */
 			fill_yly_ymcw(&cand, y, &rr->dow, m, nm);
-		} else if (!bi63_has_bits_p(rr->wk)) {
-			/* ycw */
-			fill_yly_ycw(&cand, y, &rr->dow);
+		} else if (wd_mask) {
+			/* ycw or special expand for yearly,
+			 * see note 2 on page 44, RFC 5545 */
+			if (wd_mask & 0b1U) {
+				/* only start ycw filling when we're sure
+				 * that there are non-0 counts */
+				fill_yly_ycw(&cand, y, &rr->dow);
+			}
+			fill_yly_yd_all(&cand, y, wd_mask);
 		}
-		/* extend by yd */
-		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
 		/* extend by easter */
 		fill_yly_eastr(&cand, y, &rr->easter);
