@@ -100,13 +100,25 @@ yd_get_wday(unsigned int y, unsigned int yd)
 	return (echs_wday_t)(((j01 + --yd) % 7U) ?: SUN);
 }
 
+static __attribute__((const, pure)) inline unsigned int
+__get_ndom(unsigned int y, unsigned int m)
+{
+/* return the number of days in month M in year Y. */
+	unsigned int res = mdays[m];
+
+	if (UNLIKELY(!(y % 4U) && m == 2U)) {
+		res++;
+	}
+	return res;
+}
+
 static int
 __get_mcnt(unsigned int y, unsigned int m, echs_wday_t w)
 {
 /* get the number of weekdays W in Y-M, which is the max count
  * for a weekday W in ymcw dates in year Y and month M */
 	echs_wday_t wd1 = ymd_get_wday(y, m, 1U);
-	unsigned int md = mdays[m];
+	unsigned int md = __get_ndom(y, m);
 	/* the maximum number of WD01s in Y-M */
 	unsigned int wd01cnt = (md - 1U) / 7U + 1;
 	/* modulus */
@@ -342,11 +354,7 @@ unpack_cand(unsigned int c)
 static inline struct md_s
 inc_md(struct md_s md, const unsigned int y)
 {
-	if (LIKELY(++md.d <= mdays[md.m])) {
-		;
-	} else if (UNLIKELY(!(y % 4U) && md.m == 2U && md.d == 29U)) {
-		;
-	} else {
+	if (UNLIKELY(++md.d > __get_ndom(y, md.m))) {
 		md.d = 1U;
 		md.m++;
 	}
@@ -614,17 +622,17 @@ clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 }
 
 static void
-add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
+add_poss(bitint383_t *restrict cand, const unsigned int y, const bitint383_t *p)
 {
 	bitint383_t res = {0U};
 	int add;
 
-	if (!bi383_has_bits_p(poss)) {
+	if (!bi383_has_bits_p(p)) {
 		/* nothing to add */
 		return;
 	}
 	/* go through summands ... */
-	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, poss), posi);) {
+	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, p), posi);) {
 		int c;
 
 		if (UNLIKELY(add == 0)) {
@@ -645,11 +653,11 @@ add_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 				continue;
 			} else if (UNLIKELY(nu_d <= 0)) {
 				/* fixup, innit */
-				nu_d += mdays[--nu_m];
+				nu_d += __get_ndom(y, --nu_m);
 				goto reassess;
-			} else if (UNLIKELY(nu_d > (int)mdays[nu_m])) {
+			} else if (UNLIKELY(nu_d > (int)__get_ndom(y, nu_m))) {
 				/* fixup too, grrr */
-				nu_d -= mdays[nu_m++];
+				nu_d -= __get_ndom(y, nu_m++);
 				goto reassess;
 			}
 			/* otherwise, we can assign directly */
@@ -759,7 +767,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		clr_poss(&cand, &rr->pos);
 
 		/* add/subtract days */
-		add_poss(&cand, &rr->add);
+		add_poss(&cand, y, &rr->add);
 
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
