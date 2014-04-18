@@ -203,6 +203,8 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	/* format string to use */
 	const char *fmt = dflt_fmt;
 	echs_evstrm_t smux;
+	/* filter */
+	struct rrulsp_s filt = {FREQ_NONE};
 
 	if (argi->from_arg) {
 		from = dt_strp(argi->from_arg);
@@ -228,6 +230,14 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 		till.m = 12;
 		till.d = 31;
 #endif	/* HAVE_ANON_STRUCTS_INIT */
+	}
+
+	if (argi->select_arg) {
+		const char *sel = argi->select_arg;
+		const size_t len = strlen(sel);
+
+		/* just use the rrule parts, there won't be a frequency set */
+		filt = echs_read_rrul(sel, len);
 	}
 
 	with (echs_evstrm_t sarr[argi->nargs]) {
