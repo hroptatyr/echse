@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select --format "%b\t%s" "${srcdir}/sample_14.ics"
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_14.ics"
 2000-12-04	Some December Monday
 2001-12-24	Some December Monday
 2002-12-02	Some December Monday

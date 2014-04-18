@@ -18,7 +18,7 @@ Usage: echse merge [FILE]...
 Merge echse source FILEs and print merged output.
 
 
-Usage: echse select [FILE]...
+Usage: echse unroll [FILE]...
 
 Select events and unroll recurrences in FILEs.
 Print the resulting stream.

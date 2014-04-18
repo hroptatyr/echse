@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select --format "%b\t%s" "${srcdir}/sample_11.ics"
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_11.ics"
 2000-04-21	Gregorian Easter minus 2
 2000-04-23	Gregorian Easter Sunday/Monday
 2000-04-24	Gregorian Easter Sunday/Monday

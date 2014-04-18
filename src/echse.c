@@ -81,7 +81,7 @@ xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 }
 
 static void
-select_ical(echs_evstrm_t smux, echs_instant_t from, echs_instant_t till)
+unroll_ical(echs_evstrm_t smux, echs_instant_t from, echs_instant_t till)
 {
 	echs_event_t e;
 
@@ -101,7 +101,7 @@ select_ical(echs_evstrm_t smux, echs_instant_t from, echs_instant_t till)
 }
 
 static char*
-select_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
+unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 {
 	char *restrict bp = buf;
 	const char *const ebp = buf + bsz;
@@ -161,7 +161,7 @@ select_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 }
 
 static void
-select_frmt(
+unroll_frmt(
 	echs_evstrm_t smux,
 	echs_instant_t from, echs_instant_t till, const char *fmt)
 {
@@ -179,7 +179,7 @@ select_frmt(
 			break;
 		}
 		/* otherwise print */
-		bp = select_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
+		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
 		/* finalise buf */
 		*bp++ = '\n';
 		*bp++ = '\0';
@@ -194,7 +194,7 @@ select_frmt(
 #include "echse.yucc"
 
 static int
-cmd_select(const struct yuck_cmd_select_s argi[static 1U])
+cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 {
 	static const char dflt_fmt[] = "%b\t%s";
 	/* date range to scan through */
@@ -260,11 +260,11 @@ echse: Error: cannot open file `%s'", fn);
 
 		if (!strcmp(fmt, "ical")) {
 			/* special output format */
-			select_ical(smux, from, till);
+			unroll_ical(smux, from, till);
 			goto out;
 		}
 	}
-	select_frmt(smux, from, till, fmt);
+	unroll_frmt(smux, from, till, fmt);
 
 out:
 	free_echs_evstrm(smux);
@@ -334,8 +334,8 @@ echse: no valid command given\n\
 Try --help for a list of commands.\n", stderr);
 		rc = 1;
 		break;
-	case ECHSE_CMD_SELECT:
-		rc = cmd_select((struct yuck_cmd_select_s*)argi);
+	case ECHSE_CMD_UNROLL:
+		rc = cmd_unroll((struct yuck_cmd_unroll_s*)argi);
 		break;
 	case ECHSE_CMD_GENUID:
 		rc = cmd_genuid((struct yuck_cmd_genuid_s*)argi);
