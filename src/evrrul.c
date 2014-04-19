@@ -456,19 +456,12 @@ fill_yly_yd(
 {
 	int yd;
 
-	if (UNLIKELY(!(wd_mask >> 1U))) {
-		/* quick exit
-		 * lowest bit doesn't count as it indicates
-		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
-		return;
-	}
-
 	for (bitint_iter_t doyi = 0UL;
 	     (yd = bi383_next(&doyi, doy), doyi);) {
 		/* yd */
 		struct md_s md;
 
-		if (wd_mask &&
+		if (wd_mask >> 1U &&
 		    !((wd_mask >> yd_get_wday(y, yd)) & 0b1U)) {
 			/* weekday is masked out */
 			continue;
@@ -588,7 +581,7 @@ fill_yly_ymd(
 				continue;
 			}
 			/* check wd_mask */
-			if (wd_mask &&
+			if (wd_mask >> 1U &&
 			    !((wd_mask >> ymd_get_wday(y, mo, dd)) & 0b1U)) {
 				continue;
 			}
