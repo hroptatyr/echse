@@ -599,6 +599,37 @@ fill_yly_ymd(
 }
 
 static void
+fill_yly_ymd_all(
+	bitint383_t *restrict cand, unsigned int y,
+	const int d[static 31U], size_t nd,
+	uint8_t wd_mask)
+{
+	for (unsigned int m = 1U; m <= 12U; m++) {
+		for (size_t j = 0UL; j < nd; j++) {
+			unsigned int ndom = __get_ndom(y, m);
+			int dd = d[j];
+
+			if (dd > 0 && (unsigned int)dd <= ndom) {
+				;
+			} else if (dd < 0 && ndom + 1U + dd > 0) {
+				dd += ndom + 1U;
+			} else {
+				continue;
+			}
+			/* check wd_mask */
+			if (wd_mask &&
+			    !((wd_mask >> ymd_get_wday(y, m, dd)) & 0b1U)) {
+				continue;
+			}
+
+			/* it's a candidate */
+			ass_bi383(cand, pack_cand(m, dd));
+		}
+	}
+	return;
+}
+
+static void
 clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 {
 	bitint383_t res = {0U};
@@ -713,7 +744,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	ymdp = !bi63_has_bits_p(rr->wk) &&
 		!bi447_has_bits_p(&rr->dow) &&
 		!bi383_has_bits_p(&rr->doy) &&
-		!bi383_has_bits_p(&rr->easter);
+		!bi383_has_bits_p(&rr->easter) &&
+		!bi31_has_bits_p(rr->dom);
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -787,7 +819,11 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		fill_yly_eastr(&cand, y, &rr->easter);
 
 		/* extend by ymd */
-		fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
+		if (!nm) {
+			fill_yly_ymd_all(&cand, y, d, nd, wd_mask);
+		} else {
+			fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
+		}
 
 		/* limit by setpos */
 		clr_poss(&cand, &rr->pos);
