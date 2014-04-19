@@ -1,0 +1,12 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+## jsut select mondays
+$ echse unroll "${srcdir}/sample_12.ics" --filter 'BYDAY=MO'
+2000-02-28	Some February Days
+2000-12-25	Some December Days
+2001-12-31	Some December Days
+2003-12-29	Some December Days
+2004-12-20	Some December Days
+2005-02-28	Some February Days
+2011-02-28	Some February Days
+$

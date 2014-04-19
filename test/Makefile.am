@@ -153,6 +153,11 @@ TESTS += genuid_02.clit
 TESTS += merge_01.clit
 TESTS += merge_02.clit
 
+TESTS += filt_01.clit
+TESTS += filt_02.clit
+TESTS += filt_03.clit
+TESTS += filt_04.clit
+
 ## our friendly helpers
 check_PROGRAMS += clitoris
 clitoris_CPPFLAGS = $(AM_CPPFLAGS)
