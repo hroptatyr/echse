@@ -817,8 +817,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* stick to note 2 on page 44, RFC 5545 */
 		if (wd_mask && (nd || bi383_has_bits_p(&rr->doy))) {
-			/* yd */
-			fill_yly_yd(&cand, y, &rr->doy, wd_mask);
+			/* yd/ymd, dealt with later */
+			;
 		} else if (wd_mask && bi63_has_bits_p(rr->wk)) {
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
@@ -841,6 +841,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 			fill_yly_yd_all(&cand, y, wd_mask);
 		}
+
+		/* extend by yd */
+		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
 		/* extend by easter */
 		fill_yly_eastr(&cand, y, &rr->easter);
