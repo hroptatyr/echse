@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select --format "%b\t%s" "${srcdir}/sample_02.ics"  "${srcdir}/sample_01.ics"
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_02.ics"  "${srcdir}/sample_01.ics"
 2013-01-01	New year's day
 2013-03-29	Good Friday
 2013-12-26	Boxing day

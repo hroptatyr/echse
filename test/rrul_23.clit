@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select --format '%b\t%u' --from 2000-01-01 --till 2000-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics"
+$ echse unroll --format '%b\t%u' --from 2000-01-01 --till 2000-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics"
 2000-04-17	sample_08_ics_vevent_01@example.com
 2000-04-23	sample_08_ics_vevent_01@example.com
 2000-04-24	sample_08_ics_vevent_01@example.com

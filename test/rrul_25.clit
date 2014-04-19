@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse select "${srcdir}/sample_19.ics"
+$ echse unroll "${srcdir}/sample_19.ics"
 2003-05-06	Tuesdays in May
 2003-05-13	Tuesdays in May
 2003-05-20	Tuesdays in May
