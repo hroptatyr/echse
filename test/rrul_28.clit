@@ -1,0 +1,9 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll "${srcdir}/sample_22.ics"
+2000-02-29	60th Day
+2001-03-01	60th Day
+2002-03-01	60th Day
+2003-03-01	60th Day
+2004-02-29	60th Day
+$
