@@ -881,4 +881,41 @@ fin:
 	return res;
 }
 
+
+/* rrules as query language */
+bool
+echs_instant_matches_p(rrulsp_t filt, echs_instant_t inst)
+{
+	/* whitelisted events and state */
+	static echs_instant_t wl[256U];
+	static size_t nwl;
+	static size_t iwl;
+
+	if (UNLIKELY(nwl > countof(wl))) {
+		goto never;
+	} else if (UNLIKELY(iwl >= nwl)) {
+		/* refill filter list, start out with I */
+		echs_instant_t proto = inst;
+
+		proto.d = 0;
+		for (size_t i = 0UL; i < countof(wl); i++) {
+			wl[i] = proto;
+		}
+		if (UNLIKELY(!(nwl = rrul_fill_yly(wl, countof(wl), filt)))) {
+			nwl = -1UL;
+			goto never;
+		}
+		/* reset state */
+		iwl = 0UL;
+	}
+	for (; echs_instant_lt_p(wl[iwl], inst); iwl++);
+	/* now either wl[iwl] == inst */
+	if (echs_instant_eq_p(wl[iwl], inst)) {
+		return true;
+	}
+never:
+	/* or we're past it */
+	return false;
+}
+
 /* evrrul.c ends here */

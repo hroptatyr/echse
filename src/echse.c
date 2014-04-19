@@ -186,10 +186,6 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 	const size_t fmz = strlen(fmt);
 	char fbuf[fmz + 2 * 32U + 2 * 256U];
 	echs_event_t e;
-	/* build ourselves a filter array */
-	echs_instant_t evwl[256U];
-	size_t nevwl = 0UL;
-	size_t ievwl = 0UL;
 
 	/* just get it out now */
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
@@ -199,28 +195,9 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 			break;
 		} else if (echs_instant_lt_p(e.from, p.from)) {
 			continue;
-		} else if (p.filt.freq != FREQ_NONE) {
-			if (ievwl >= nevwl) {
-				/* refill filter list */
-				echs_instant_t proto = e.from;
-
-				proto.d = 0;
-				for (size_t i = 0UL; i < countof(evwl); i++) {
-					evwl[i] = proto;
-				}
-				nevwl = rrul_fill_yly(
-					evwl, countof(evwl), &p.filt);
-				if (UNLIKELY(!nevwl)) {
-					break;
-				}
-				ievwl = 0UL;
-				printf("GOT %zu filter events\n", nevwl);
-			}
-			for (; echs_instant_lt_p(evwl[ievwl], e.from); ievwl++);
-			/* now either evwl[ievwl] == e.from */
-			if (!echs_instant_eq_p(evwl[ievwl], e.from)) {
-				continue;
-			}
+		} else if (p.filt.freq &&
+			   !echs_instant_matches_p(&p.filt, e.from)) {
+			continue;
 		}
 		/* otherwise print */
 		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
