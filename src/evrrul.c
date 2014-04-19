@@ -575,25 +575,14 @@ fill_yly_ymd(
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		for (size_t j = 0UL; j < nd; j++) {
+			unsigned int ndom = __get_ndom(y, m[i]);
 			int dd = d[j];
 
-			if (dd > 0 && (unsigned int)dd <= mdays[m[i]]) {
+			if (dd > 0 && (unsigned int)dd <= ndom) {
 				;
-			} else if (dd < 0 &&
-				   mdays[m[i]] + 1U + dd > 0) {
-				dd += mdays[m[i]] + 1U;
-			} else if (UNLIKELY(m[i] == 2U && !(y % 4U))) {
-				/* fix up leap years */
-				switch (dd) {
-				case -29:
-					dd = 1;
-				case 29:
-					break;
-				default:
-					goto invalid;
-				}
+			} else if (dd < 0 && ndom + 1U + dd > 0) {
+				dd += ndom + 1U;
 			} else {
-			invalid:
 				continue;
 			}
 			/* check wd_mask */
