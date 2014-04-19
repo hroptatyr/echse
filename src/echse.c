@@ -52,6 +52,12 @@
 #include "dt-strpf.h"
 #include "nifty.h"
 
+struct unroll_param_s {
+	echs_instant_t from;
+	echs_instant_t till;
+	struct rrulsp_s filt;
+};
+
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -81,16 +87,16 @@ xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 }
 
 static void
-unroll_ical(echs_evstrm_t smux, echs_instant_t from, echs_instant_t till)
+unroll_ical(echs_evstrm_t smux, struct unroll_param_s p)
 {
 	echs_event_t e;
 
 	/* just get it out now */
 	echs_prnt_ical_init();
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
-		if (echs_instant_lt_p(e.from, from)) {
+		if (echs_instant_lt_p(e.from, p.from)) {
 			continue;
-		} else if (echs_instant_lt_p(till, e.from)) {
+		} else if (echs_instant_lt_p(p.till, e.from)) {
 			break;
 		}
 		/* otherwise print */
@@ -161,9 +167,7 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 }
 
 static void
-unroll_frmt(
-	echs_evstrm_t smux,
-	echs_instant_t from, echs_instant_t till, const char *fmt)
+unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 {
 	const size_t fmz = strlen(fmt);
 	char fbuf[fmz + 2 * 32U + 2 * 256U];
@@ -173,9 +177,9 @@ unroll_frmt(
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
 		char *restrict bp;
 
-		if (echs_instant_lt_p(e.from, from)) {
+		if (echs_instant_lt_p(e.from, p.from)) {
 			continue;
-		} else if (echs_instant_lt_p(till, e.from)) {
+		} else if (echs_instant_lt_p(p.till, e.from)) {
 			break;
 		}
 		/* otherwise print */
@@ -197,38 +201,35 @@ static int
 cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 {
 	static const char dflt_fmt[] = "%b\t%s";
-	/* date range to scan through */
-	echs_instant_t from;
-	echs_instant_t till;
+	/* params that filter the output */
+	struct unroll_param_s p;
 	/* format string to use */
 	const char *fmt = dflt_fmt;
 	echs_evstrm_t smux;
-	/* filter */
-	struct rrulsp_s filt = {FREQ_NONE};
 
 	if (argi->from_arg) {
-		from = dt_strp(argi->from_arg);
+		p.from = dt_strp(argi->from_arg);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
-		from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
+		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
 #else  /* !HAVE_ANON_STRUCTS_INIT */
-		from = echs_nul_instant();
-		from.y = 2000;
-		from.m = 1;
-		from.d = 1;
+		p.from = echs_nul_instant();
+		p.from.y = 2000;
+		p.from.m = 1;
+		p.from.d = 1;
 #endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->till_arg) {
-		till = dt_strp(argi->till_arg);
+		p.till = dt_strp(argi->till_arg);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
-		till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
+		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
 #else  /* !HAVE_ANON_STRUCTS_INIT */
-		till = echs_nul_instant();
-		till.y = 2037;
-		till.m = 12;
-		till.d = 31;
+		p.till = echs_nul_instant();
+		p.till.y = 2037;
+		p.till.m = 12;
+		p.till.d = 31;
 #endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
@@ -237,7 +238,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 		const size_t len = strlen(sel);
 
 		/* just use the rrule parts, there won't be a frequency set */
-		filt = echs_read_rrul(sel, len);
+		p.filt = echs_read_rrul(sel, len);
 	}
 
 	with (echs_evstrm_t sarr[argi->nargs]) {
@@ -270,11 +271,11 @@ echse: Error: cannot open file `%s'", fn);
 
 		if (!strcmp(fmt, "ical")) {
 			/* special output format */
-			unroll_ical(smux, from, till);
+			unroll_ical(smux, p);
 			goto out;
 		}
 	}
-	unroll_frmt(smux, from, till, fmt);
+	unroll_frmt(smux, p, fmt);
 
 out:
 	free_echs_evstrm(smux);
