@@ -1306,4 +1306,10 @@ END:VCALENDAR\n", stdout);
 	return;
 }
 
+struct rrulsp_s
+echs_read_rrul(const char *s, size_t z)
+{
+	return snarf_rrule(s, z);
+}
+
 /* evical.c ends here */

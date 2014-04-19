@@ -39,6 +39,7 @@
 
 #include "event.h"
 #include "evstrm.h"
+#include "evrrul.h"
 
 
 /**
@@ -56,5 +57,9 @@ extern void echs_prnt_ical_fini(void);
 /**
  * Print a single event in ical format. */
 extern void echs_prnt_ical_event(echs_event_t);
+
+/**
+ * For filters and command-line stuff. */
+extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
 
 #endif	/* INCLUDED_evical_h_ */

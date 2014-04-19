@@ -456,19 +456,12 @@ fill_yly_yd(
 {
 	int yd;
 
-	if (UNLIKELY(!(wd_mask >> 1U))) {
-		/* quick exit
-		 * lowest bit doesn't count as it indicates
-		 * non strictly-weekdays (i.e. non-0 counts) in the bitint */
-		return;
-	}
-
 	for (bitint_iter_t doyi = 0UL;
 	     (yd = bi383_next(&doyi, doy), doyi);) {
 		/* yd */
 		struct md_s md;
 
-		if (wd_mask &&
+		if (wd_mask >> 1U &&
 		    !((wd_mask >> yd_get_wday(y, yd)) & 0b1U)) {
 			/* weekday is masked out */
 			continue;
@@ -574,8 +567,10 @@ fill_yly_ymd(
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
+		const unsigned int mo = m[i];
+
 		for (size_t j = 0UL; j < nd; j++) {
-			unsigned int ndom = __get_ndom(y, m[i]);
+			unsigned int ndom = __get_ndom(y, mo);
 			int dd = d[j];
 
 			if (dd > 0 && (unsigned int)dd <= ndom) {
@@ -586,27 +581,27 @@ fill_yly_ymd(
 				continue;
 			}
 			/* check wd_mask */
-			if (wd_mask &&
-			    !((wd_mask >> ymd_get_wday(y, m[i], dd)) & 0b1U)) {
+			if (wd_mask >> 1U &&
+			    !((wd_mask >> ymd_get_wday(y, mo, dd)) & 0b1U)) {
 				continue;
 			}
 
 			/* it's a candidate */
-			ass_bi383(cand, pack_cand(m[i], dd));
+			ass_bi383(cand, pack_cand(mo, dd));
 		}
 	}
 	return;
 }
 
 static void
-fill_yly_ymd_all(
+fill_yly_ymd_all_m(
 	bitint383_t *restrict cand, unsigned int y,
 	const int d[static 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (unsigned int m = 1U; m <= 12U; m++) {
 		for (size_t j = 0UL; j < nd; j++) {
-			unsigned int ndom = __get_ndom(y, m);
+			const unsigned int ndom = __get_ndom(y, m);
 			int dd = d[j];
 
 			if (dd > 0 && (unsigned int)dd <= ndom) {
@@ -624,6 +619,31 @@ fill_yly_ymd_all(
 
 			/* it's a candidate */
 			ass_bi383(cand, pack_cand(m, dd));
+		}
+	}
+	return;
+}
+
+static void
+fill_yly_ymd_all_d(
+	bitint383_t *restrict cand, unsigned int y,
+	const unsigned int m[static 12U], size_t nm,
+	uint8_t wd_mask)
+{
+	for (size_t i = 0UL; i < nm; i++) {
+		const unsigned int mo = m[i];
+		const unsigned int ndom = __get_ndom(y, mo);
+
+		for (unsigned int dd = 1U, w = ymd_get_wday(y, mo, dd);
+		     dd <= ndom; dd++, w = inc_wd((echs_wday_t)w)) {
+			/* check wd_mask */
+			if (wd_mask &&
+			    !((wd_mask >> w) & 0b1U)) {
+				continue;
+			}
+
+			/* it's a candidate */
+			ass_bi383(cand, pack_cand(mo, dd));
 		}
 	}
 	return;
@@ -765,7 +785,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     d[nd++] = tmpd + 1);
 
 		/* fill up with the default */
-		if (!nd && ymdp) {
+		if (!nd && ymdp && proto.d) {
 			d[nd++] = proto.d;
 		}
 	}
@@ -790,8 +810,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* stick to note 2 on page 44, RFC 5545 */
 		if (wd_mask && (nd || bi383_has_bits_p(&rr->doy))) {
-			/* yd */
-			fill_yly_yd(&cand, y, &rr->doy, wd_mask);
+			/* yd/ymd, dealt with later */
+			;
 		} else if (wd_mask && bi63_has_bits_p(rr->wk)) {
 			/* ywd */
 			fill_yly_ywd(&cand, y, rr->wk, &rr->dow);
@@ -815,12 +835,17 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			fill_yly_yd_all(&cand, y, wd_mask);
 		}
 
+		/* extend by yd */
+		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
+
 		/* extend by easter */
 		fill_yly_eastr(&cand, y, &rr->easter);
 
 		/* extend by ymd */
 		if (!nm) {
-			fill_yly_ymd_all(&cand, y, d, nd, wd_mask);
+			fill_yly_ymd_all_m(&cand, y, d, nd, wd_mask);
+		} else if (!nd) {
+			fill_yly_ymd_all_d(&cand, y, m, nm, wd_mask);
 		} else {
 			fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
 		}
@@ -850,6 +875,48 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 fin:
 	return res;
+}
+
+
+/* rrules as query language */
+bool
+echs_instant_matches_p(rrulsp_t filt, echs_instant_t inst)
+{
+	/* whitelisted events and state */
+	static echs_instant_t wl[256U];
+	static size_t nwl;
+	static size_t iwl;
+
+	if (UNLIKELY(nwl > countof(wl))) {
+		goto never;
+	}
+ffw:
+	/* fast-forward whitelist to within the range of INST */
+	for (; iwl < nwl && echs_instant_lt_p(wl[iwl], inst); iwl++);
+	if (UNLIKELY(iwl >= nwl)) {
+		/* refill filter list, start out with I */
+		echs_instant_t proto = inst;
+
+		proto.d = 0;
+		for (size_t i = 0UL; i < countof(wl); i++) {
+			wl[i] = proto;
+		}
+		if (UNLIKELY(!(nwl = rrul_fill_yly(wl, countof(wl), filt)))) {
+			nwl = -1UL;
+			goto never;
+		}
+		/* reset state */
+		iwl = 0UL;
+		/* retry the fast forwarding */
+		goto ffw;
+	}
+	/* now either wl[iwl] == inst ... */
+	if (echs_instant_eq_p(wl[iwl], inst)) {
+		return true;
+	}
+never:
+	/* ... or we're past it */
+	return false;
 }
 
 /* evrrul.c ends here */

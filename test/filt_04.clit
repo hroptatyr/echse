@@ -1,0 +1,8 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll "${srcdir}/sample_12.ics" --filter 'BYYEARDAY=60'
+2000-02-29	Some February Days
+2004-02-29	Some February Days
+2008-02-29	Some February Days
+2012-02-29	Some February Days
+$
