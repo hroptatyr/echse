@@ -608,8 +608,8 @@ fill_yly_ymd_all_m(
 {
 	for (unsigned int m = 1U; m <= 12U; m++) {
 		for (size_t j = 0UL; j < nd; j++) {
-			const int dd = d[j];
-			unsigned int ndom = __get_ndom(y, m);
+			const unsigned int ndom = __get_ndom(y, m);
+			int dd = d[j];
 
 			if (dd > 0 && (unsigned int)dd <= ndom) {
 				;
