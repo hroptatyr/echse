@@ -33,7 +33,7 @@ Print the resulting stream.
                         SPEC can also be "ical" in which case the
                         output will be RFC 5545 compliant.
                         The default format string is "%b\t%s"
-  --select=FILT         Filter output by criteria given in FILT.
+  --filter=FILT         Filter output by criteria given in FILT.
                         FILT follows the syntax of RRULE parts:
                         - BYMONTH selects only specified months
                         - BYWEEKNO selects only specified week numbers

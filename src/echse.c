@@ -250,8 +250,8 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 #endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
-	if (argi->select_arg) {
-		const char *sel = argi->select_arg;
+	if (argi->filter_arg) {
+		const char *sel = argi->filter_arg;
 		const size_t len = strlen(sel);
 
 		/* just use the rrule parts, there won't be a frequency set */
