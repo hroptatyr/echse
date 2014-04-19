@@ -574,8 +574,10 @@ fill_yly_ymd(
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
+		const unsigned int mo = m[i];
+
 		for (size_t j = 0UL; j < nd; j++) {
-			unsigned int ndom = __get_ndom(y, m[i]);
+			unsigned int ndom = __get_ndom(y, mo);
 			int dd = d[j];
 
 			if (dd > 0 && (unsigned int)dd <= ndom) {
@@ -587,12 +589,12 @@ fill_yly_ymd(
 			}
 			/* check wd_mask */
 			if (wd_mask &&
-			    !((wd_mask >> ymd_get_wday(y, m[i], dd)) & 0b1U)) {
+			    !((wd_mask >> ymd_get_wday(y, mo, dd)) & 0b1U)) {
 				continue;
 			}
 
 			/* it's a candidate */
-			ass_bi383(cand, pack_cand(m[i], dd));
+			ass_bi383(cand, pack_cand(mo, dd));
 		}
 	}
 	return;
@@ -606,8 +608,8 @@ fill_yly_ymd_all(
 {
 	for (unsigned int m = 1U; m <= 12U; m++) {
 		for (size_t j = 0UL; j < nd; j++) {
+			const int dd = d[j];
 			unsigned int ndom = __get_ndom(y, m);
-			int dd = d[j];
 
 			if (dd > 0 && (unsigned int)dd <= ndom) {
 				;
