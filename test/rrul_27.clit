@@ -1,0 +1,24 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll "${srcdir}/sample_21.ics"
+2003-05-11	Eleventh of the month
+2003-06-11	Eleventh of the month
+2003-09-11	Eleventh of the month
+2004-05-11	Eleventh of the month
+2004-06-11	Eleventh of the month
+2004-09-11	Eleventh of the month
+2005-05-11	Eleventh of the month
+2005-06-11	Eleventh of the month
+2005-09-11	Eleventh of the month
+2006-05-11	Eleventh of the month
+2006-06-11	Eleventh of the month
+2006-09-11	Eleventh of the month
+2007-05-11	Eleventh of the month
+2007-06-11	Eleventh of the month
+2007-09-11	Eleventh of the month
+2008-05-11	Eleventh of the month
+2008-06-11	Eleventh of the month
+2008-09-11	Eleventh of the month
+2009-05-11	Eleventh of the month
+2009-06-11	Eleventh of the month
+$
