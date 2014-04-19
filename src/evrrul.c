@@ -893,7 +893,11 @@ echs_instant_matches_p(rrulsp_t filt, echs_instant_t inst)
 
 	if (UNLIKELY(nwl > countof(wl))) {
 		goto never;
-	} else if (UNLIKELY(iwl >= nwl)) {
+	}
+ffw:
+	/* fast-forward whitelist to within the range of INST */
+	for (; iwl < nwl && echs_instant_lt_p(wl[iwl], inst); iwl++);
+	if (UNLIKELY(iwl >= nwl)) {
 		/* refill filter list, start out with I */
 		echs_instant_t proto = inst;
 
@@ -907,14 +911,15 @@ echs_instant_matches_p(rrulsp_t filt, echs_instant_t inst)
 		}
 		/* reset state */
 		iwl = 0UL;
+		/* retry the fast forwarding */
+		goto ffw;
 	}
-	for (; echs_instant_lt_p(wl[iwl], inst); iwl++);
-	/* now either wl[iwl] == inst */
+	/* now either wl[iwl] == inst ... */
 	if (echs_instant_eq_p(wl[iwl], inst)) {
 		return true;
 	}
 never:
-	/* or we're past it */
+	/* ... or we're past it */
 	return false;
 }
 
