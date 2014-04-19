@@ -601,7 +601,7 @@ fill_yly_ymd(
 }
 
 static void
-fill_yly_ymd_all(
+fill_yly_ymd_all_m(
 	bitint383_t *restrict cand, unsigned int y,
 	const int d[static 31U], size_t nd,
 	uint8_t wd_mask)
@@ -626,6 +626,31 @@ fill_yly_ymd_all(
 
 			/* it's a candidate */
 			ass_bi383(cand, pack_cand(m, dd));
+		}
+	}
+	return;
+}
+
+static void
+fill_yly_ymd_all_d(
+	bitint383_t *restrict cand, unsigned int y,
+	const int m[static 12U], size_t nm,
+	uint8_t wd_mask)
+{
+	for (size_t i = 0UL; i < nm; i++) {
+		const unsigned int mo = m[i];
+		const unsigned int ndom = __get_ndom(y, mo);
+
+		for (unsigned int dd = 1U, w = ymd_get_wday(y, mo, dd);
+		     dd <= ndom; dd++, w = inc_wd((echs_wday_t)w)) {
+			/* check wd_mask */
+			if (wd_mask &&
+			    !((wd_mask >> w) & 0b1U)) {
+				continue;
+			}
+
+			/* it's a candidate */
+			ass_bi383(cand, pack_cand(mo, dd));
 		}
 	}
 	return;
@@ -767,7 +792,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     d[nd++] = tmpd + 1);
 
 		/* fill up with the default */
-		if (!nd && ymdp) {
+		if (!nd && ymdp && proto.d) {
 			d[nd++] = proto.d;
 		}
 	}
@@ -822,7 +847,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* extend by ymd */
 		if (!nm) {
-			fill_yly_ymd_all(&cand, y, d, nd, wd_mask);
+			fill_yly_ymd_all_m(&cand, y, d, nd, wd_mask);
+		} else if (!nd) {
+			fill_yly_ymd_all_d(&cand, y, m, nm, wd_mask);
 		} else {
 			fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
 		}
