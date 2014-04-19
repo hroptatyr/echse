@@ -282,6 +282,10 @@ echse: Error: cannot open file `%s'", fn);
 			free_echs_evstrm(sarr[i]);
 		}
 	}
+	if (argi->nargs == 0UL) {
+		/* read from stdin */
+		smux = make_echs_evstrm_from_file(NULL);
+	}
 	if (UNLIKELY(smux == NULL)) {
 		/* return early */
 		return 1;
