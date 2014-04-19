@@ -634,7 +634,7 @@ fill_yly_ymd_all_m(
 static void
 fill_yly_ymd_all_d(
 	bitint383_t *restrict cand, unsigned int y,
-	const int m[static 12U], size_t nm,
+	const unsigned int m[static 12U], size_t nm,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {

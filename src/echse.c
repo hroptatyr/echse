@@ -87,6 +87,20 @@ xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 }
 
 static void
+chck_filt(struct rrulsp_s *restrict f)
+{
+	if (bi31_has_bits_p(f->dom) ||
+	    bi447_has_bits_p(&f->dow) ||
+	    bui31_has_bits_p(f->mon) ||
+	    bi63_has_bits_p(f->wk) ||
+	    bi383_has_bits_p(&f->doy)) {
+		/* indicate active filter */
+		f->freq = FREQ_YEARLY;
+	}
+	return;
+}
+
+static void
 unroll_ical(echs_evstrm_t smux, struct unroll_param_s p)
 {
 	echs_event_t e;
@@ -172,15 +186,41 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 	const size_t fmz = strlen(fmt);
 	char fbuf[fmz + 2 * 32U + 2 * 256U];
 	echs_event_t e;
+	/* build ourselves a filter array */
+	echs_instant_t evwl[256U];
+	size_t nevwl = 0UL;
+	size_t ievwl = 0UL;
 
 	/* just get it out now */
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
 		char *restrict bp;
 
-		if (echs_instant_lt_p(e.from, p.from)) {
-			continue;
-		} else if (echs_instant_lt_p(p.till, e.from)) {
+		if (echs_instant_lt_p(p.till, e.from)) {
 			break;
+		} else if (echs_instant_lt_p(e.from, p.from)) {
+			continue;
+		} else if (p.filt.freq != FREQ_NONE) {
+			if (ievwl >= nevwl) {
+				/* refill filter list */
+				echs_instant_t proto = e.from;
+
+				proto.d = 0;
+				for (size_t i = 0UL; i < countof(evwl); i++) {
+					evwl[i] = proto;
+				}
+				nevwl = rrul_fill_yly(
+					evwl, countof(evwl), &p.filt);
+				if (UNLIKELY(!nevwl)) {
+					break;
+				}
+				ievwl = 0UL;
+				printf("GOT %zu filter events\n", nevwl);
+			}
+			for (; echs_instant_lt_p(evwl[ievwl], e.from); ievwl++);
+			/* now either evwl[ievwl] == e.from */
+			if (!echs_instant_eq_p(evwl[ievwl], e.from)) {
+				continue;
+			}
 		}
 		/* otherwise print */
 		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
@@ -202,7 +242,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 {
 	static const char dflt_fmt[] = "%b\t%s";
 	/* params that filter the output */
-	struct unroll_param_s p;
+	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
 	/* format string to use */
 	const char *fmt = dflt_fmt;
 	echs_evstrm_t smux;
@@ -239,6 +279,9 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 
 		/* just use the rrule parts, there won't be a frequency set */
 		p.filt = echs_read_rrul(sel, len);
+		/* quickly assess the rrule, set a frequency if there's
+		 * stuff to be filtered */
+		chck_filt(&p.filt);
 	}
 
 	with (echs_evstrm_t sarr[argi->nargs]) {

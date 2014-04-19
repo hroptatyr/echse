@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include "evstrm.h"
+#include "instant.h"
 #include "bitint.h"
 
 typedef const struct rrulsp_s *rrulsp_t;
