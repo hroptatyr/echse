@@ -587,7 +587,9 @@ read_ical(const char *fn)
 	size_t nve = 0UL;
 	vearr_t a = NULL;
 
-	if ((fp = fopen(fn, "r")) == NULL) {
+	if (fn == NULL/*stdio*/) {
+		fp = stdin;
+	} else if ((fp = fopen(fn, "r")) == NULL) {
 		return NULL;
 	}
 
