@@ -723,6 +723,9 @@ prnt_rrul(rrulsp_t rr)
 	case FREQ_YEARLY:
 		fputs("FREQ=YEARLY", stdout);
 		break;
+	case FREQ_MONTHLY:
+		fputs("FREQ=MONTHLY", stdout);
+		break;
 	default:
 		break;
 	}
