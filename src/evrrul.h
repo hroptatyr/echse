@@ -175,6 +175,9 @@ echs_yearly(evrrul_param_t param, echs_mon_t mon, unsigned int dom);
 extern size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
 
+extern size_t
+rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
+
 extern bool echs_instant_matches_p(rrulsp_t f, echs_instant_t i);
 
 

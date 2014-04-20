@@ -723,6 +723,9 @@ prnt_rrul(rrulsp_t rr)
 	case FREQ_YEARLY:
 		fputs("FREQ=YEARLY", stdout);
 		break;
+	case FREQ_MONTHLY:
+		fputs("FREQ=MONTHLY", stdout);
+		break;
 	default:
 		break;
 	}
@@ -1101,6 +1104,10 @@ refill(struct evrrul_s *restrict strm)
 	case FREQ_YEARLY:
 		/* easiest */
 		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_MONTHLY:
+		/* second easiest */
+		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
 		break;
 	}
 
