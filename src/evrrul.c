@@ -402,25 +402,34 @@ fill_yly_ywd(
 }
 
 static void
+fill_mly_ymcw(
+	bitint383_t *restrict cand,
+	const unsigned int y, const unsigned int m, const bitint447_t *dow)
+{
+	int tmp;
+
+	for (bitint_iter_t dowi = 0UL;
+	     (tmp = bi447_next(&dowi, dow), dowi);) {
+		unsigned int dom;
+		struct cd_s cd = unpack_cd(tmp);
+
+		if (cd.cnt == 0 ||
+		    !(dom = ymcw_get_dom(y, m, cd.cnt, cd.dow))) {
+			continue;
+		}
+		/* otherwise it's looking good */
+		ass_bi383(cand, pack_cand(m, dom));
+	}
+	return;
+}
+
+static void
 fill_yly_ymcw(
 	bitint383_t *restrict cand, unsigned int y,
 	const bitint447_t *dow, const unsigned int m[static 12U], size_t nm)
 {
 	for (size_t i = 0UL; i < nm; i++) {
-		int tmp;
-
-		for (bitint_iter_t dowi = 0UL;
-		     (tmp = bi447_next(&dowi, dow), dowi);) {
-			unsigned int dom;
-			struct cd_s cd = unpack_cd(tmp);
-
-			if (cd.cnt == 0 ||
-			    !(dom = ymcw_get_dom(y, m[i], cd.cnt, cd.dow))) {
-				continue;
-			}
-			/* otherwise it's looking good */
-			ass_bi383(cand, pack_cand(m[i], dom));
-		}
+		fill_mly_ymcw(cand, y, m[i], dow);
 	}
 	return;
 }
@@ -560,6 +569,36 @@ fill_yly_eastr(bitint383_t *restrict cand, unsigned int y, const bitint383_t *s)
 }
 
 static void
+fill_mly_ymd(
+	bitint383_t *restrict cand,
+	const unsigned int y, const unsigned int mo,
+	const int d[static 31U], size_t nd,
+	uint8_t wd_mask)
+{
+	for (size_t j = 0UL; j < nd; j++) {
+		unsigned int ndom = __get_ndom(y, mo);
+		int dd = d[j];
+
+		if (dd > 0 && (unsigned int)dd <= ndom) {
+			;
+		} else if (dd < 0 && ndom + 1U + dd > 0) {
+			dd += ndom + 1U;
+		} else {
+			continue;
+		}
+		/* check wd_mask */
+		if (wd_mask >> 1U &&
+		    !((wd_mask >> ymd_get_wday(y, mo, dd)) & 0b1U)) {
+			continue;
+		}
+
+		/* it's a candidate */
+		ass_bi383(cand, pack_cand(mo, dd));
+	}
+	return;
+}
+
+static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
 	const unsigned int m[static 12U], size_t nm,
@@ -567,28 +606,7 @@ fill_yly_ymd(
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
-		const unsigned int mo = m[i];
-
-		for (size_t j = 0UL; j < nd; j++) {
-			unsigned int ndom = __get_ndom(y, mo);
-			int dd = d[j];
-
-			if (dd > 0 && (unsigned int)dd <= ndom) {
-				;
-			} else if (dd < 0 && ndom + 1U + dd > 0) {
-				dd += ndom + 1U;
-			} else {
-				continue;
-			}
-			/* check wd_mask */
-			if (wd_mask >> 1U &&
-			    !((wd_mask >> ymd_get_wday(y, mo, dd)) & 0b1U)) {
-				continue;
-			}
-
-			/* it's a candidate */
-			ass_bi383(cand, pack_cand(mo, dd));
-		}
+		fill_mly_ymd(cand, y, m[i], d, nd, wd_mask);
 	}
 	return;
 }
@@ -625,26 +643,34 @@ fill_yly_ymd_all_m(
 }
 
 static void
+fill_mly_ymd_all_d(
+	bitint383_t *restrict cand,
+	const unsigned int y, const unsigned int mo, uint8_t wd_mask)
+{
+	const unsigned int ndom = __get_ndom(y, mo);
+
+	for (unsigned int dd = 1U, w = ymd_get_wday(y, mo, dd);
+	     dd <= ndom; dd++, w = inc_wd((echs_wday_t)w)) {
+		/* check wd_mask */
+		if (wd_mask &&
+		    !((wd_mask >> w) & 0b1U)) {
+			continue;
+		}
+
+		/* it's a candidate */
+		ass_bi383(cand, pack_cand(mo, dd));
+	}
+	return;
+}
+
+static void
 fill_yly_ymd_all_d(
 	bitint383_t *restrict cand, unsigned int y,
 	const unsigned int m[static 12U], size_t nm,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
-		const unsigned int mo = m[i];
-		const unsigned int ndom = __get_ndom(y, mo);
-
-		for (unsigned int dd = 1U, w = ymd_get_wday(y, mo, dd);
-		     dd <= ndom; dd++, w = inc_wd((echs_wday_t)w)) {
-			/* check wd_mask */
-			if (wd_mask &&
-			    !((wd_mask >> w) & 0b1U)) {
-				continue;
-			}
-
-			/* it's a candidate */
-			ass_bi383(cand, pack_cand(mo, dd));
-		}
+		fill_mly_ymd_all_d(cand, y, m[i], wd_mask);
 	}
 	return;
 }
@@ -848,6 +874,115 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			fill_yly_ymd_all_d(&cand, y, m, nm, wd_mask);
 		} else {
 			fill_yly_ymd(&cand, y, m, nm, d, nd, wd_mask);
+		}
+
+		/* limit by setpos */
+		clr_poss(&cand, &rr->pos);
+
+		/* add/subtract days */
+		add_poss(&cand, y, &rr->add);
+
+		/* now check the bitset */
+		for (bitint_iter_t all = 0UL;
+		     res < nti && (yd = bi383_next(&all, &cand), all);) {
+			tgt[res].y = y;
+			tgt[res].m = yd / 32U + 1U;
+			tgt[res].d = yd % 32U;
+
+			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+				goto fin;
+			}
+			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
+				continue;
+			}
+			tries = 64U;
+			res++;
+		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	int d[31U];
+	size_t nd;
+	size_t res = 0UL;
+	size_t tries;
+	uint8_t wd_mask = 0U;
+	bool ymdp;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	} else if (UNLIKELY(bui31_has_bits_p(rr->mon))) {
+		/* upgrade to YEARLY */
+		return rrul_fill_yly(tgt, nti, rr);
+	}
+
+	/* check if we're ymd only */
+	ymdp = !bi447_has_bits_p(&rr->dow) &&
+		!bi31_has_bits_p(rr->dom);
+
+	with (int tmpd) {
+		nd = 0UL;
+		for (bitint_iter_t di = 0U;
+		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
+		     d[nd++] = tmpd + 1);
+
+		/* fill up with the default */
+		if (!nd && ymdp && proto.d) {
+			d[nd++] = proto.d;
+		}
+	}
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* use lsb of wd_mask to indicate
+				 * non-0 wday counts, as in nMO,nTU, etc. */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, tries = 64U; res < nti && --tries;
+	     ({
+		     if ((m += rr->inter) > 12U) {
+			     y += m / 12U;
+			     m %= 12U;
+		     }
+	     })) {
+		bitint383_t cand = {0U};
+		int yd;
+
+		/* stick to note 1 on page 44, RFC 5545 */
+		if (wd_mask && nd) {
+			/* ymd, dealt with later */
+			;
+		} else if (wd_mask) {
+			/* ycw or special expand for yearly,
+			 * see note 2 on page 44, RFC 5545 */
+			if (wd_mask & 0b1U) {
+				/* only start ycw filling when we're sure
+				 * that there are non-0 counts */
+				fill_mly_ymcw(&cand, y, m, &rr->dow);
+			}
+			fill_mly_ymd_all_d(&cand, y, m, wd_mask);
+		}
+
+		/* extend by ymd */
+		if (nd) {
+			fill_mly_ymd(&cand, y, m, d, nd, wd_mask);
 		}
 
 		/* limit by setpos */
