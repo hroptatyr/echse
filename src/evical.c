@@ -1102,6 +1102,10 @@ refill(struct evrrul_s *restrict strm)
 		/* easiest */
 		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
 		break;
+	case FREQ_MONTHLY:
+		/* second easiest */
+		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
+		break;
 	}
 
 	if (strm->ncch < countof(strm->cch)) {
