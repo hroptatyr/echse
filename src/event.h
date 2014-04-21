@@ -40,6 +40,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "instant.h"
+#include "state.h"
 
 typedef struct echs_event_s echs_event_t;
 typedef uintptr_t echs_evuid_t;
@@ -49,6 +50,7 @@ struct echs_event_s {
 	echs_instant_t till;
 	echs_evuid_t uid;
 	echs_evuid_t sum;
+	echs_stset_t sts;
 };
 
 

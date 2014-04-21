@@ -85,8 +85,6 @@ struct ical_vevent_s {
 	struct dtlst_s xd;
 	/* points into the global mrul array */
 	struct rrlst_s mr;
-	/* the event's state set, might be part of EV one day */
-	echs_stset_t ss;
 };
 
 struct vearr_s {
@@ -693,7 +691,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 
 			eos = strchr(lp, ',') ?: ep;
 			st = add_state(lp, eos - lp);
-			ve->ss = stset_add_state(ve->ss, st);
+			ve->ev.sts = stset_add_state(ve->ev.sts, st);
 		}
 		break;
 	case FLD_UID:
