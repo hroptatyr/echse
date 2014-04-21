@@ -1007,11 +1007,10 @@ prnt_stset(echs_stset_t sts)
 {
 	echs_state_t st = 0U;
 
-	if (!sts) {
+	if (UNLIKELY(!sts)) {
 		return;
 	}
 	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-	fputs("X-GA-STATE:", stdout);
 	fputs(state_name(st), stdout);
 	/* print list of states,
 	 * we should probably use an iter from state.h here */
@@ -1020,7 +1019,41 @@ prnt_stset(echs_stset_t sts)
 		fputc(',', stdout);
 		fputs(state_name(st), stdout);
 	}
+	return;
+}
+
+static void
+prnt_mrul(mrulsp_t mr)
+{
+	static const char *const mdirs[] = {
+		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
+	};
+
+	if (mr->mdir) {
+		fputs("DIR=", stdout);
+		fputs(mdirs[mr->mdir], stdout);
+	}
+	if (mr->away) {
+		fputs(";MOVEIF=", stdout);
+		prnt_stset(mr->away);
+	}
+	if (mr->into) {
+		fputs(";MOVEINTO=", stdout);
+		prnt_stset(mr->into);
+	}
+
 	fputc('\n', stdout);
+	return;
+}
+
+static void
+prnt_state(echs_stset_t s)
+{
+	if (s) {
+		fputs("X-GA-STATE:", stdout);
+		prnt_stset(s);
+		fputc('\n', stdout);
+	}
 	return;
 }
 
@@ -1141,7 +1174,7 @@ prnt_evical_vevent(echs_evstrm_t s)
 	for (size_t i = 0UL; i < this->nev; i++) {
 		prnt_ical_hdr();
 		prnt_ev(this->ev[i]);
-		prnt_stset(this->ev[i].sts);
+		prnt_state(this->ev[i].sts);
 		prnt_ical_ftr();
 	}
 	return;
@@ -1365,7 +1398,13 @@ prnt_evrrul1(echs_evstrm_t s)
 		fputs("RRULE:", stdout);
 		prnt_rrul(rr);
 	}
-	prnt_stset(this->ve.ev.sts);
+	for (size_t i = 0UL; i < this->ve.mr.nr; i++) {
+		mrulsp_t mr = get_gmr(this->ve.mr.r + i);
+
+		fputs("X-GA-MRULE:", stdout);
+		prnt_mrul(mr);
+	}
+	prnt_state(this->ve.ev.sts);
 	prnt_ical_ftr();
 	return;
 }
@@ -1466,7 +1505,7 @@ echs_prnt_ical_event(echs_event_t ev)
 {
 	prnt_ical_hdr();
 	prnt_ev(ev);
-	prnt_stset(ev.sts);
+	prnt_state(ev.sts);
 	prnt_ical_ftr();
 	return;
 }
