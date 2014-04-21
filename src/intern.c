@@ -130,13 +130,11 @@ intern(const char *str, size_t len)
 {
 #define SSTK_MINZ	(256U)
 #define OBINT_MAX_LEN	(256U)
-	hash_t hx = murmur((const uint8_t*)str, len);
-
 	if (UNLIKELY(len == 0U || len >= OBINT_MAX_LEN)) {
 		/* don't bother */
 		return 0U;
 	}
-	while (1) {
+	for (const hash_t hx = murmur((const uint8_t*)str, len);;) {
 		/* just try what we've got */
 		for (size_t mod = SSTK_MINZ; mod <= zstk; mod *= 2U) {
 			size_t off = get_off(hx.idx, mod);
