@@ -1,0 +1,30 @@
+%{
+typedef enum {
+	MRUL_UNK,
+	/* actual keys */
+	KEY_DIR,
+	KEY_MOVEIF,
+	KEY_MOVEINTO,
+} mrul_key_t;
+
+%}
+%7bit
+%readonly-tables
+%enum
+%switch=1
+%struct-type
+%define slot-name keystr
+%define hash-function-name __evmrul_key_hash
+%define lookup-function-name __evmrul_key
+%null-strings
+%compare-strncmp
+
+struct mrul_key_cell_s {
+	const char *keystr;
+	mrul_key_t key;
+};
+
+%%
+DIR, KEY_DIR
+MOVEIF, KEY_MOVEIF
+MOVEINTO, KEY_MOVEINTO

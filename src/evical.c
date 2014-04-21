@@ -47,13 +47,16 @@
 #include <time.h>
 #include "evical.h"
 #include "intern.h"
+#include "state.h"
 #include "bufpool.h"
 #include "bitint.h"
 #include "dt-strpf.h"
 #include "evrrul.h"
+#include "evmrul.h"
 #include "nifty.h"
 #include "evical-gp.c"
 #include "evrrul-gp.c"
+#include "evmrul-gp.c"
 
 #if !defined assert
 # define assert(x)
@@ -80,6 +83,10 @@ struct ical_vevent_s {
 	/* points into the global xdat/rdat array */
 	struct dtlst_s rd;
 	struct dtlst_s xd;
+	/* points into the global mrul array */
+	struct rrlst_s mr;
+	/* the event's state set, might be part of EV one day */
+	echs_stset_t ss;
 };
 
 struct vearr_s {
@@ -107,6 +114,11 @@ static echs_instant_t *gxd;
 static size_t zgrd;
 static goptr_t ngrd;
 static echs_instant_t *grd;
+
+/* global mrule array */
+static size_t zgmr;
+static goptr_t ngmr;
+static struct mrulsp_s *gmr;
 
 #define CHECK_RESIZE(id, iniz, nitems)					\
 	if (UNLIKELY(!z##id)) {						\
@@ -215,6 +227,25 @@ add_to_grd(struct dtlst_s rdlst)
 	return res;
 }
 
+static goptr_t
+add1_to_gmr(struct mrulsp_s mr)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gmr, 16U, 1U);
+	gmr[res = ngmr++] = mr;
+	return res;
+}
+
+static struct mrulsp_s*
+get_gmr(goptr_t d)
+{
+	if (UNLIKELY(gmr == NULL)) {
+		return NULL;
+	}
+	return gmr + d;
+}
+
 
 static echs_instant_t
 snarf_value(const char *s)
@@ -283,6 +314,28 @@ snarf_wday(const char *s)
 		break;
 	}
 	return MIR;
+}
+
+static echs_mdir_t
+snarf_mdir(const char *spec)
+{
+	switch (*spec) {
+	case 'P':
+		/* check 4th character */
+		if (spec[4U] == 'T') {
+			return MDIR_PASTTHENFUTURE;
+		}
+		return MDIR_PAST;
+	case 'F':
+		/* check 6th character */
+		if (spec[6U] == 'T') {
+			return MDIR_FUTURETHENPAST;
+		}
+		return MDIR_FUTURE;
+	default:
+		break;
+	}
+	return MDIR_NONE;
 }
 
 static struct rrulsp_s
@@ -422,6 +475,74 @@ bogus:
 	return (struct rrulsp_s){FREQ_NONE};
 }
 
+static struct mrulsp_s
+snarf_mrule(const char *s, size_t z)
+{
+	struct mrulsp_s mr = {
+		.mdir = MDIR_NONE,
+	};
+
+	for (const char *sp = s, *const ep = s + z, *eofld;
+	     sp < ep; sp = eofld + 1) {
+		const struct mrul_key_cell_s *c;
+		const char *kv;
+		size_t kz;
+
+		if (UNLIKELY((eofld = strchr(sp, ';')) == NULL)) {
+			eofld = ep;
+		}
+		/* find the key-val separator (=) */
+		if (UNLIKELY((kv = strchr(sp, '=')) == NULL)) {
+			kz = eofld - sp;
+		} else {
+			kz = kv - sp;
+		}
+		/* try a lookup */
+		if (UNLIKELY((c = __evmrul_key(sp, kz)) == NULL)) {
+			/* not found */
+			continue;
+		}
+		/* otherwise do a bit of inspection */
+		switch (c->key) {
+		case KEY_DIR:
+			/* read the spec as well */
+			mr.mdir = snarf_mdir(++kv);
+			break;
+
+		case KEY_MOVEIF:
+			for (const char *eov; kv < eofld; kv = eov) {
+				echs_state_t st;
+
+				eov = strchr(++kv, ',') ?: eofld;
+				if (!(st = get_state(kv, eov - kv))) {
+					continue;
+				}
+				/* otherwise assign */
+				mr.away = stset_add_state(mr.away, st);
+			}
+			break;
+
+		case KEY_MOVEINTO:
+			for (const char *eov; kv < eofld; kv = eov) {
+				echs_state_t st;
+
+				eov = strchr(++kv, ',') ?: eofld;
+				if (!(st = get_state(kv, eov - kv))) {
+					continue;
+				}
+				/* otherwise assign */
+				mr.into = stset_add_state(mr.into, st);
+			}
+			break;
+
+		default:
+		case MRUL_UNK:
+			break;
+		}
+	}
+	return mr;
+}
+
 static struct dtlst_s
 snarf_dtlst(const char *line, size_t llen)
 {
@@ -542,6 +663,37 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			}
 			/* this isn't supposed to be a for-loop */
 			break;
+		}
+		break;
+	case FLD_MRULE:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		/* otherwise snarf him */
+		for (struct mrulsp_s r;
+		     (r = snarf_mrule(lp, ep - lp)).mdir != MDIR_NONE;) {
+			goptr_t x;
+
+			/* bang to global array */
+			x = add1_to_gmr(r);
+
+			if (!ve->mr.nr++) {
+				ve->mr.r = x;
+			}
+			/* this isn't supposed to be a for-loop */
+			break;
+		}
+		break;
+	case FLD_STATE:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		for (const char *eos; lp < ep; lp = eos + 1U) {
+			echs_state_t st;
+
+			eos = strchr(lp, ',') ?: ep;
+			st = add_state(lp, eos - lp);
+			ve->ss = stset_add_state(ve->ss, st);
 		}
 		break;
 	case FLD_UID:
