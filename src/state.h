@@ -41,16 +41,13 @@
 #include <stdbool.h>
 
 /**
- * obints are length+offset integers, at least 32 bits wide, always even.
- * They can fit short strings up to a length of 256 bytes and two
- * byte-wise equal strings will produce the same obint.
- *
- * LLLLLLLL OOOOOOOOOOOOOOOOOOOOOOOO(00)
- * ^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^ ||
- * length   offset / 4U           divisible by 4
- **/
-typedef uint_fast32_t echs_stset_t;
+ * States are enumerated handles (from 1 to 63). */
 typedef uint_fast8_t echs_state_t;
+
+/**
+ * Stsets are bitsets of states.  The lowest bit stands for the absent state,
+ * For instance if an event does not define a state. */
+typedef uint_fast64_t echs_stset_t;
 
 /**
  * Return the state number of STR. */
@@ -74,21 +71,15 @@ extern void clear_states(void);
 
 
 static inline __attribute__((const, pure)) echs_stset_t
-stset_add_state(echs_stset_t tgt, echs_state_t summand)
+stset_add_state(echs_stset_t set, echs_state_t st)
 {
-	if (summand) {
-		tgt |= 1U << summand;
-	}
-	return tgt;
+	return set |= (uint_fast64_t)(1ULL << st);
 }
 
 static inline __attribute__((const, pure)) bool
-stset_has_state_p(echs_stset_t ss, echs_state_t st)
+stset_has_state_p(echs_stset_t set, echs_state_t st)
 {
-	if (st) {
-		return (ss >> st) & 0b1U;
-	}
-	return false;
+	return (set >> st) & 0b1U;
 }
 
 #endif	/* INCLUDED_state_h_ */
