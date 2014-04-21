@@ -1047,17 +1047,6 @@ prnt_mrul(mrulsp_t mr)
 }
 
 static void
-prnt_state(echs_stset_t s)
-{
-	if (s) {
-		fputs("X-GA-STATE:", stdout);
-		prnt_stset(s);
-		fputc('\n', stdout);
-	}
-	return;
-}
-
-static void
 prnt_ev(echs_event_t ev)
 {
 	static unsigned int auto_uid;
@@ -1096,6 +1085,11 @@ prnt_ev(echs_event_t ev)
 	if (ev.sum) {
 		fputs("SUMMARY:", stdout);
 		puts(obint_name(ev.sum));
+	}
+	if (ev.sts) {
+		fputs("X-GA-STATE:", stdout);
+		prnt_stset(ev.sts);
+		fputc('\n', stdout);
 	}
 	return;
 }
@@ -1174,7 +1168,6 @@ prnt_evical_vevent(echs_evstrm_t s)
 	for (size_t i = 0UL; i < this->nev; i++) {
 		prnt_ical_hdr();
 		prnt_ev(this->ev[i]);
-		prnt_state(this->ev[i].sts);
 		prnt_ical_ftr();
 	}
 	return;
@@ -1404,7 +1397,6 @@ prnt_evrrul1(echs_evstrm_t s)
 		fputs("X-GA-MRULE:", stdout);
 		prnt_mrul(mr);
 	}
-	prnt_state(this->ve.ev.sts);
 	prnt_ical_ftr();
 	return;
 }
@@ -1505,7 +1497,6 @@ echs_prnt_ical_event(echs_event_t ev)
 {
 	prnt_ical_hdr();
 	prnt_ev(ev);
-	prnt_state(ev.sts);
 	prnt_ical_ftr();
 	return;
 }
