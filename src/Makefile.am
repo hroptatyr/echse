@@ -29,6 +29,7 @@ libechse_la_SOURCES += instant.c instant.h
 libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += intern.c intern.h
+libechse_la_SOURCES += state.c state.h
 libechse_la_SOURCES += bufpool.c bufpool.h
 libechse_la_SOURCES += event.c event.h
 libechse_la_SOURCES += evstrm.c evstrm.h
