@@ -1208,7 +1208,7 @@ __make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
-	res->dur = echs_nul_idiff();
+	res->dur = echs_instant_diff(ve->ev.till, ve->ev.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
 	return (echs_evstrm_t)res;
