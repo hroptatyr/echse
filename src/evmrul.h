@@ -1,4 +1,4 @@
-/*** event.h -- some echs_event_t functionality
+/*** evmrul.h -- mover rules
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -34,66 +34,29 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_event_h_
-#define INCLUDED_event_h_
+#if !defined INCLUDED_evmrul_h_
+#define INCLUDED_evmrul_h_
 
 #include <stddef.h>
 #include <stdbool.h>
-#include "instant.h"
 #include "state.h"
 
-typedef struct echs_event_s echs_event_t;
-typedef uintptr_t echs_evuid_t;
+typedef const struct mrulsp_s *mrulsp_t;
 
-struct echs_event_s {
-	echs_instant_t from;
-	echs_instant_t till;
-	echs_evuid_t uid;
-	echs_evuid_t sum;
-	echs_stset_t sts;
+typedef enum {
+	MDIR_NONE,
+	MDIR_PAST,
+	MDIR_PASTTHENFUTURE,
+	MDIR_FUTURE,
+	MDIR_FUTURETHENPAST,
+} echs_mdir_t;
+
+struct mrulsp_s {
+	echs_mdir_t mdir;
+	/* set of states we allow the event to be moved into */
+	echs_stset_t into;
+	/* set of states we need to move away from */
+	echs_stset_t away;
 };
 
-
-/* externals */
-/**
- * Sort an array EV of NEV elements stable and in-place. */
-extern void echs_event_sort(echs_event_t *restrict ev, size_t nev);
-
-
-/* convenience */
-static inline __attribute__((const, pure)) bool
-echs_event_0_p(echs_event_t e)
-{
-	return echs_instant_0_p(e.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_lt_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_eq_p(echs_event_t e1, echs_event_t e2)
-{
-	return (e1.uid && e1.uid == e2.uid || e1.sum && e1.sum == e2.sum) &&
-		echs_instant_eq_p(e1.from, e2.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_le_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
-}
-
-static inline __attribute__((const, pure)) echs_event_t
-echs_nul_event(void)
-{
-	static const echs_event_t nul = {
-		.from = {.u = 0UL},
-		.till = {.u = 0UL}
-	};
-	return nul;
-}
-
-#endif	/* INCLUDED_event_h_ */
+#endif	/* INCLUDED_evmrul_h_ */

@@ -1,4 +1,4 @@
-/*** intern.c -- interning system
+/*** state.c -- state interning system
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -41,7 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include "intern.h"
+#include "state.h"
 #include "nifty.h"
 
 /* a hash is the bucket locator and a chksum for collision detection */
@@ -52,7 +52,7 @@ typedef struct {
 
 /* the beef table */
 static struct {
-	obint_t ob;
+	echs_state_t st;
 	uint_fast32_t ck;
 } *sstk;
 /* alloc size, 2-power */
@@ -61,11 +61,13 @@ static size_t zstk;
 static size_t nstk;
 
 /* the big string obarray */
-static char *restrict obs;
+static char *restrict sts;
 /* alloc size, 2-power */
-static size_t obz;
-/* next ob */
-static size_t obn;
+static size_t stz;
+/* state -> offset mapping */
+static size_t sto[sizeof(echs_stset_t) * 8U];
+/* next st */
+static size_t sti;
 
 static hash_t
 murmur(const uint8_t *str, size_t len)
@@ -99,38 +101,39 @@ recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
 	return buf;
 }
 
-static obint_t
-make_obint(const char *str, size_t len)
+static echs_state_t
+make_state(const char *str, size_t len)
 {
 /* put STR (of length LEN) into string obarray, don't check for dups */
-#define OBAR_MINZ	(1024U)
+#define STAR_MINZ	(1024U)
 	/* make sure we pad with \0 bytes to the next 4-byte multiple */
 	size_t pad = ((len / 4U) + 1U) * 4U;
-	obint_t res;
 
-	if (UNLIKELY(obn + pad >= obz)) {
-		size_t nuz = (obz * 2U) ?: OBAR_MINZ;
+	if (UNLIKELY(sti >= countof(sto))) {
+		return 0U;
+	} else if (UNLIKELY(sto[sti] + pad >= stz)) {
+		size_t nuz = (stz * 2U) ?: STAR_MINZ;
 
-		obs = recalloc(obs, obz, nuz, sizeof(*obs));
-		obz = nuz;
+		sts = recalloc(sts, stz, nuz, sizeof(*sts));
+		stz = nuz;
 	}
 	/* paste the string in question */
-	memcpy(obs + (res = obn), str, len);
-	/* assemble the result */
-	res >>= 2U;
-	res |= len << ((sizeof(res) - 1U) * 8U);
-	/* inc the obn pointer */
-	obn += pad;
-	return res;
+	memcpy(sts + sto[sti], str, len);
+	/* inc the sto pointer */
+	if (LIKELY(sti + 1U < countof(sto))) {
+		sto[sti + 1U] = sto[sti] + pad;
+	}
+	return (echs_state_t)++sti;
 }
 
 
-obint_t
-intern(const char *str, size_t len)
-{
 #define SSTK_MINZ	(256U)
-#define OBINT_MAX_LEN	(256U)
-	if (UNLIKELY(len == 0U || len >= OBINT_MAX_LEN)) {
+#define STATE_MAX_LEN	(256U)
+
+echs_state_t
+add_state(const char *str, size_t len)
+{
+	if (UNLIKELY(len == 0U || len >= STATE_MAX_LEN)) {
 		/* don't bother */
 		return 0U;
 	}
@@ -141,14 +144,14 @@ intern(const char *str, size_t len)
 
 			if (LIKELY(sstk[off].ck == hx.chk)) {
 				/* found him */
-				return sstk[off].ob;
-			} else if (sstk[off].ob == 0U) {
+				return sstk[off].st;
+			} else if (!sstk[off].st) {
 				/* found empty slot */
-				obint_t ob = make_obint(str, len);
-				sstk[off].ob = ob;
+				echs_state_t st = make_state(str, len);
+				sstk[off].st = st;
 				sstk[off].ck = hx.chk;
 				nstk++;
-				return ob;
+				return st;
 			}
 		}
 		/* quite a lot of collisions, resize then */
@@ -160,23 +163,41 @@ intern(const char *str, size_t len)
 	/* not reached */
 }
 
-void
-unintern(obint_t UNUSED(ob))
+echs_state_t
+get_state(const char *str, size_t len)
 {
-	return;
+	if (UNLIKELY(len == 0U || len >= STATE_MAX_LEN)) {
+		/* don't bother */
+		return 0U;
+	}
+	/* just try what we've got */
+	with (const hash_t hx = murmur((const uint8_t*)str, len)) {
+		for (size_t mod = SSTK_MINZ; mod <= zstk; mod *= 2U) {
+			size_t off = get_off(hx.idx, mod);
+
+			if (LIKELY(sstk[off].ck == hx.chk)) {
+				/* found him */
+				return sstk[off].st;
+			} else if (!sstk[off].st) {
+				/* found empty slot, means the state is nul */
+				break;
+			}
+		}
+	}
+	return 0U;
 }
 
 const char*
-obint_name(obint_t ob)
+state_name(echs_state_t st)
 {
-	if (UNLIKELY(ob == 0UL)) {
+	if (UNLIKELY(!st || st >= sizeof(echs_stset_t) * 8U)) {
 		return NULL;
 	}
-	return obs + obint_off(ob);
+	return sts + sto[--st];
 }
 
 void
-clear_interns(void)
+clear_states(void)
 {
 	if (LIKELY(sstk != NULL)) {
 		free(sstk);
@@ -184,13 +205,14 @@ clear_interns(void)
 	sstk = NULL;
 	zstk = 0U;
 	nstk = 0U;
-	if (LIKELY(obs != NULL)) {
-		free(obs);
+	if (LIKELY(sts != NULL)) {
+		free(sts);
 	}
-	obs = NULL;
-	obz = 0U;
-	obn = 0U;
+	sts = NULL;
+	stz = 0U;
+	memset(sto, 0, sizeof(sto));
+	sti = 0U;
 	return;
 }
 
-/* intern.c ends here */
+/* state.c ends here */

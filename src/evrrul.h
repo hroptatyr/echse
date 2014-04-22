@@ -127,18 +127,6 @@ typedef enum {
 #define GET_NTH(spec)	((spec) >> 8U)
 #define GET_WDAY(spec)	((spec) & 0xfU)
 
-typedef struct {
-	/* the prototype event */
-	echs_event_t proto;
-	/* its duration */
-	echs_idiff_t dur;
-
-	/* recurrence parameters */
-	echs_instant_t till;
-	unsigned int count;
-	unsigned int interval;
-} evrrul_param_t;
-
 struct rrulsp_s {
 	echs_freq_t freq;
 	unsigned int count;
@@ -169,9 +157,6 @@ struct cd_s {
 };
 
 
-extern echs_evstrm_t
-echs_yearly(evrrul_param_t param, echs_mon_t mon, unsigned int dom);
-
 extern size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
 

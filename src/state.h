@@ -1,4 +1,4 @@
-/*** event.h -- some echs_event_t functionality
+/*** state.h -- state interning system
  *
  * Copyright (C) 2013-2014 Sebastian Freundt
  *
@@ -34,66 +34,52 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_event_h_
-#define INCLUDED_event_h_
+#if !defined INCLUDED_state_h_
+#define INCLUDED_state_h_
 
-#include <stddef.h>
+#include <stdint.h>
 #include <stdbool.h>
-#include "instant.h"
-#include "state.h"
 
-typedef struct echs_event_s echs_event_t;
-typedef uintptr_t echs_evuid_t;
-
-struct echs_event_s {
-	echs_instant_t from;
-	echs_instant_t till;
-	echs_evuid_t uid;
-	echs_evuid_t sum;
-	echs_stset_t sts;
-};
-
-
-/* externals */
 /**
- * Sort an array EV of NEV elements stable and in-place. */
-extern void echs_event_sort(echs_event_t *restrict ev, size_t nev);
+ * States are enumerated handles (from 1 to 63). */
+typedef uint_fast8_t echs_state_t;
+
+/**
+ * Stsets are bitsets of states.  The lowest bit stands for the absent state,
+ * For instance if an event does not define a state. */
+typedef uint_fast64_t echs_stset_t;
+
+/**
+ * Return the state number of STR. */
+extern echs_state_t add_state(const char *str, size_t len);
+
+/**
+ * Return the state number of STR. */
+extern echs_state_t get_state(const char *str, size_t len);
+
+/**
+ * Unintern STATE. */
+extern void rem_state(echs_state_t);
+
+/**
+ * Return the string representation of STATE. */
+extern const char *state_name(echs_state_t);
+
+/**
+ * Clean up resources used by the state interning system. */
+extern void clear_states(void);
 
 
-/* convenience */
-static inline __attribute__((const, pure)) bool
-echs_event_0_p(echs_event_t e)
+static inline __attribute__((const, pure)) echs_stset_t
+stset_add_state(echs_stset_t set, echs_state_t st)
 {
-	return echs_instant_0_p(e.from);
+	return set |= (uint_fast64_t)(1ULL << st);
 }
 
 static inline __attribute__((const, pure)) bool
-echs_event_lt_p(echs_event_t e1, echs_event_t e2)
+stset_has_state_p(echs_stset_t set, echs_state_t st)
 {
-	return echs_instant_lt_p(e1.from, e2.from);
+	return (set >> st) & 0b1U;
 }
 
-static inline __attribute__((const, pure)) bool
-echs_event_eq_p(echs_event_t e1, echs_event_t e2)
-{
-	return (e1.uid && e1.uid == e2.uid || e1.sum && e1.sum == e2.sum) &&
-		echs_instant_eq_p(e1.from, e2.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_le_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
-}
-
-static inline __attribute__((const, pure)) echs_event_t
-echs_nul_event(void)
-{
-	static const echs_event_t nul = {
-		.from = {.u = 0UL},
-		.till = {.u = 0UL}
-	};
-	return nul;
-}
-
-#endif	/* INCLUDED_event_h_ */
+#endif	/* INCLUDED_state_h_ */
