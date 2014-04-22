@@ -49,7 +49,6 @@
 #include "echse.h"
 #include "echse-genuid.h"
 #include "evical.h"
-#include "state.h"
 #include "dt-strpf.h"
 #include "nifty.h"
 
@@ -187,7 +186,6 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 	const size_t fmz = strlen(fmt);
 	char fbuf[fmz + 2 * 32U + 2 * 256U];
 	echs_event_t e;
-	echs_event_t prev_e = echs_nul_event();
 
 	/* just get it out now */
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
@@ -201,19 +199,6 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 			   !echs_instant_matches_p(&p.filt, e.from)) {
 			continue;
 		}
-		/* keep track of the state */
-		if (prev_e.sts && !echs_instant_eq_p(prev_e.till, e.from)) {
-			char buf[32U];
-			dt_strf(buf, sizeof(buf), prev_e.till);
-			printf("POST_HOOK(%s, %llx, 0\n", buf, prev_e.sts);
-			prev_e.sts = 0U;
-		}
-		if (prev_e.sts != e.sts) {
-			char buf[32U];
-			dt_strf(buf, sizeof(buf), e.from);
-			printf("PRE_HOOK(%s, %llx, %llx)\n", buf, prev_e.sts, e.sts);
-			prev_e = e;
-		}
 		/* otherwise print */
 		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
 		/* finalise buf */
@@ -221,11 +206,6 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 		*bp++ = '\0';
 
 		fputs(fbuf, stdout);
-	}
-	if (prev_e.sts) {
-		char buf[32U];
-		dt_strf(buf, sizeof(buf), prev_e.till);
-		printf("POST_HOOK(%s, %llx, 0)\n", buf, prev_e.sts);
 	}
 	return;
 }
