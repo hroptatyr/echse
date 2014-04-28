@@ -595,7 +595,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			switch (c->fld) {
 			case FLD_DTSTART:
 				ve->ev.from = i;
-				break;
+				if (!echs_nul_instant_p(ve->ev.till)) {
+					break;
+				}
+				/* otherwise also set the TILL slot to I,
+				 * as kind of a sane default value */
 			case FLD_DTEND:
 				ve->ev.till = i;
 				break;
