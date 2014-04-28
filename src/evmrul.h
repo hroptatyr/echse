@@ -40,6 +40,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "state.h"
+#include "evstrm.h"
 
 typedef const struct mrulsp_s *mrulsp_t;
 
@@ -58,5 +59,10 @@ struct mrulsp_s {
 	/* set of states we need to move away from */
 	echs_stset_t away;
 };
+
+
+/**
+ * Turn a stream with movable events into a fixed date/time stream. */
+echs_evstrm_t make_evmrul(mrulsp_t, echs_evstrm_t mov, echs_evstrm_t aux);
 
 #endif	/* INCLUDED_evmrul_h_ */

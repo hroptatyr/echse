@@ -1,0 +1,196 @@
+/*** evmrul.c -- mover rules
+ *
+ * Copyright (C) 2013-2014 Sebastian Freundt
+ *
+ * Author:  Sebastian Freundt <freundt@ga-group.nl>
+ *
+ * This file is part of echse.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the author nor the names of any contributors
+ *    may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ ***/
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
+#include <stdlib.h>
+#include <stdbool.h>
+#include "evmrul.h"
+#include "evstrm.h"
+#include "nifty.h"
+
+/* mrul streams take an ordinary stream (the one with the movers) and
+ * an auxiliary stream (the one with the states) and merge them into
+ * an ordinary mover-free stream */
+struct evmrul_s {
+	echs_evstrm_class_t class;
+	echs_evstrm_t movers;
+	echs_evstrm_t states;
+	mrulsp_t mr;
+	/* aux event cache */
+	echs_event_t e;
+};
+
+static echs_event_t next_evmrul(echs_evstrm_t);
+static void free_evmrul(echs_evstrm_t);
+static echs_evstrm_t clone_evmrul(echs_evstrm_t);
+static void prnt_evmrul1(echs_evstrm_t);
+
+static const struct echs_evstrm_class_s evmrul_cls = {
+	.next = next_evmrul,
+	.free = free_evmrul,
+	.clone = clone_evmrul,
+	.prnt1 = prnt_evmrul1,
+	.prntm = NULL,
+};
+
+static echs_event_t
+next_evmrul(echs_evstrm_t s)
+{
+	struct evmrul_s *restrict this = (struct evmrul_s*)s;
+	echs_event_t res = echs_evstrm_next(this->movers);
+	echs_event_t e = this->e;
+
+	if (UNLIKELY(this->states == NULL)) {
+		return res;
+	} else if (echs_instant_le_p(res.till, e.from)) {
+		/* no danger then aye */
+		return res;
+	}
+ffw:
+	/* otherwise fast forward the state stream */
+	while (echs_instant_le_p(e.till, res.from)) {
+		/* no danger */
+		if (echs_event_0_p(e = echs_evstrm_next(this->states))) {
+			/* state stream's finished */
+			free_echs_evstrm(this->states);
+			this->states = NULL;
+			return res;
+		}
+	}
+	/* invariant after while loop is end(e) > beg(res)
+	 * make sure res.till <= e.from */
+	if (echs_instant_le_p(res.till, e.from)) {
+		;
+	} else if (this->mr->away & e.sts) {
+		/* ah, we need to move RES, invariant from previous
+		 * condition is end(res) > beg(from) */
+		echs_idiff_t tmpd;
+
+		switch (this->mr->mdir) {
+		case MDIR_PAST:
+		case MDIR_PASTTHENFUTURE:
+			/* make end(res) := beg(from), derive beg(res) */
+			tmpd = echs_instant_diff(e.from, res.till);
+			break;
+		case MDIR_FUTURE:
+		case MDIR_FUTURETHENPAST:
+			/* make beg(res) := end(from), derive end(res) */
+			tmpd = echs_instant_diff(e.till, res.from);
+			break;
+		default:
+			tmpd = echs_nul_idiff();
+			break;
+		}
+
+		/* move RES so that RES.till/from coincides with E.from/till */
+		res.from = echs_instant_add(e.from, tmpd);
+		res.till = echs_instant_add(e.till, tmpd);
+
+		switch (this->mr->mdir) {
+		case MDIR_FUTURE:
+		case MDIR_FUTURETHENPAST:
+			goto ffw;
+		default:
+			break;
+		}
+	}
+	/* better save what we've got */
+	this->e = e;
+	return res;
+}
+
+static void
+free_evmrul(echs_evstrm_t s)
+{
+	struct evmrul_s *this = (struct evmrul_s*)s;
+
+	free_echs_evstrm(this->movers);
+	if (LIKELY(this->states != NULL)) {
+		free_echs_evstrm(this->states);
+	}
+	free(this);
+	return;
+}
+
+static echs_evstrm_t
+clone_evmrul(echs_evstrm_t s)
+{
+	const struct evmrul_s *this = (const struct evmrul_s*)s;
+	struct evmrul_s *clon = malloc(sizeof(*this));
+
+	*clon = *this;
+	clon->movers = clone_echs_evstrm(this->movers);
+	if (LIKELY(this->states != NULL)) {
+		clon->states = clone_echs_evstrm(this->states);
+	}
+	return (echs_evstrm_t)clon;
+}
+
+static void
+prnt_evmrul1(echs_evstrm_t s)
+{
+	const struct evmrul_s *this = (const struct evmrul_s*)s;
+
+	echs_evstrm_prnt(this->movers);
+	return;
+}
+
+
+/* public funs */
+echs_evstrm_t
+make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
+{
+/* the AUX arg is usually not available at the time of calling,
+ * we happily accept NULL for it and provide a means to hand it
+ * in later. */
+	struct evmrul_s *res;
+
+	if (UNLIKELY(mr == NULL)) {
+		return NULL;
+	}
+	/* otherwise ... */
+	res = malloc(sizeof(*res));
+	res->class = &evmrul_cls;
+	res->movers = mov;
+	res->states = aux;
+	res->mr = mr;
+	res->e = echs_nul_event();
+	return (echs_evstrm_t)res;
+}
+
+/* evmrul.c ends here */
