@@ -80,7 +80,7 @@ union echs_instant_u {
 } __attribute__((transparent_union));
 
 struct echs_idiff_s {
-	unsigned int dd;
+	signed int dd;
 	unsigned int msd;
 };
 
