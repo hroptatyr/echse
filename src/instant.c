@@ -46,6 +46,13 @@ static const unsigned int doy[] = {
 	365U, 396U, 424U, 455U, 485U, 516U, 546U, 577U, 608U, 638U, 669U, 699U,
 };
 
+#define HOURS_PER_DAY	(24U)
+#define MINS_PER_HOUR	(60U)
+#define SECS_PER_MIN	(60U)
+#define MSECS_PER_SEC	(1000U)
+#define SECS_PER_DAY	(HOURS_PER_DAY * MINS_PER_HOUR * SECS_PER_MIN)
+#define MSECS_PER_DAY	(SECS_PER_DAY * MSECS_PER_SEC)
+
 #define T	echs_instant_t
 
 static inline __attribute__((const, pure)) bool
@@ -76,33 +83,33 @@ echs_instant_fixup(echs_instant_t e)
 		goto fixup_S;
 	}
 
-	if (UNLIKELY(e.ms >= 1000U)) {
-		unsigned int dS = e.ms / 1000U;
-		unsigned int ms = e.ms % 1000U;
+	if (UNLIKELY(e.ms >= MSECS_PER_SEC)) {
+		unsigned int dS = e.ms / MSECS_PER_SEC;
+		unsigned int ms = e.ms % MSECS_PER_SEC;
 
 		e.ms = ms;
 		e.S += dS;
 	}
 
 fixup_S:
-	if (UNLIKELY(e.S >= 60U)) {
+	if (UNLIKELY(e.S >= SECS_PER_MIN)) {
 		/* leap seconds? */
-		unsigned int dM = e.S / 60U;
-		unsigned int S = e.S % 60U;
+		unsigned int dM = e.S / SECS_PER_MIN;
+		unsigned int S = e.S % SECS_PER_MIN;
 
 		e.S = S;
 		e.M += dM;
 	}
-	if (UNLIKELY(e.M >= 60U)) {
-		unsigned int dH = e.M / 60U;
-		unsigned int M = e.M % 60U;
+	if (UNLIKELY(e.M >= MINS_PER_HOUR)) {
+		unsigned int dH = e.M / MINS_PER_HOUR;
+		unsigned int M = e.M % MINS_PER_HOUR;
 
 		e.M = M;
 		e.H += dH;
 	}
-	if (UNLIKELY(e.H >= 24U)) {
-		unsigned int dd = e.H / 24U;
-		unsigned int H = e.H % 24U;
+	if (UNLIKELY(e.H >= HOURS_PER_DAY)) {
+		unsigned int dd = e.H / HOURS_PER_DAY;
+		unsigned int H = e.H % HOURS_PER_DAY;
 
 		e.H = H;
 		e.d += dd;
@@ -151,17 +158,17 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 
 	/* just see what the intraday part yields for the difference */
 	intra_df = end.H - beg.H;
-	intra_df *= 60;
+	intra_df *= MINS_PER_HOUR;
 	intra_df += end.M - beg.M;
-	intra_df *= 60;
+	intra_df *= SECS_PER_MIN;
 	intra_df += end.S - beg.S;
-	intra_df *= 1000;
+	intra_df *= MSECS_PER_SEC;
 	intra_df += end.ms - beg.ms;
 
 	if (intra_df < 0) {
-		intra_df += 24 * 60 * 60 * 1000;
+		intra_df += MSECS_PER_DAY;
 		extra_df = -1;
-	} else if (intra_df < 24 * 60 * 60 * 1000) {
+	} else if ((unsigned int)intra_df < MSECS_PER_DAY) {
 		extra_df = 0;
 	} else {
 		extra_df = 1;
@@ -202,14 +209,14 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 
 	res.d = bas.d + dd;
 
-	res.ms = bas.ms + msd % 1000;
-	msd /= 1000;
-	res.S = bas.S + msd % 60;
-	msd /= 60;
-	res.M = bas.M + msd % 60;
-	msd /= 60;
-	res.H = bas.H + msd % 24;
-	msd /= 24;
+	res.ms = bas.ms + msd % MSECS_PER_SEC;
+	msd /= MSECS_PER_SEC;
+	res.S = bas.S + msd % SECS_PER_MIN;
+	msd /= SECS_PER_MIN;
+	res.M = bas.M + msd % MINS_PER_HOUR;
+	msd /= MINS_PER_HOUR;
+	res.H = bas.H + msd % HOURS_PER_DAY;
+	msd /= HOURS_PER_DAY;
 
 	res.d += msd;
 	return echs_instant_fixup(res);
