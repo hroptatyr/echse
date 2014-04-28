@@ -116,7 +116,7 @@ static echs_instant_t *grd;
 /* global mrule array */
 static size_t zgmr;
 static goptr_t ngmr;
-static struct mrulsp_s *gmr;
+struct mrulsp_s *gmr;
 
 #define CHECK_RESIZE(id, iniz, nitems)					\
 	if (UNLIKELY(!z##id)) {						\
@@ -1215,6 +1215,11 @@ __make_evrrul(const struct ical_vevent_s *ve)
 	res->dur = echs_instant_diff(ve->ev.till, ve->ev.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
+	if (ve->mr.nr) {
+		/* defer to evmrul filter stream */
+		mrulsp_t mr = get_gmr(ve->mr.r);
+		//return make_evmrul(mr, (echs_evstrm_t)res, NULL);
+	}
 	return (echs_evstrm_t)res;
 }
 
