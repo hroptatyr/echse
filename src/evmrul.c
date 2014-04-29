@@ -39,9 +39,16 @@
 #endif	/* HAVE_CONFIG_H */
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include "evmrul.h"
 #include "evstrm.h"
 #include "nifty.h"
+
+/* simple event queue */
+struct eq_s {
+	size_t i;
+	echs_event_t e[16U];
+};
 
 /* mrul streams take an ordinary stream (the one with the movers) and
  * an auxiliary stream (the one with the states) and merge them into
@@ -51,10 +58,57 @@ struct evmrul_s {
 	echs_evstrm_t movers;
 	echs_evstrm_t states;
 	mrulsp_t mr;
-	/* aux event cache */
-	echs_event_t e;
+	/* aux event stack */
+	struct eq_s aux[1U];
 };
 
+static inline void
+push_event(struct eq_s *restrict q, echs_event_t e)
+{
+	q->e[q->i++] = e;
+	return;
+}
+
+static inline echs_event_t
+pop_event(struct eq_s *restrict q)
+{
+	if (UNLIKELY(q->i == 0U)) {
+		return echs_nul_event();
+	}
+	return q->e[--q->i];
+}
+
+static inline __attribute__((const, pure)) bool
+aux_blocks_p(mrulsp_t mr, echs_event_t aux)
+{
+	return mr->from & aux.sts;
+}
+
+static echs_event_t
+pop_aux_event(struct evmrul_s *restrict s)
+{
+	echs_event_t res;
+
+	if (!echs_nul_event_p(res = pop_event(s->aux))) {
+		return res;
+	}
+	/* otherwise find next blocking event */
+	while (res = echs_evstrm_next(s->states),
+	       !echs_nul_event_p(res) && !aux_blocks_p(s->mr, res));
+	return res;
+}
+
+static void
+push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
+{
+	if (UNLIKELY(!aux_blocks_p(s->mr, e))) {
+		return;
+	}
+	push_event(s->aux, e);
+	return;
+}
+
+
 static echs_event_t next_evmrul(echs_evstrm_t);
 static void free_evmrul(echs_evstrm_t);
 static echs_evstrm_t clone_evmrul(echs_evstrm_t);
@@ -71,66 +125,66 @@ static const struct echs_evstrm_class_s evmrul_cls = {
 static echs_event_t
 next_evmrul(echs_evstrm_t s)
 {
+/* this is for past movers only at the moment */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
 	echs_event_t res = echs_evstrm_next(this->movers);
-	echs_event_t e = this->e;
+	echs_event_t aux = pop_aux_event(this);
+	echs_idiff_t dur;
 
 	if (UNLIKELY(this->states == NULL)) {
 		return res;
-	} else if (echs_instant_le_p(res.till, e.from)) {
+	} else if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
+		push_aux_event(this, aux);
 		return res;
 	}
-ffw:
-	/* otherwise fast forward the state stream */
-	while (echs_instant_le_p(e.till, res.from)) {
-		/* no danger */
-		if (echs_event_0_p(e = echs_evstrm_next(this->states))) {
-			/* state stream's finished */
+	/* invariant: AUX.FROM < RES.TILL */
+	dur = echs_instant_diff(res.till, res.from);
+
+	/* fast forward to the event that actually blocks RES */
+	do {
+		/* get next blocking event */
+		echs_event_t nex = pop_aux_event(this);
+		echs_idiff_t and;
+
+		if (UNLIKELY(echs_nul_event_p(nex))) {
+			/* state stream and event cache are finished,
+			 * prepare to go to short-circuiting mode,
+			 * RES will fit trivially between PREV_AUX and
+			 * the most-distant event in the future */
 			free_echs_evstrm(this->states);
 			this->states = NULL;
-			return res;
+
+			if (echs_instant_le_p(aux.till, res.from)) {
+				/* the invariant before the loop does not
+				 * guarantee that AUX.TILL <= RES.FROM */
+				return res;
+			}
+			break;
 		}
-	}
-	/* invariant after while loop is end(e) > beg(res)
-	 * make sure res.till <= e.from */
-	if (echs_instant_le_p(res.till, e.from)) {
+
+		and = echs_instant_diff(nex.from, aux.till);
+		/* check if RES would fit between AUX and NEX */
+		if (echs_idiff_le_p(dur, and)) {
+			/* yep, would fit, forget about aux */
+			aux = nex;
+		} else {
+			/* no fittee, `extend' aux */
+			aux.till = nex.till;
+		}
+	} while (echs_instant_le_p(aux.till, res.from));
+	/* invariant RES.FROM < AUX.TILL
+	 * check if RES is entirely before AUX we're on our way */
+	if (echs_instant_le_p(res.till, aux.from)) {
+		/* yep, fits, release him */
 		;
-	} else if (this->mr->away & e.sts) {
-		/* ah, we need to move RES, invariant from previous
-		 * condition is end(res) > beg(from) */
-		echs_idiff_t tmpd;
-
-		switch (this->mr->mdir) {
-		case MDIR_PAST:
-		case MDIR_PASTTHENFUTURE:
-			/* make end(res) := beg(from), derive beg(res) */
-			tmpd = echs_instant_diff(e.from, res.till);
-			break;
-		case MDIR_FUTURE:
-		case MDIR_FUTURETHENPAST:
-			/* make beg(res) := end(from), derive end(res) */
-			tmpd = echs_instant_diff(e.till, res.from);
-			break;
-		default:
-			tmpd = echs_nul_idiff();
-			break;
-		}
-
-		/* move RES so that RES.till/from coincides with E.from/till */
-		res.from = echs_instant_add(e.from, tmpd);
-		res.till = echs_instant_add(e.till, tmpd);
-
-		switch (this->mr->mdir) {
-		case MDIR_FUTURE:
-		case MDIR_FUTURETHENPAST:
-			goto ffw;
-		default:
-			break;
-		}
+	} else {
+		/* ah, we need to move RES just before AUX.FROM */
+		res.till = aux.from;
+		res.from = echs_instant_add(aux.from, echs_idiff_neg(dur));
 	}
 	/* better save what we've got */
-	this->e = e;
+	push_aux_event(this, aux);
 	return res;
 }
 
@@ -189,7 +243,7 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	res->movers = mov;
 	res->states = aux;
 	res->mr = mr;
-	res->e = echs_nul_event();
+	memset(res->aux, 0, sizeof(res->aux));
 	return (echs_evstrm_t)res;
 }
 
