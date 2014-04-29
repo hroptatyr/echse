@@ -207,4 +207,10 @@ echs_idiff_eq_p(echs_idiff_t i1, echs_idiff_t i2)
 	return i1.dd == i2.dd && i1.msd == i2.msd;
 }
 
+static inline __attribute__((const, pure)) echs_idiff_t
+echs_idiff_neg(echs_idiff_t i)
+{
+	return (echs_idiff_t){-i.dd + (i.msd != 0), i.msd};
+}
+
 #endif	/* INCLUDED_instant_h_ */
