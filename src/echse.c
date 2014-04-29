@@ -348,77 +348,6 @@ echse: Error: cannot open file `%s'", fn);
 	return 0;
 }
 
-#include "evmrul.h"
-static int
-cmd_test(const struct yuck_cmd_unroll_s argi[static 1U])
-{
-	static const char dflt_fmt[] = "%b\t%s";
-	/* params that filter the output */
-	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
-	/* format string to use */
-	const char *fmt = dflt_fmt;
-	echs_evstrm_t smux;
-
-	if (argi->from_arg) {
-		p.from = dt_strp(argi->from_arg);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.from = echs_nul_instant();
-		p.from.y = 2000;
-		p.from.m = 1;
-		p.from.d = 1;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
-	}
-
-	if (argi->till_arg) {
-		p.till = dt_strp(argi->till_arg);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.till = echs_nul_instant();
-		p.till.y = 2037;
-		p.till.m = 12;
-		p.till.d = 31;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
-	}
-
-	with (echs_evstrm_t sarr[2U]) {
-		size_t ns = 0UL;
-
-		for (size_t i = 0UL; i < 2U; i++) {
-			const char *fn = argi->args[i];
-			echs_evstrm_t s = make_echs_evstrm_from_file(fn);
-
-			if (UNLIKELY(s == NULL)) {
-				serror("\
-echse: Error: cannot open file `%s'", fn);
-				continue;
-			}
-			sarr[ns++] = s;
-		}
-		extern mrulsp_t gmr;
-		/* now mux them all into one */
-		smux = make_evmrul(gmr, sarr[1U], sarr[0U]);
-	}
-	if (UNLIKELY(argi->format_arg != NULL)) {
-		fmt = argi->format_arg;
-
-		if (!strcmp(fmt, "ical")) {
-			/* special output format */
-			unroll_ical(smux, p);
-			goto out;
-		}
-	}
-	unroll_frmt(smux, p, fmt);
-
-out:
-	free_echs_evstrm(smux);
-	return 0;
-}
-
 
 int
 main(int argc, char *argv[])
@@ -448,10 +377,6 @@ Try --help for a list of commands.\n", stderr);
 		break;
 	case ECHSE_CMD_MERGE:
 		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
-		break;
-
-	case ECHSE_CMD_TEST:
-		rc = cmd_test((struct yuck_cmd_unroll_s*)argi);
 		break;
 	}
 	/* some global resources */

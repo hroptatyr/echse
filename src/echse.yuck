@@ -40,12 +40,3 @@ Print the resulting stream.
                         - BYYEARDAY selects only specified days
                         - BYMONTHDAY selects only specified days
                         - BYDAY selects only specified days
-
-
-Usage: echse test AUX-FILE MOV-FILE
-
-Bla
-
-  --from=DT             Start event streams at DT.
-  --till=DT             Finish event streams by DT.
-  --format=SPEC         Output according to SPEC, a format string where
