@@ -109,13 +109,22 @@ push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
 }
 
 
-static echs_event_t next_evmrul(echs_evstrm_t);
+static echs_event_t next_evmrul_past(echs_evstrm_t);
+static echs_event_t next_evmrul_futu(echs_evstrm_t);
 static void free_evmrul(echs_evstrm_t);
 static echs_evstrm_t clone_evmrul(echs_evstrm_t);
 static void prnt_evmrul1(echs_evstrm_t);
 
-static const struct echs_evstrm_class_s evmrul_cls = {
-	.next = next_evmrul,
+static const struct echs_evstrm_class_s evmrul_past_cls = {
+	.next = next_evmrul_past,
+	.free = free_evmrul,
+	.clone = clone_evmrul,
+	.prnt1 = prnt_evmrul1,
+	.prntm = NULL,
+};
+
+static const struct echs_evstrm_class_s evmrul_futu_cls = {
+	.next = next_evmrul_futu,
 	.free = free_evmrul,
 	.clone = clone_evmrul,
 	.prnt1 = prnt_evmrul1,
@@ -123,7 +132,7 @@ static const struct echs_evstrm_class_s evmrul_cls = {
 };
 
 static echs_event_t
-next_evmrul(echs_evstrm_t s)
+next_evmrul_past(echs_evstrm_t s)
 {
 /* this is for past movers only at the moment */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
@@ -175,14 +184,79 @@ next_evmrul(echs_evstrm_t s)
 	} while (echs_instant_le_p(aux.till, res.from));
 	/* invariant RES.FROM < AUX.TILL
 	 * check if RES is entirely before AUX we're on our way */
-	if (echs_instant_le_p(res.till, aux.from)) {
-		/* yep, fits, release him */
-		;
-	} else {
+	if (!echs_instant_le_p(res.till, aux.from)) {
 		/* ah, we need to move RES just before AUX.FROM */
 		res.till = aux.from;
 		res.from = echs_instant_add(aux.from, echs_idiff_neg(dur));
 	}
+	/* better save what we've got */
+	push_aux_event(this, aux);
+	return res;
+}
+
+static echs_event_t
+next_evmrul_futu(echs_evstrm_t s)
+{
+/* this is for future movers only at the moment */
+	struct evmrul_s *restrict this = (struct evmrul_s*)s;
+	echs_event_t res = echs_evstrm_next(this->movers);
+	echs_event_t aux = pop_aux_event(this);
+	echs_idiff_t dur;
+
+	if (UNLIKELY(this->states == NULL)) {
+		return res;
+	}
+
+	/* fast forward to the event that actually blocks RES */
+	while (echs_instant_le_p(aux.till, res.from)) {
+		aux = pop_aux_event(this);
+		if (UNLIKELY(echs_nul_event_p(aux))) {
+			/* state stream and event cache are finished,
+			 * prepare to go to short-circuiting mode,
+			 * RES will fit trivially between PREV_AUX and
+			 * the most-distant event in the future */
+			free_echs_evstrm(this->states);
+			this->states = NULL;
+			return res;
+		}
+	}
+	/* invariant: RES.FROM < AUX.TILL */
+	if (echs_instant_le_p(res.till, aux.from)) {
+		/* no danger then aye */
+		push_aux_event(this, aux);
+		return res;
+	}
+	/* invariant: AUX.FROM < RES.TILL */
+	dur = echs_instant_diff(res.till, res.from);
+
+	do {
+		/* get next blocking event */
+		echs_event_t nex = pop_aux_event(this);
+		echs_idiff_t and;
+
+		if (UNLIKELY(echs_nul_event_p(nex))) {
+			/* state stream and event cache are finished,
+			 * prepare to go to short-circuiting mode,
+			 * RES will fit trivially between PREV_AUX and
+			 * the most-distant event in the future */
+			free_echs_evstrm(this->states);
+			this->states = NULL;
+			break;
+		}
+
+		/* check if RES would fit between AUX and NEX */
+		and = echs_instant_diff(nex.from, aux.till);
+		if (echs_idiff_le_p(dur, and)) {
+			/* yep, would fit, forget about nex */
+			push_aux_event(this, nex);
+			break;
+		}
+		/* no fittee, `extend' aux */
+		aux.till = nex.till;
+	} while (1);
+	/* invariant AUX.TILL + (RES.TILL - RES.FROM) <= NEX.FROM */
+	res.from = aux.till;
+	res.till = echs_instant_add(aux.till, dur);
 	/* better save what we've got */
 	push_aux_event(this, aux);
 	return res;
@@ -239,7 +313,19 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	/* otherwise ... */
 	res = malloc(sizeof(*res));
-	res->class = &evmrul_cls;
+	switch (mr->mdir) {
+	case MDIR_PAST:
+	case MDIR_PASTTHENFUTURE:
+		res->class = &evmrul_past_cls;
+		break;
+	case MDIR_FUTURE:
+	case MDIR_FUTURETHENPAST:
+		res->class = &evmrul_futu_cls;
+		break;
+	default:
+		free(res);
+		return NULL;
+	}
 	res->movers = mov;
 	res->states = aux;
 	res->mr = mr;
