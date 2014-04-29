@@ -57,7 +57,7 @@ struct mrulsp_s {
 	/* set of states we allow the event to be moved into */
 	echs_stset_t into;
 	/* set of states we need to move away from */
-	echs_stset_t away;
+	echs_stset_t from;
 };
 
 

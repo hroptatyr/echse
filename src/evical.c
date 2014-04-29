@@ -507,7 +507,7 @@ snarf_mrule(const char *s, size_t z)
 			mr.mdir = snarf_mdir(++kv);
 			break;
 
-		case KEY_MOVEIF:
+		case KEY_MOVEFROM:
 			for (const char *eov; kv < eofld; kv = eov) {
 				echs_state_t st;
 
@@ -516,7 +516,7 @@ snarf_mrule(const char *s, size_t z)
 					continue;
 				}
 				/* otherwise assign */
-				mr.away = stset_add_state(mr.away, st);
+				mr.from = stset_add_state(mr.from, st);
 			}
 			break;
 
@@ -1037,9 +1037,9 @@ prnt_mrul(mrulsp_t mr)
 		fputs("DIR=", stdout);
 		fputs(mdirs[mr->mdir], stdout);
 	}
-	if (mr->away) {
-		fputs(";MOVEIF=", stdout);
-		prnt_stset(mr->away);
+	if (mr->from) {
+		fputs(";MOVEFROM=", stdout);
+		prnt_stset(mr->from);
 	}
 	if (mr->into) {
 		fputs(";MOVEINTO=", stdout);
@@ -1244,7 +1244,6 @@ make_evrrul(const struct ical_vevent_s *ve)
 			ve_tmp.rr.nr = 1U;
 			s[nr++] = __make_evrrul(&ve_tmp);
 		}
-
 		return make_echs_evmux(s, nr);
 	}
 	return NULL;
