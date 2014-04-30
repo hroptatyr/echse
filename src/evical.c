@@ -75,6 +75,11 @@ struct rrlst_s {
 	goptr_t r;
 };
 
+struct urlst_s {
+	size_t nu;
+	goptr_t u;
+};
+
 struct ical_vevent_s {
 	echs_event_t ev;
 	/* pointers into the global rrul/xrul array */
@@ -85,11 +90,21 @@ struct ical_vevent_s {
 	struct dtlst_s xd;
 	/* points into the global mrul array */
 	struct rrlst_s mr;
+	/* points into the global mfil array */
+	struct urlst_s mf;
 };
 
 struct vearr_s {
 	size_t nev;
 	struct ical_vevent_s ev[];
+};
+
+struct uri_s {
+	enum {
+		URI_NONE,
+		URI_FILE,
+	} typ;
+	obint_t canon;
 };
 
 
@@ -117,6 +132,11 @@ static echs_instant_t *grd;
 static size_t zgmr;
 static goptr_t ngmr;
 static struct mrulsp_s *gmr;
+
+/* global mfile array */
+static size_t zgmf;
+static goptr_t ngmf;
+static struct uri_s *gmf;
 
 #define CHECK_RESIZE(id, iniz, nitems)					\
 	if (UNLIKELY(!z##id)) {						\
@@ -242,6 +262,36 @@ get_gmr(goptr_t d)
 		return NULL;
 	}
 	return gmr + d;
+}
+
+static goptr_t
+add1_to_gmf(struct uri_s u)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gmf, 16U, 1U);
+	gmf[res = ngmf++] = u;
+	return res;
+}
+
+static goptr_t
+add_to_gmf(const struct uri_s *mf, size_t nmf)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gmr, 16U, nmf);
+	memcpy(gmr + (res = ngmf), mf, nmf * sizeof(*mf));
+	ngmr += nmf;
+	return res;
+}
+
+static struct uri_s*
+get_gmf(goptr_t d)
+{
+	if (UNLIKELY(gmf == NULL)) {
+		return NULL;
+	}
+	return gmf + d;
 }
 
 
@@ -568,20 +618,13 @@ static void
 snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 	const char *lp;
-	const char *ep = line + llen;
+	const char *const ep = line + llen;
 	const struct ical_fld_cell_s *c;
 
 	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
 		return;
 	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
 		return;
-	}
-	/* do more string inspection here */
-	if (LIKELY(ep[-1] == '\n')) {
-		ep--;
-	}
-	if (UNLIKELY(ep[-1] == '\r')) {
-		ep--;
 	}
 
 	switch (c->fld) {
@@ -727,6 +770,44 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	return;
 }
 
+static void
+snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+{
+/* prologue snarfer */
+	const struct ical_fld_cell_s *c;
+	const char *lp;
+
+	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
+		return;
+	} else if ((c = __evical_fld(line, lp - line)) == NULL) {
+		return;
+	}
+	/* otherwise inspect the field */
+	switch (c->fld) {
+	case FLD_MFILE:
+		/* aah, a file-wide MFILE directive */
+		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
+			const char *const ep = line + llen;
+			struct uri_s u = {
+				.typ = URI_FILE,
+				.canon = intern(lp += 7U, ep - lp),
+			};
+			goptr_t x;
+
+			/* bang to global array */
+			x = add1_to_gmf(u);
+
+			if (!ve->mf.nu++) {
+				ve->mf.u = x;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+	return;
+}
+
 static vearr_t
 read_ical(const char *fn)
 {
@@ -735,9 +816,11 @@ read_ical(const char *fn)
 	size_t llen = 0U;
 	enum {
 		ST_UNK,
+		ST_BODY,
 		ST_VEVENT,
 	} st = ST_UNK;
 	struct ical_vevent_s ve;
+	struct ical_vevent_s globve = {0U};
 	size_t nve = 0UL;
 	vearr_t a = NULL;
 
@@ -767,39 +850,64 @@ read_ical(const char *fn)
 	}
 
 	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
+		/* massage line */
+		if (LIKELY(line[nrd - 1U] == '\n')) {
+			nrd--;
+		}
+		if (UNLIKELY(line[nrd - 1U] == '\r')) {
+			nrd--;
+		}
+		line[nrd] = '\0';
+
 		switch (st) {
 			static const char beg[] = "BEGIN:VEVENT";
 			static const char end[] = "END:VEVENT";
+
 		default:
 		case ST_UNK:
+			/* check if it's a X-GA-* line, we like those */
+			snarf_pro(&globve, line, nrd);
+		case ST_BODY:
 			/* check if line is a new vevent */
-			if (!strncmp(line, beg, sizeof(beg) - 1)) {
-				/* yep, set state to vevent */
-				st = ST_VEVENT;
-				/* and rinse our bucket */
-				memset(&ve, 0, sizeof(ve));
-			}
-			break;
-		case ST_VEVENT:
-			if (!strncmp(line, end, sizeof(end) - 1)) {
-				/* oh, ok, better stop the parsing then
-				 * and reset the state machine */
-				if (a == NULL || nve >= a->nev) {
-					/* resize */
-					const size_t nu = 2 * nve ?: 64U;
-					size_t nz = nu * sizeof(*a->ev);
-
-					a = realloc(a, nz + sizeof(a));
-					a->nev = nu;
-				}
-				/* assign */
-				a->ev[nve++] = ve;
-				/* reset to unknown state */
-				st = ST_UNK;
+			if (strncmp(line, beg, sizeof(beg) - 1)) {
+				/* nope, no state change */
 				break;
 			}
-			/* otherwise interpret the line */
-			snarf_fld(&ve, line, nrd);
+			/* yep, rinse our bucket */
+			memset(&ve, 0, sizeof(ve));
+			/* and set state to vevent */
+			st = ST_VEVENT;
+			break;
+		case ST_VEVENT:
+			if (strncmp(line, end, sizeof(end) - 1)) {
+				/* no state change, interpret the line */
+				snarf_fld(&ve, line, nrd);
+				break;
+			}
+			/* otherwise stop parsing and reset the state machine */
+			if (a == NULL || nve >= a->nev) {
+				/* resize */
+				const size_t nu = 2 * nve ?: 64U;
+				size_t nz = nu * sizeof(*a->ev);
+
+				a = realloc(a, nz + sizeof(a));
+				a->nev = nu;
+			}
+			/* bang global properties */
+			if (globve.mf.nu) {
+				const size_t nmf = globve.mf.nu;
+				goptr_t mf = globve.mf.u;
+
+				mf = add_to_gmf(get_gmf(mf), nmf);
+				if (!ve.mf.nu) {
+					ve.mf.u = mf;
+				}
+				ve.mf.nu += nmf;
+			}
+			/* assign */
+			a->ev[nve++] = ve;
+			/* reset to unknown state */
+			st = ST_BODY;
 			break;
 		}
 	}
@@ -1215,6 +1323,9 @@ __make_evrrul(const struct ical_vevent_s *ve)
 	res->dur = echs_instant_diff(ve->ev.till, ve->ev.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
+	if (ve->mr.nr && ve->mf.nu) {
+		;
+	}
 	return (echs_evstrm_t)res;
 }
 
