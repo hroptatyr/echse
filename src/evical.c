@@ -741,6 +741,26 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			ve->ev.sts = stset_add_state(ve->ev.sts, st);
 		}
 		break;
+	case FLD_MFILE:
+		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
+			break;
+		}
+		/* aah, a file-wide MFILE directive */
+		if (LIKELY(!strncmp(lp, "file://", 7U))) {
+			struct uri_s u = {
+				.typ = URI_FILE,
+				.canon = intern(lp += 7U, ep - lp),
+			};
+			goptr_t x;
+
+			/* bang to global array */
+			x = add1_to_gmf(u);
+
+			if (!ve->mf.nu++) {
+				ve->mf.u = x;
+			}
+		}
+		break;
 	case FLD_UID:
 	case FLD_SUMM:
 		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
