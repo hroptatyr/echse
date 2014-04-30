@@ -619,12 +619,18 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 	const char *lp;
 	const char *const ep = line + llen;
+	const char *vp;
 	const struct ical_fld_cell_s *c;
 
 	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
 		return;
 	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
 		return;
+	}
+
+	/* obtain the value pointer */
+	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
+		vp++;
 	}
 
 	switch (c->fld) {
@@ -651,11 +657,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	case FLD_XDATE:
 	case FLD_RDATE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_dtlst(lp, ep - lp)) {
+		with (struct dtlst_s l = snarf_dtlst(vp, ep - vp)) {
 			if (l.ndt == 0UL) {
 				break;
 			}
@@ -680,12 +683,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	case FLD_RRULE:
 	case FLD_XRULE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf him */
 		for (struct rrulsp_s r;
-		     (r = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
+		     (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE;) {
 			goptr_t x;
 
 			switch (c->fld) {
@@ -711,12 +711,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_MRULE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf him */
 		for (struct mrulsp_s r;
-		     (r = snarf_mrule(lp, ep - lp)).mdir != MDIR_NONE;) {
+		     (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE;) {
 			goptr_t x;
 
 			/* bang to global array */
@@ -730,26 +727,20 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_STATE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
-		for (const char *eos; lp < ep; lp = eos + 1U) {
+		for (const char *eos; vp < ep; vp = eos + 1U) {
 			echs_state_t st;
 
-			eos = strchr(lp, ',') ?: ep;
-			st = add_state(lp, eos - lp);
+			eos = strchr(vp, ',') ?: ep;
+			st = add_state(vp, eos - vp);
 			ve->ev.sts = stset_add_state(ve->ev.sts, st);
 		}
 		break;
 	case FLD_MFILE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* aah, a file-wide MFILE directive */
-		if (LIKELY(!strncmp(lp, "file://", 7U))) {
+		if (LIKELY(!strncmp(vp, "file://", 7U))) {
 			struct uri_s u = {
 				.typ = URI_FILE,
-				.canon = intern(lp += 7U, ep - lp),
+				.canon = intern(vp += 7U, ep - vp),
 			};
 			goptr_t x;
 
@@ -763,10 +754,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	case FLD_UID:
 	case FLD_SUMM:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
-		with (obint_t ob = intern(lp, ep - lp)) {
+		with (obint_t ob = intern(vp, ep - vp)) {
 			switch (c->fld) {
 			case FLD_UID:
 				ve->ev.uid = ob;
@@ -778,12 +766,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_DESC:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 #if 0
 /* we used to have a desc slot, but that went in favour of a uid slot */
-		ve->ev.desc = bufpool(lp, ep - lp).str;
+		ve->ev.desc = bufpool(vp, ep - vp).str;
 #endif	/* 0 */
 		break;
 	}
