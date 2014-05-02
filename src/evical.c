@@ -107,6 +107,12 @@ struct uri_s {
 	obint_t canon;
 };
 
+/* mapping from uri to stream */
+struct mus_s {
+	struct uri_s u;
+	echs_evstrm_t s;
+};
+
 
 /* global rrule array */
 static size_t zgrr;
@@ -137,6 +143,10 @@ static struct mrulsp_s *gmr;
 static size_t zgmf;
 static goptr_t ngmf;
 static struct uri_s *gmf;
+/* global mfile streams */
+static size_t zgms;
+static size_t ngms;
+static struct mus_s *gms;
 
 #define CHECK_RESIZE(id, iniz, nitems)					\
 	if (UNLIKELY(!z##id)) {						\
@@ -279,9 +289,9 @@ add_to_gmf(const struct uri_s *mf, size_t nmf)
 {
 	goptr_t res;
 
-	CHECK_RESIZE(gmr, 16U, nmf);
-	memcpy(gmr + (res = ngmf), mf, nmf * sizeof(*mf));
-	ngmr += nmf;
+	CHECK_RESIZE(gmf, 16U, nmf);
+	memcpy(gmf + (res = ngmf), mf, nmf * sizeof(*mf));
+	ngmf += nmf;
 	return res;
 }
 
@@ -292,6 +302,29 @@ get_gmf(goptr_t d)
 		return NULL;
 	}
 	return gmf + d;
+}
+
+static void
+add1_to_gms(struct uri_s u, echs_evstrm_t s)
+{
+	CHECK_RESIZE(gms, 16U, 1U);
+	gms[ngms].u = u;
+	gms[ngms].s = s;
+	ngms++;
+	return;
+}
+
+static echs_evstrm_t
+get_gms(struct uri_s u)
+{
+	/* try and find the mfile in the global list */
+	for (size_t j = 0U; j < ngms; j++) {
+		struct uri_s cu = gms[j].u;
+		if (u.typ == cu.typ && u.canon == cu.canon) {
+			return gms[j].s;
+		}
+	}
+	return NULL;
 }
 
 
@@ -927,6 +960,42 @@ clo:
 	return a;
 }
 
+static echs_evstrm_t
+read_mfil(struct uri_s u)
+{
+	/* otherwise resort to global reader */
+	switch (u.typ) {
+		const char *fn;
+	case URI_FILE:
+		fn = obint_name(u.canon);
+		return make_echs_evstrm_from_file(fn);
+	default:
+		break;
+	}
+	return NULL;
+}
+
+static echs_evstrm_t
+get_aux_strm(struct urlst_s ul)
+{
+	echs_evstrm_t aux[ul.nu];
+	size_t naux = 0U;
+
+	for (struct uri_s *u = get_gmf(ul.u), *const eou = u + ul.nu;
+	     u < eou; u++) {
+		/* try global cache, then mfile reader */
+		echs_evstrm_t s;
+
+		if ((s = get_gms(*u)) != NULL) {
+			;
+		} else if ((s = read_mfil(*u)) != NULL) {
+			add1_to_gms(*u, s);
+		}
+		aux[naux++] = s;
+	}
+	return echs_evstrm_vmux(aux, naux);
+}
+
 static void
 prnt_ical_hdr(void)
 {
@@ -1329,7 +1398,13 @@ __make_evrrul(const struct ical_vevent_s *ve)
 	res->rdi = 0UL;
 	res->ncch = 0UL;
 	if (ve->mr.nr && ve->mf.nu) {
-		;
+		mrulsp_t mr = get_gmr(ve->mr.r);
+		echs_evstrm_t aux;
+
+		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
+			return make_evmrul(mr, (echs_evstrm_t)res, aux);
+		}
+		/* otherwise display stream as is, maybe print a warning? */
 	}
 	return (echs_evstrm_t)res;
 }
