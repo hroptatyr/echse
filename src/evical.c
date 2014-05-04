@@ -595,7 +595,7 @@ snarf_mrule(const char *s, size_t z)
 				echs_state_t st;
 
 				eov = strchr(++kv, ',') ?: eofld;
-				if (!(st = get_state(kv, eov - kv))) {
+				if (!(st = add_state(kv, eov - kv))) {
 					continue;
 				}
 				/* otherwise assign */
@@ -608,7 +608,7 @@ snarf_mrule(const char *s, size_t z)
 				echs_state_t st;
 
 				eov = strchr(++kv, ',') ?: eofld;
-				if (!(st = get_state(kv, eov - kv))) {
+				if (!(st = add_state(kv, eov - kv))) {
 					continue;
 				}
 				/* otherwise assign */
