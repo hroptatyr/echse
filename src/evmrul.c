@@ -91,6 +91,8 @@ pop_aux_event(struct evmrul_s *restrict s)
 
 	if (!echs_nul_event_p(res = pop_event(s->aux))) {
 		return res;
+	} else if (UNLIKELY(s->states == NULL)) {
+		return res;
 	}
 	/* otherwise find next blocking event */
 	while (res = echs_evstrm_next(s->states),
@@ -140,7 +142,7 @@ next_evmrul_past(echs_evstrm_t s)
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 
-	if (UNLIKELY(this->states == NULL)) {
+	if (UNLIKELY(echs_nul_event_p(aux))) {
 		return res;
 	} else if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
@@ -203,7 +205,7 @@ next_evmrul_futu(echs_evstrm_t s)
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 
-	if (UNLIKELY(this->states == NULL)) {
+	if (UNLIKELY(echs_nul_event_p(aux))) {
 		return res;
 	}
 
