@@ -146,12 +146,10 @@ next_evmrul_past(echs_evstrm_t s)
 		return res;
 	} else if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
-		push_aux_event(this, aux);
-		return res;
+		goto out;
 	}
 	/* invariant: AUX.FROM < RES.TILL */
 	dur = echs_instant_diff(res.till, res.from);
-
 	/* fast forward to the event that actually blocks RES */
 	do {
 		/* get next blocking event */
@@ -191,6 +189,7 @@ next_evmrul_past(echs_evstrm_t s)
 		res.till = aux.from;
 		res.from = echs_instant_add(aux.from, echs_idiff_neg(dur));
 	}
+out:
 	/* better save what we've got */
 	push_aux_event(this, aux);
 	return res;
@@ -225,8 +224,7 @@ next_evmrul_futu(echs_evstrm_t s)
 	/* invariant: RES.FROM < AUX.TILL */
 	if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
-		push_aux_event(this, aux);
-		return res;
+		goto out;
 	}
 	/* invariant: AUX.FROM < RES.TILL */
 	dur = echs_instant_diff(res.till, res.from);
@@ -259,6 +257,7 @@ next_evmrul_futu(echs_evstrm_t s)
 	/* invariant AUX.TILL + (RES.TILL - RES.FROM) <= NEX.FROM */
 	res.from = aux.till;
 	res.till = echs_instant_add(aux.till, dur);
+out:
 	/* better save what we've got */
 	push_aux_event(this, aux);
 	return res;
