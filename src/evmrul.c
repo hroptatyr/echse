@@ -94,10 +94,7 @@ pop_aux_event(struct evmrul_s *restrict s)
 	} else if (UNLIKELY(s->states == NULL)) {
 		return res;
 	}
-	/* otherwise find next blocking event */
-	while (res = echs_evstrm_next(s->states),
-	       !echs_nul_event_p(res) && !aux_blocks_p(s->mr, res));
-	return res;
+	return echs_evstrm_next(s->states);
 }
 
 static void
@@ -108,6 +105,22 @@ push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
 	}
 	push_event(s->aux, e);
 	return;
+}
+
+static echs_event_t
+next_blocking(struct evmrul_s *restrict s)
+{
+/* find next blocking event, knowing it can't be in the aux cache slot */
+	echs_event_t res;
+
+	if (!echs_nul_event_p(res = pop_event(s->aux))) {
+		return res;
+	} else if (UNLIKELY(s->states == NULL)) {
+		return res;
+	}
+	while (res = echs_evstrm_next(s->states),
+	       !echs_nul_event_p(res) && !aux_blocks_p(s->mr, res));
+	return res;
 }
 
 
@@ -153,7 +166,7 @@ next_evmrul_past(echs_evstrm_t s)
 	/* fast forward to the event that actually blocks RES */
 	do {
 		/* get next blocking event */
-		echs_event_t nex = pop_aux_event(this);
+		echs_event_t nex = next_blocking(this);
 		echs_idiff_t and;
 
 		if (UNLIKELY(echs_nul_event_p(nex))) {
@@ -210,7 +223,7 @@ next_evmrul_futu(echs_evstrm_t s)
 
 	/* fast forward to the event that actually blocks RES */
 	while (echs_instant_le_p(aux.till, res.from)) {
-		aux = pop_aux_event(this);
+		aux = next_blocking(this);
 		if (UNLIKELY(echs_nul_event_p(aux))) {
 			/* state stream and event cache are finished,
 			 * prepare to go to short-circuiting mode,
@@ -231,7 +244,7 @@ next_evmrul_futu(echs_evstrm_t s)
 
 	do {
 		/* get next blocking event */
-		echs_event_t nex = pop_aux_event(this);
+		echs_event_t nex = next_blocking(this);
 		echs_idiff_t and;
 
 		if (UNLIKELY(echs_nul_event_p(nex))) {
