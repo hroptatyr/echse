@@ -107,22 +107,6 @@ push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
 	return;
 }
 
-static echs_event_t
-next_blocking(struct evmrul_s *restrict s)
-{
-/* find next blocking event, knowing it can't be in the aux cache slot */
-	echs_event_t res;
-
-	if (!echs_nul_event_p(res = pop_event(s->aux))) {
-		return res;
-	} else if (UNLIKELY(s->states == NULL)) {
-		return res;
-	}
-	while (res = echs_evstrm_next(s->states),
-	       !echs_nul_event_p(res) && !aux_blocks_p(s->mr, res));
-	return res;
-}
-
 
 static echs_event_t next_evmrul_past(echs_evstrm_t);
 static echs_event_t next_evmrul_futu(echs_evstrm_t);
@@ -166,7 +150,7 @@ next_evmrul_past(echs_evstrm_t s)
 	/* fast forward to the event that actually blocks RES */
 	do {
 		/* get next blocking event */
-		echs_event_t nex = next_blocking(this);
+		echs_event_t nex = pop_aux_event(this);
 		echs_idiff_t and;
 
 		if (UNLIKELY(echs_nul_event_p(nex))) {
@@ -189,8 +173,11 @@ next_evmrul_past(echs_evstrm_t s)
 		/* check if RES would fit between AUX and NEX */
 		if (echs_idiff_le_p(dur, and)) {
 			/* yep, would fit, forget about aux */
-			aux = nex;
-		} else {
+			if (!aux_blocks_p(this->mr, aux = nex)) {
+				/* it's just noise though */
+				goto out;
+			}
+		} else if (aux_blocks_p(this->mr, nex)) {
 			/* no fittee, `extend' aux */
 			aux.till = nex.till;
 		}
@@ -223,7 +210,7 @@ next_evmrul_futu(echs_evstrm_t s)
 
 	/* fast forward to the event that actually blocks RES */
 	while (echs_instant_le_p(aux.till, res.from)) {
-		aux = next_blocking(this);
+		aux = pop_aux_event(this);
 		if (UNLIKELY(echs_nul_event_p(aux))) {
 			/* state stream and event cache are finished,
 			 * prepare to go to short-circuiting mode,
@@ -238,13 +225,17 @@ next_evmrul_futu(echs_evstrm_t s)
 	if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
 		goto out;
+	} else if (!aux_blocks_p(this->mr, aux)) {
+		/* not even blocked by aux */
+		goto out;
 	}
+
 	/* invariant: AUX.FROM < RES.TILL */
 	dur = echs_instant_diff(res.till, res.from);
 
 	do {
 		/* get next blocking event */
-		echs_event_t nex = next_blocking(this);
+		echs_event_t nex = pop_aux_event(this);
 		echs_idiff_t and;
 
 		if (UNLIKELY(echs_nul_event_p(nex))) {
@@ -263,9 +254,10 @@ next_evmrul_futu(echs_evstrm_t s)
 			/* yep, would fit, forget about nex */
 			push_aux_event(this, nex);
 			break;
+		} else if (aux_blocks_p(this->mr, nex)) {
+			/* no fittee, `extend' aux */
+			aux.till = nex.till;
 		}
-		/* no fittee, `extend' aux */
-		aux.till = nex.till;
 	} while (1);
 	/* invariant AUX.TILL + (RES.TILL - RES.FROM) <= NEX.FROM */
 	res.from = aux.till;
