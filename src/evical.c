@@ -171,12 +171,13 @@ add1_to_grr(struct rrulsp_s rr)
 }
 
 static goptr_t
-add_to_grr(const struct rrulsp_s *rr, size_t nrr)
+clon_grr(struct rrlst_s rl)
 {
+	const size_t nrr = rl.nr;
 	goptr_t res;
 
 	CHECK_RESIZE(grr, 16U, nrr);
-	memcpy(grr + (res = ngrr), rr, nrr * sizeof(*rr));
+	memcpy(grr + (res = ngrr), grr + rl.r, nrr * sizeof(*grr));
 	ngrr += nrr;
 	return res;
 }
@@ -201,23 +202,15 @@ add1_to_gxr(struct rrulsp_s xr)
 }
 
 static goptr_t
-add_to_gxr(const struct rrulsp_s *xr, size_t nxr)
+clon_gxr(struct rrlst_s rl)
 {
+	const size_t nxr = rl.nr;
 	goptr_t res;
 
 	CHECK_RESIZE(gxr, 16U, nxr);
-	memcpy(gxr + (res = ngxr), xr, nxr * sizeof(*xr));
+	memcpy(gxr + (res = ngxr), gxr + rl.r, nxr * sizeof(*gxr));
 	ngxr += nxr;
 	return res;
-}
-
-static struct rrulsp_s*
-get_gxr(goptr_t d)
-{
-	if (UNLIKELY(gxr == NULL)) {
-		return NULL;
-	}
-	return gxr + d;
 }
 
 static goptr_t
@@ -1513,16 +1506,10 @@ clone_evrrul(echs_evstrm_t s)
 	*clon = *this;
 	/* we have to clone rrules and exrules though */
 	if (this->ve.rr.nr) {
-		const size_t nr = this->ve.rr.nr;
-		const struct rrulsp_s *r = get_grr(this->ve.rr.r);
-
-		clon->ve.rr.r = add_to_grr(r, nr);
+		clon->ve.rr.r = clon_grr(this->ve.rr);
 	}
 	if (this->ve.xr.nr) {
-		const size_t nr = this->ve.xr.nr;
-		const struct rrulsp_s *r = get_gxr(this->ve.xr.r);
-
-		clon->ve.xr.r = add_to_gxr(r, nr);
+		clon->ve.xr.r = clon_gxr(this->ve.xr);
 	}
 	return (echs_evstrm_t)clon;
 }
