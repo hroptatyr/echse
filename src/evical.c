@@ -328,6 +328,68 @@ get_gms(struct uri_s u)
 }
 
 
+/* file name stack (and include depth control) */
+static const char *gfn[4U];
+static size_t nfn;
+
+static int
+push_fn(const char *fn)
+{
+	if (UNLIKELY(nfn >= countof(gfn))) {
+		return -1;
+	}
+	gfn[nfn++] = fn;
+	return 0;
+}
+
+static const char*
+pop_fn(void)
+{
+	if (UNLIKELY(nfn == 0U)) {
+		return NULL;
+	}
+	return gfn[--nfn];
+}
+
+static const char*
+peek_fn(void)
+{
+	if (UNLIKELY(nfn == 0U)) {
+		return NULL;
+	}
+	return gfn[nfn - 1U];
+}
+
+static struct uri_s
+canon_fn(const char *fn, size_t fz)
+{
+	obint_t ifn;
+
+	if (*fn != '/') {
+		/* relative file name */
+		const char *cfn = peek_fn();
+		const char *dir;
+
+		if ((dir = strrchr(cfn, '/')) != NULL) {
+			char tmp[dir - cfn + fz + 1U/*slash*/ + 1U/*\nul*/];
+			char *tp = tmp;
+
+			memcpy(tp, cfn, dir - cfn);
+			tp += dir - cfn;
+			*tp++ = '/';
+			memcpy(tp, fn, fz);
+			tp += fz;
+			*tp = '\0';
+			ifn = intern(tmp, tp - tmp);
+			return (struct uri_s){URI_FILE, ifn};
+		}
+		/* otherwise it was a file name `xyz' in cwd */
+	}
+	ifn = intern(fn, fz);
+	return (struct uri_s){URI_FILE, ifn};
+}
+
+
 static echs_instant_t
 snarf_value(const char *s)
 {
@@ -771,10 +833,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive */
 		if (LIKELY(!strncmp(vp, "file://", 7U))) {
-			struct uri_s u = {
-				.typ = URI_FILE,
-				.canon = intern(vp += 7U, ep - vp),
-			};
+			struct uri_s u = canon_fn(vp += 7U, ep - vp);
 			goptr_t x;
 
 			/* bang to global array */
@@ -826,10 +885,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* aah, a file-wide MFILE directive */
 		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
 			const char *const ep = line + llen;
-			struct uri_s u = {
-				.typ = URI_FILE,
-				.canon = intern(lp += 7U, ep - lp),
-			};
+			struct uri_s u = canon_fn(lp += 7U, ep -lp);
 			goptr_t x;
 
 			/* bang to global array */
@@ -867,6 +923,9 @@ read_ical(const char *fn)
 	} else if ((fp = fopen(fn, "r")) == NULL) {
 		return NULL;
 	}
+
+	/* let everyone know about our fn */
+	push_fn(fn);
 
 	/* little probe first
 	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
@@ -957,6 +1016,7 @@ read_ical(const char *fn)
 	free(line);
 clo:
 	fclose(fp);
+	pop_fn();
 	return a;
 }
 
