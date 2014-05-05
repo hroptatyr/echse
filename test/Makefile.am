@@ -120,6 +120,9 @@ EXTRA_DIST += sample_20.ics
 EXTRA_DIST += sample_21.ics
 EXTRA_DIST += sample_22.ics
 EXTRA_DIST += sample_23.ics
+EXTRA_DIST += sample_24.ics
+EXTRA_DIST += sample_25.ics
+EXTRA_DIST += sample_26.ics
 
 TESTS += rrul_01.clit
 TESTS += rrul_02.clit
@@ -161,6 +164,11 @@ TESTS += filt_01.clit
 TESTS += filt_02.clit
 TESTS += filt_03.clit
 TESTS += filt_04.clit
+
+TESTS += mrul_01.clit
+TESTS += mrul_02.clit
+TESTS += mrul_03.clit
+TESTS += mrul_04.clit
 
 ## our friendly helpers
 check_PROGRAMS += clitoris
