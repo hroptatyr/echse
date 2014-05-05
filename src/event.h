@@ -96,4 +96,10 @@ echs_nul_event(void)
 	return nul;
 }
 
+static inline __attribute__((const, pure)) bool
+echs_nul_event_p(echs_event_t e)
+{
+	return echs_nul_instant_p(e.from);
+}
+
 #endif	/* INCLUDED_event_h_ */

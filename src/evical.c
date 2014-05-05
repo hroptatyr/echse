@@ -75,6 +75,11 @@ struct rrlst_s {
 	goptr_t r;
 };
 
+struct urlst_s {
+	size_t nu;
+	goptr_t u;
+};
+
 struct ical_vevent_s {
 	echs_event_t ev;
 	/* pointers into the global rrul/xrul array */
@@ -85,11 +90,27 @@ struct ical_vevent_s {
 	struct dtlst_s xd;
 	/* points into the global mrul array */
 	struct rrlst_s mr;
+	/* points into the global mfil array */
+	struct urlst_s mf;
 };
 
 struct vearr_s {
 	size_t nev;
 	struct ical_vevent_s ev[];
+};
+
+struct uri_s {
+	enum {
+		URI_NONE,
+		URI_FILE,
+	} typ;
+	obint_t canon;
+};
+
+/* mapping from uri to stream */
+struct mus_s {
+	struct uri_s u;
+	echs_evstrm_t s;
 };
 
 
@@ -118,6 +139,15 @@ static size_t zgmr;
 static goptr_t ngmr;
 static struct mrulsp_s *gmr;
 
+/* global mfile array */
+static size_t zgmf;
+static goptr_t ngmf;
+static struct uri_s *gmf;
+/* global mfile streams */
+static size_t zgms;
+static size_t ngms;
+static struct mus_s *gms;
+
 #define CHECK_RESIZE(id, iniz, nitems)					\
 	if (UNLIKELY(!z##id)) {						\
 		/* leave the first one out */				\
@@ -141,12 +171,13 @@ add1_to_grr(struct rrulsp_s rr)
 }
 
 static goptr_t
-add_to_grr(const struct rrulsp_s *rr, size_t nrr)
+clon_grr(struct rrlst_s rl)
 {
+	const size_t nrr = rl.nr;
 	goptr_t res;
 
 	CHECK_RESIZE(grr, 16U, nrr);
-	memcpy(grr + (res = ngrr), rr, nrr * sizeof(*rr));
+	memcpy(grr + (res = ngrr), grr + rl.r, nrr * sizeof(*grr));
 	ngrr += nrr;
 	return res;
 }
@@ -171,23 +202,15 @@ add1_to_gxr(struct rrulsp_s xr)
 }
 
 static goptr_t
-add_to_gxr(const struct rrulsp_s *xr, size_t nxr)
+clon_gxr(struct rrlst_s rl)
 {
+	const size_t nxr = rl.nr;
 	goptr_t res;
 
 	CHECK_RESIZE(gxr, 16U, nxr);
-	memcpy(gxr + (res = ngxr), xr, nxr * sizeof(*xr));
+	memcpy(gxr + (res = ngxr), gxr + rl.r, nxr * sizeof(*gxr));
 	ngxr += nxr;
 	return res;
-}
-
-static struct rrulsp_s*
-get_gxr(goptr_t d)
-{
-	if (UNLIKELY(gxr == NULL)) {
-		return NULL;
-	}
-	return gxr + d;
 }
 
 static goptr_t
@@ -242,6 +265,121 @@ get_gmr(goptr_t d)
 		return NULL;
 	}
 	return gmr + d;
+}
+
+static goptr_t
+add1_to_gmf(struct uri_s u)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gmf, 16U, 1U);
+	gmf[res = ngmf++] = u;
+	return res;
+}
+
+static goptr_t
+add_to_gmf(const struct uri_s *mf, size_t nmf)
+{
+	goptr_t res;
+
+	CHECK_RESIZE(gmf, 16U, nmf);
+	memcpy(gmf + (res = ngmf), mf, nmf * sizeof(*mf));
+	ngmf += nmf;
+	return res;
+}
+
+static struct uri_s*
+get_gmf(goptr_t d)
+{
+	if (UNLIKELY(gmf == NULL)) {
+		return NULL;
+	}
+	return gmf + d;
+}
+
+static void
+add1_to_gms(struct uri_s u, echs_evstrm_t s)
+{
+	CHECK_RESIZE(gms, 16U, 1U);
+	gms[ngms].u = u;
+	gms[ngms].s = s;
+	ngms++;
+	return;
+}
+
+static echs_evstrm_t
+get_gms(struct uri_s u)
+{
+	/* try and find the mfile in the global list */
+	for (size_t j = 0U; j < ngms; j++) {
+		struct uri_s cu = gms[j].u;
+		if (u.typ == cu.typ && u.canon == cu.canon) {
+			return gms[j].s;
+		}
+	}
+	return NULL;
+}
+
+
+/* file name stack (and include depth control) */
+static const char *gfn[4U];
+static size_t nfn;
+
+static int
+push_fn(const char *fn)
+{
+	if (UNLIKELY(nfn >= countof(gfn))) {
+		return -1;
+	}
+	gfn[nfn++] = fn;
+	return 0;
+}
+
+static const char*
+pop_fn(void)
+{
+	if (UNLIKELY(nfn == 0U)) {
+		return NULL;
+	}
+	return gfn[--nfn];
+}
+
+static const char*
+peek_fn(void)
+{
+	if (UNLIKELY(nfn == 0U)) {
+		return NULL;
+	}
+	return gfn[nfn - 1U];
+}
+
+static struct uri_s
+canon_fn(const char *fn, size_t fz)
+{
+	obint_t ifn;
+
+	if (*fn != '/') {
+		/* relative file name */
+		const char *cfn = peek_fn();
+		const char *dir;
+
+		if ((dir = strrchr(cfn, '/')) != NULL) {
+			char tmp[dir - cfn + fz + 1U/*slash*/ + 1U/*\nul*/];
+			char *tp = tmp;
+
+			memcpy(tp, cfn, dir - cfn);
+			tp += dir - cfn;
+			*tp++ = '/';
+			memcpy(tp, fn, fz);
+			tp += fz;
+			*tp = '\0';
+			ifn = intern(tmp, tp - tmp);
+			return (struct uri_s){URI_FILE, ifn};
+		}
+		/* otherwise it was a file name `xyz' in cwd */
+	}
+	ifn = intern(fn, fz);
+	return (struct uri_s){URI_FILE, ifn};
 }
 
 
@@ -507,16 +645,16 @@ snarf_mrule(const char *s, size_t z)
 			mr.mdir = snarf_mdir(++kv);
 			break;
 
-		case KEY_MOVEIF:
+		case KEY_MOVEFROM:
 			for (const char *eov; kv < eofld; kv = eov) {
 				echs_state_t st;
 
 				eov = strchr(++kv, ',') ?: eofld;
-				if (!(st = get_state(kv, eov - kv))) {
+				if (!(st = add_state(kv, eov - kv))) {
 					continue;
 				}
 				/* otherwise assign */
-				mr.away = stset_add_state(mr.away, st);
+				mr.from = stset_add_state(mr.from, st);
 			}
 			break;
 
@@ -525,7 +663,7 @@ snarf_mrule(const char *s, size_t z)
 				echs_state_t st;
 
 				eov = strchr(++kv, ',') ?: eofld;
-				if (!(st = get_state(kv, eov - kv))) {
+				if (!(st = add_state(kv, eov - kv))) {
 					continue;
 				}
 				/* otherwise assign */
@@ -568,7 +706,8 @@ static void
 snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 	const char *lp;
-	const char *ep = line + llen;
+	const char *const ep = line + llen;
+	const char *vp;
 	const struct ical_fld_cell_s *c;
 
 	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
@@ -576,12 +715,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
 		return;
 	}
-	/* do more string inspection here */
-	if (LIKELY(ep[-1] == '\n')) {
-		ep--;
-	}
-	if (UNLIKELY(ep[-1] == '\r')) {
-		ep--;
+
+	/* obtain the value pointer */
+	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
+		vp++;
 	}
 
 	switch (c->fld) {
@@ -595,7 +732,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			switch (c->fld) {
 			case FLD_DTSTART:
 				ve->ev.from = i;
-				break;
+				if (!echs_nul_instant_p(ve->ev.till)) {
+					break;
+				}
+				/* otherwise also set the TILL slot to I,
+				 * as kind of a sane default value */
 			case FLD_DTEND:
 				ve->ev.till = i;
 				break;
@@ -604,11 +745,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	case FLD_XDATE:
 	case FLD_RDATE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_dtlst(lp, ep - lp)) {
+		with (struct dtlst_s l = snarf_dtlst(vp, ep - vp)) {
 			if (l.ndt == 0UL) {
 				break;
 			}
@@ -633,12 +771,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	case FLD_RRULE:
 	case FLD_XRULE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf him */
 		for (struct rrulsp_s r;
-		     (r = snarf_rrule(lp, ep - lp)).freq != FREQ_NONE;) {
+		     (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE;) {
 			goptr_t x;
 
 			switch (c->fld) {
@@ -664,12 +799,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_MRULE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 		/* otherwise snarf him */
 		for (struct mrulsp_s r;
-		     (r = snarf_mrule(lp, ep - lp)).mdir != MDIR_NONE;) {
+		     (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE;) {
 			goptr_t x;
 
 			/* bang to global array */
@@ -683,23 +815,31 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_STATE:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
-		for (const char *eos; lp < ep; lp = eos + 1U) {
+		for (const char *eos; vp < ep; vp = eos + 1U) {
 			echs_state_t st;
 
-			eos = strchr(lp, ',') ?: ep;
-			st = add_state(lp, eos - lp);
+			eos = strchr(vp, ',') ?: ep;
+			st = add_state(vp, eos - vp);
 			ve->ev.sts = stset_add_state(ve->ev.sts, st);
+		}
+		break;
+	case FLD_MFILE:
+		/* aah, a file-wide MFILE directive */
+		if (LIKELY(!strncmp(vp, "file://", 7U))) {
+			struct uri_s u = canon_fn(vp += 7U, ep - vp);
+			goptr_t x;
+
+			/* bang to global array */
+			x = add1_to_gmf(u);
+
+			if (!ve->mf.nu++) {
+				ve->mf.u = x;
+			}
 		}
 		break;
 	case FLD_UID:
 	case FLD_SUMM:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
-		with (obint_t ob = intern(lp, ep - lp)) {
+		with (obint_t ob = intern(vp, ep - vp)) {
 			switch (c->fld) {
 			case FLD_UID:
 				ve->ev.uid = ob;
@@ -711,13 +851,45 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_DESC:
-		if (UNLIKELY(*lp++ != ':' && (lp = strchr(lp, ':')) == NULL)) {
-			break;
-		}
 #if 0
 /* we used to have a desc slot, but that went in favour of a uid slot */
-		ve->ev.desc = bufpool(lp, ep - lp).str;
+		ve->ev.desc = bufpool(vp, ep - vp).str;
 #endif	/* 0 */
+		break;
+	}
+	return;
+}
+
+static void
+snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+{
+/* prologue snarfer */
+	const struct ical_fld_cell_s *c;
+	const char *lp;
+
+	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
+		return;
+	} else if ((c = __evical_fld(line, lp - line)) == NULL) {
+		return;
+	}
+	/* otherwise inspect the field */
+	switch (c->fld) {
+	case FLD_MFILE:
+		/* aah, a file-wide MFILE directive */
+		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
+			const char *const ep = line + llen;
+			struct uri_s u = canon_fn(lp += 7U, ep -lp);
+			goptr_t x;
+
+			/* bang to global array */
+			x = add1_to_gmf(u);
+
+			if (!ve->mf.nu++) {
+				ve->mf.u = x;
+			}
+		}
+		break;
+	default:
 		break;
 	}
 	return;
@@ -731,9 +903,11 @@ read_ical(const char *fn)
 	size_t llen = 0U;
 	enum {
 		ST_UNK,
+		ST_BODY,
 		ST_VEVENT,
 	} st = ST_UNK;
 	struct ical_vevent_s ve;
+	struct ical_vevent_s globve = {0U};
 	size_t nve = 0UL;
 	vearr_t a = NULL;
 
@@ -742,6 +916,9 @@ read_ical(const char *fn)
 	} else if ((fp = fopen(fn, "r")) == NULL) {
 		return NULL;
 	}
+
+	/* let everyone know about our fn */
+	push_fn(fn);
 
 	/* little probe first
 	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
@@ -763,39 +940,64 @@ read_ical(const char *fn)
 	}
 
 	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
+		/* massage line */
+		if (LIKELY(line[nrd - 1U] == '\n')) {
+			nrd--;
+		}
+		if (UNLIKELY(line[nrd - 1U] == '\r')) {
+			nrd--;
+		}
+		line[nrd] = '\0';
+
 		switch (st) {
 			static const char beg[] = "BEGIN:VEVENT";
 			static const char end[] = "END:VEVENT";
+
 		default:
 		case ST_UNK:
+			/* check if it's a X-GA-* line, we like those */
+			snarf_pro(&globve, line, nrd);
+		case ST_BODY:
 			/* check if line is a new vevent */
-			if (!strncmp(line, beg, sizeof(beg) - 1)) {
-				/* yep, set state to vevent */
-				st = ST_VEVENT;
-				/* and rinse our bucket */
-				memset(&ve, 0, sizeof(ve));
-			}
-			break;
-		case ST_VEVENT:
-			if (!strncmp(line, end, sizeof(end) - 1)) {
-				/* oh, ok, better stop the parsing then
-				 * and reset the state machine */
-				if (a == NULL || nve >= a->nev) {
-					/* resize */
-					const size_t nu = 2 * nve ?: 64U;
-					size_t nz = nu * sizeof(*a->ev);
-
-					a = realloc(a, nz + sizeof(a));
-					a->nev = nu;
-				}
-				/* assign */
-				a->ev[nve++] = ve;
-				/* reset to unknown state */
-				st = ST_UNK;
+			if (strncmp(line, beg, sizeof(beg) - 1)) {
+				/* nope, no state change */
 				break;
 			}
-			/* otherwise interpret the line */
-			snarf_fld(&ve, line, nrd);
+			/* yep, rinse our bucket */
+			memset(&ve, 0, sizeof(ve));
+			/* and set state to vevent */
+			st = ST_VEVENT;
+			break;
+		case ST_VEVENT:
+			if (strncmp(line, end, sizeof(end) - 1)) {
+				/* no state change, interpret the line */
+				snarf_fld(&ve, line, nrd);
+				break;
+			}
+			/* otherwise stop parsing and reset the state machine */
+			if (a == NULL || nve >= a->nev) {
+				/* resize */
+				const size_t nu = 2 * nve ?: 64U;
+				size_t nz = nu * sizeof(*a->ev);
+
+				a = realloc(a, nz + sizeof(a));
+				a->nev = nu;
+			}
+			/* bang global properties */
+			if (globve.mf.nu) {
+				const size_t nmf = globve.mf.nu;
+				goptr_t mf = globve.mf.u;
+
+				mf = add_to_gmf(get_gmf(mf), nmf);
+				if (!ve.mf.nu) {
+					ve.mf.u = mf;
+				}
+				ve.mf.nu += nmf;
+			}
+			/* assign */
+			a->ev[nve++] = ve;
+			/* reset to unknown state */
+			st = ST_BODY;
 			break;
 		}
 	}
@@ -807,7 +1009,44 @@ read_ical(const char *fn)
 	free(line);
 clo:
 	fclose(fp);
+	pop_fn();
 	return a;
+}
+
+static echs_evstrm_t
+read_mfil(struct uri_s u)
+{
+	/* otherwise resort to global reader */
+	switch (u.typ) {
+		const char *fn;
+	case URI_FILE:
+		fn = obint_name(u.canon);
+		return make_echs_evstrm_from_file(fn);
+	default:
+		break;
+	}
+	return NULL;
+}
+
+static echs_evstrm_t
+get_aux_strm(struct urlst_s ul)
+{
+	echs_evstrm_t aux[ul.nu];
+	size_t naux = 0U;
+
+	for (struct uri_s *u = get_gmf(ul.u), *const eou = u + ul.nu;
+	     u < eou; u++) {
+		/* try global cache, then mfile reader */
+		echs_evstrm_t s;
+
+		if ((s = get_gms(*u)) != NULL) {
+			;
+		} else if ((s = read_mfil(*u)) != NULL) {
+			add1_to_gms(*u, s);
+		}
+		aux[naux++] = s;
+	}
+	return echs_evstrm_vmux(aux, naux);
 }
 
 static void
@@ -1033,9 +1272,9 @@ prnt_mrul(mrulsp_t mr)
 		fputs("DIR=", stdout);
 		fputs(mdirs[mr->mdir], stdout);
 	}
-	if (mr->away) {
-		fputs(";MOVEIF=", stdout);
-		prnt_stset(mr->away);
+	if (mr->from) {
+		fputs(";MOVEFROM=", stdout);
+		prnt_stset(mr->from);
 	}
 	if (mr->into) {
 		fputs(";MOVEINTO=", stdout);
@@ -1208,9 +1447,18 @@ __make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
-	res->dur = echs_nul_idiff();
+	res->dur = echs_instant_diff(ve->ev.till, ve->ev.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
+	if (ve->mr.nr && ve->mf.nu) {
+		mrulsp_t mr = get_gmr(ve->mr.r);
+		echs_evstrm_t aux;
+
+		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
+			return make_evmrul(mr, (echs_evstrm_t)res, aux);
+		}
+		/* otherwise display stream as is, maybe print a warning? */
+	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1235,7 +1483,6 @@ make_evrrul(const struct ical_vevent_s *ve)
 			ve_tmp.rr.nr = 1U;
 			s[nr++] = __make_evrrul(&ve_tmp);
 		}
-
 		return make_echs_evmux(s, nr);
 	}
 	return NULL;
@@ -1259,16 +1506,10 @@ clone_evrrul(echs_evstrm_t s)
 	*clon = *this;
 	/* we have to clone rrules and exrules though */
 	if (this->ve.rr.nr) {
-		const size_t nr = this->ve.rr.nr;
-		const struct rrulsp_s *r = get_grr(this->ve.rr.r);
-
-		clon->ve.rr.r = add_to_grr(r, nr);
+		clon->ve.rr.r = clon_grr(this->ve.rr);
 	}
 	if (this->ve.xr.nr) {
-		const size_t nr = this->ve.xr.nr;
-		const struct rrulsp_s *r = get_gxr(this->ve.xr.r);
-
-		clon->ve.xr.r = add_to_gxr(r, nr);
+		clon->ve.xr.r = clon_gxr(this->ve.xr);
 	}
 	return (echs_evstrm_t)clon;
 }

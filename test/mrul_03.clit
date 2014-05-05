@@ -1,0 +1,7 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --from 2014-01-01 --till 2014-03-31 "${srcdir}/sample_26.ics"
+2014-01-20	TRADE?
+2014-02-24	TRADE?
+2014-03-24	TRADE?
+$

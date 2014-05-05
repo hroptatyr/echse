@@ -3,7 +3,7 @@ typedef enum {
 	MRUL_UNK,
 	/* actual keys */
 	KEY_DIR,
-	KEY_MOVEIF,
+	KEY_MOVEFROM,
 	KEY_MOVEINTO,
 } mrul_key_t;
 
@@ -26,5 +26,5 @@ struct mrul_key_cell_s {
 
 %%
 DIR, KEY_DIR
-MOVEIF, KEY_MOVEIF
+MOVEFROM, KEY_MOVEFROM
 MOVEINTO, KEY_MOVEINTO
