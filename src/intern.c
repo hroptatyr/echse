@@ -82,13 +82,6 @@ murmur(const uint8_t *str, size_t len)
 	return (hash_t){idx, hash};
 }
 
-static inline size_t
-get_off(size_t idx, size_t mod)
-{
-	/* no need to negate MOD as it's a 2-power */
-	return -idx % mod;
-}
-
 static void*
 recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
 {
@@ -118,7 +111,8 @@ make_obint(const char *str, size_t len)
 	memcpy(obs + (res = obn), str, len);
 	/* assemble the result */
 	res >>= 2U;
-	res |= len << ((sizeof(res) - 1U) * 8U);
+	res <<= 8U;
+	res |= len;
 	/* inc the obn pointer */
 	obn += pad;
 	return res;
@@ -128,21 +122,68 @@ make_obint(const char *str, size_t len)
 obint_t
 intern(const char *str, size_t len)
 {
-#define SSTK_MINZ	(256U)
+#define SSTK_NSLOT	(256U)
+#define SSTK_STACK	(4U * SSTK_NSLOT)
 #define OBINT_MAX_LEN	(256U)
+
 	if (UNLIKELY(len == 0U || len >= OBINT_MAX_LEN)) {
 		/* don't bother */
 		return 0U;
 	}
-	for (const hash_t hx = murmur((const uint8_t*)str, len);;) {
-		/* just try what we've got */
-		for (size_t mod = SSTK_MINZ; mod <= zstk; mod *= 2U) {
-			size_t off = get_off(hx.idx, mod);
 
-			if (LIKELY(sstk[off].ck == hx.chk)) {
-				/* found him */
+	/* we take 9 probes per 32bit value, hx.idx shifted by 3bits each
+	 * then try the next stack
+	 * the first stack is 256 entries wide, the next stack is 1024
+	 * bytes wide, but only hosts 768 entries because the probe is
+	 * constructed so that the lowest 8bits are always 0. */
+	const hash_t hx = murmur((const uint8_t*)str, len);
+	uint_fast32_t k = hx.idx;
+
+	/* just try what we've got */
+	if (UNLIKELY(!zstk)) {
+		zstk = SSTK_STACK;
+		sstk = calloc(zstk, sizeof(*sstk));
+	}
+
+	/* here's the initial probe then */
+	for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+		const size_t off = k & 0xffU;
+
+		if (sstk[off].ck == hx.chk) {
+			/* found him (or super-collision) */
+			return sstk[off].ob;
+		} else if (!sstk[off].ob) {
+			/* found empty slot */
+			obint_t ob = make_obint(str, len);
+			sstk[off].ob = ob;
+			sstk[off].ck = hx.chk;
+			nstk++;
+			return ob;
+		}
+	}
+
+	for (size_t i = SSTK_NSLOT, m = 0x3ffU;; i <<= 2U, m <<= 2U, m |= 3U) {
+		/* reset k */
+		k = hx.idx;
+
+		if (UNLIKELY(i >= zstk)) {
+			sstk = recalloc(sstk, zstk, i << 2U, sizeof(*sstk));
+			zstk = i << 2U;
+
+			if (UNLIKELY(sstk == NULL)) {
+				zstk = 0UL, nstk = 0UL;
+				break;
+			}
+		}
+
+		/* here we probe within the top entries of the stack */
+		for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+			const size_t off = (i | k) & m;
+
+			if (sstk[off].ck == hx.chk) {
+				/* found him (or super-collision) */
 				return sstk[off].ob;
-			} else if (sstk[off].ob == 0U) {
+			} else if (!sstk[off].ob) {
 				/* found empty slot */
 				obint_t ob = make_obint(str, len);
 				sstk[off].ob = ob;
@@ -151,13 +192,8 @@ intern(const char *str, size_t len)
 				return ob;
 			}
 		}
-		/* quite a lot of collisions, resize then */
-		with (size_t nu = (zstk * 2U) ?: SSTK_MINZ) {
-			sstk = recalloc(sstk, zstk, nu, sizeof(*sstk));
-			zstk = nu;
-		}
 	}
-	/* not reached */
+	return 0U;
 }
 
 void
