@@ -44,9 +44,9 @@
  * They can fit short strings up to a length of 256 bytes and two
  * byte-wise equal strings will produce the same obint.
  *
- * LLLLLLLL OOOOOOOOOOOOOOOOOOOOOOOO(00)
- * ^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^ ||
- * length   offset / 4U           divisible by 4
+ * OOOOOOOOOOOOOOOOOOOOOOOO LLLLLLLL
+ * ^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^
+ *        offset / 4U        length
  **/
 typedef uint_fast32_t obint_t;
 
@@ -71,14 +71,14 @@ static inline size_t
 obint_off(obint_t ob)
 {
 	/* mask out the length bit */
-	return (ob & ((1ULL << ((sizeof(ob) - 1U) * 8U)) - 1U)) << 2U;
+	return (ob >> 8U) << 2U;
 }
 
 static inline size_t
 obint_len(obint_t ob)
 {
 	/* mask out the offset bit */
-	return ob >> ((sizeof(ob) - 1U) * 8U);
+	return ob & 0b11111111U;
 }
 
 #endif	/* INCLUDED_intern_h_ */
