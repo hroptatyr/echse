@@ -38,12 +38,6 @@ SXE_CHECK_CFLAGS
 AC_CHECK_TOOLS([AR], [xiar ar], [false])
 AC_C_BIGENDIAN
 
-AC_PATH_PROG([GENGETOPT], [gengetopt])
-if test -z "${GENGETOPT}"; then
-	GENGETOPT="gengetopt"
-fi
-AC_ARG_VAR([GENGETOPT], [full path to the gengetopt tool])
-
 AC_PATH_PROG([GPERF], [gperf])
 if test -z "${GPERF}"; then
 	GPERF="gperf"
