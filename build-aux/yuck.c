@@ -1,6 +1,6 @@
 /*** yuck.c -- generate umbrella commands
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2013-2014 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -37,6 +37,16 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+/* for fgetln() */
+#if !defined _NETBSD_SOURCE
+# define _NETBSD_SOURCE
+#endif	/* !_NETBSD_SOURCE */
+#if !defined _DARWIN_SOURCE
+# define _DARWIN_SOURCE
+#endif	/* !_DARWIN_SOURCE */
+#if !defined _ALL_SOURCE
+# define _ALL_SOURCE
+#endif	/* !_ALL_SOURCE */
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -128,8 +138,7 @@ error(const char *fmt, ...)
 	vfprintf(stderr, fmt, vap);
 	va_end(vap);
 	if (errno) {
-		fputc(':', stderr);
-		fputc(' ', stderr);
+		fputs(": ", stderr);
 		fputs(strerror(errno), stderr);
 	}
 	fputc('\n', stderr);
@@ -295,10 +304,15 @@ unmassage_buf(char *restrict buf, size_t bsz)
 static int
 mktempp(char *restrict tmpl[static 1U], int prefixlen)
 {
+	static mode_t umsk;
 	char *bp = *tmpl + prefixlen;
 	char *const ep = *tmpl + strlen(*tmpl);
+	mode_t m;
 	int fd;
 
+	if (UNLIKELY(!umsk)) {
+		umsk = umask(0022);
+	}
 	if (ep[-6] != 'X' || ep[-5] != 'X' || ep[-4] != 'X' ||
 	    ep[-3] != 'X' || ep[-2] != 'X' || ep[-1] != 'X') {
 		if ((fd = open(bp, O_RDWR | O_CREAT | O_EXCL, 0666)) < 0 &&
@@ -307,7 +321,8 @@ mktempp(char *restrict tmpl[static 1U], int prefixlen)
 			/* fuck that then */
 			return -1;
 		}
-	} else if (UNLIKELY((fd = mkstemp(bp)) < 0) &&
+	} else if (m = umask(S_IXUSR | S_IRWXG | S_IRWXO),
+		   UNLIKELY((fd = mkstemp(bp), umask(m), fd < 0)) &&
 		   UNLIKELY((bp -= prefixlen,
 			     /* reset to XXXXXX */
 			     memset(ep - 6, 'X', 6U),
@@ -527,7 +542,7 @@ optionp(const char *line, size_t llen)
 			sp += 7U;
 		}
 	}
-	if ((sp - line >= 8 || sp - line >= 1 && *sp != '-') &&
+	if ((sp - line >= 8 || (sp - line >= 1 && *sp != '-')) &&
 	    (cur_opt.sopt || cur_opt.lopt)) {
 		/* should be description */
 		goto desc;
@@ -1296,6 +1311,7 @@ run_m4(const char *outfn, ...)
 
 			/* really redir now */
 			dup2(outfd, STDOUT_FILENO);
+			close(outfd);
 		}
 
 		close(intfd[1]);
@@ -1361,6 +1377,7 @@ wr_intermediary(char *const args[], size_t nargs)
 
 	if (nargs == 0U) {
 		if (snarf_f(stdin) < 0) {
+			errno = 0;
 			error("cannot interpret directives on stdin");
 			rc = 1;
 		}
@@ -1374,6 +1391,7 @@ wr_intermediary(char *const args[], size_t nargs)
 			rc = 1;
 			break;
 		} else if (snarf_f(yf) < 0) {
+			errno = 0;
 			error("cannot interpret directives from `%s'", fn);
 			rc = 1;
 		}
@@ -1516,8 +1534,8 @@ wr_man_include(char **const inc)
 		wr_man_incln(ofp, line, nrd);
 	}
 #elif defined HAVE_FGETLN
-	while ((line = fgetln(f, &llen)) != NULL) {
-		wr_man_incln(ofp, line, nrd);
+	while ((line = fgetln(fp, &llen)) != NULL) {
+		wr_man_incln(ofp, line, llen);
 	}
 #else
 # error neither getline() nor fgetln() available, cannot read file line by line
@@ -1565,7 +1583,8 @@ wr_version(const struct yuck_version_s *v, const char *vlit)
 		fprintf(outf, "define([YUCK_SCMVER_VTAG], [%s])\n", v->vtag);
 		fprintf(outf, "define([YUCK_SCMVER_SCM], [%s])\n", yscm);
 		fprintf(outf, "define([YUCK_SCMVER_DIST], [%u])\n", v->dist);
-		fprintf(outf, "define([YUCK_SCMVER_RVSN], [%08x])\n", v->rvsn);
+		fprintf(outf, "define([YUCK_SCMVER_RVSN], [%0*x])\n",
+			(int)(v->rvsn & 0x07U), v->rvsn >> 4U);
 		if (!v->dirty) {
 			fputs("define([YUCK_SCMVER_FLAG_CLEAN])\n", outf);
 		} else {
@@ -1578,15 +1597,16 @@ wr_version(const struct yuck_version_s *v, const char *vlit)
 		if (v->scm > YUCK_SCM_TARBALL && v->dist) {
 			fputc('.', outf);
 			fputs(yscm_strs[v->scm], outf);
-			fprintf(outf, "%u.%08x", v->dist, v->rvsn);
+			fprintf(outf, "%u.%0*x",
+				v->dist,
+				(int)(v->rvsn & 0x07U), v->rvsn >> 4U);
 		}
 		if (v->dirty) {
 			fputs(".dirty", outf);
 		}
 		fputs("])\n", outf);
 #else  /* !WITH_SCMVER */
-		errno = 0;
-		error("\
+		errno = 0, error("\
 scmver support not built in but ptr %p given to wr_version()", v);
 #endif	/* WITH_SCMVER */
 	}
@@ -1610,8 +1630,7 @@ rm_intermediary(const char *fn, int keepp)
 	} else {
 		/* otherwise print a nice message so users know
 		 * the file we created */
-		errno = 0;
-		error("intermediary `%s' kept", fn);
+		errno = 0, error("intermediary `%s' kept", fn);
 	}
 	return 0;
 }
@@ -1632,7 +1651,7 @@ rm_includes(char *const incs[], size_t nincs, int keepp)
 			} else if (keepp) {
 				/* otherwise print a nice message so users know
 				 * the file we created */
-				error("intermediary `%s' kept", fn);
+				errno = 0, error("intermediary `%s' kept", fn);
 			}
 			free(fn);
 		}
@@ -1694,18 +1713,19 @@ cmd_gen(const struct yuck_cmd_gen_s argi[static 1U])
 		goto out;
 	}
 	/* now route that stuff through m4 */
-	with (const char *outfn = argi->output_arg, *hdrfn) {
+	with (const char *outfn = argi->output_arg,
+	      *cusfn = argi->custom_arg ?: "/dev/null", *hdrfn) {
 		if ((hdrfn = argi->header_arg) != NULL) {
 			/* run a special one for the header */
 			if ((rc = run_m4(hdrfn, dslfn, deffn, genhfn, NULL))) {
 				break;
 			}
 			/* now run the whole shebang for the beef code */
-			rc = run_m4(outfn, dslfn, deffn, gencfn, NULL);
+			rc = run_m4(outfn, dslfn, deffn, cusfn, gencfn, NULL);
 			break;
 		}
 		/* standard case: pipe directives, then header, then code */
-		rc = run_m4(outfn, dslfn, deffn, genhfn, gencfn, NULL);
+		rc = run_m4(outfn, dslfn, deffn, cusfn, genhfn, gencfn, NULL);
 	}
 out:
 	/* unlink include files */
@@ -1847,7 +1867,7 @@ flag -n|--use-reference requires -r|--reference parameter");
 			/* allow graceful exit through --ignore-noscm */
 			return 0;
 		}
-		error("cannot determine SCM");
+		errno = 0, error("cannot determine SCM");
 		return 1;
 	}
 
@@ -1856,16 +1876,21 @@ flag -n|--use-reference requires -r|--reference parameter");
 		*v = *ref;
 	} else if (reffn && yuck_version_cmp(v, ref)) {
 		if (argi->verbose_flag) {
-			errno = 0;
-			error("scm version differs from reference");
+			errno = 0, error("scm version differs from reference");
 		}
 		/* version stamps differ */
 		yuck_version_write(argi->reference_arg, v);
 		/* reserve exit code 3 for `updated reference file' */
 		rc = 3;
 	} else if (reffn && !argi->force_flag) {
-		/* don't worry about anything then */
-		return 0;
+		/* make sure the output file exists */
+		const char *const outfn = argi->output_arg;
+
+		if (outfn == NULL || regfilep(outfn)) {
+			/* don't worry about anything then */
+			return 0;
+		}
+		/* otherwise create at least one version of the output */
 	}
 
 	if (infn != NULL && regfilep(infn)) {
@@ -1898,7 +1923,9 @@ flag -n|--use-reference requires -r|--reference parameter");
 		if (v->scm > YUCK_SCM_TARBALL && v->dist) {
 			fputc('.', stdout);
 			fputs(yscm_strs[v->scm], stdout);
-			fprintf(stdout, "%u.%08x", v->dist, v->rvsn);
+			fprintf(stdout, "%u.%0*x",
+				v->dist,
+				(int)(v->rvsn & 0x07U), v->rvsn >> 4U);
 		}
 		if (v->dirty) {
 			fputs(".dirty", stdout);
