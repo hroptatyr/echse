@@ -100,37 +100,65 @@ AC_DEFUN([AX_YUCK_SCMVER], [dnl
 ## because only GNU make can do this at make time
 	pushdef([vfile], [$1])
 
+	AC_REQUIRE([AC_CONFIG_AUX_DIR_DEFAULT])
+	AC_LANG_PUSH([C])
+	AC_PROG_CC_C99
+	## use our yuck-scmver tool
 	AC_MSG_CHECKING([for stipulated version files])
-	if test -f "${srcdir}/.version"; then
-		## transform reference version
-		VERSION=`"${AWK}" -F'-' 'NR == 1 {
-PRE = substr([$]1, 1, 1);
-VER = substr([$]1, 2);
-if (PRE == "v" || PRE == "V") {
-	SCM = substr([$]3, 1, 1);
-	if (SCM == "g") {
-		VER = VER ".git" [$]2 "." substr([$]3, 2);
-	}
-	if ([$]4) {
-		VER = VER "." [$]4;
-	}
-	[$]0 = VER;
-}
-print;
-}' "${srcdir}/.version"`
-		AC_MSG_RESULT([.version -> ${VERSION}])
-	else
-		AC_MSG_RESULT([none])
+	save_CPPFLAGS="${CPPFLAGS}"
+	CPPFLAGS="-I${srcdir}/src -I${ac_aux_dir} ${CPPFLAGS}"
+	AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#define CONFIGURE
+#define _XOPEN_SOURCE	600
+#define VERSION_FILE	"${srcdir}/.version"
+#include "yuck-scmver.c"
+]])], [STIP_VERSION=`./conftest$EXEEXT`], [AC_MSG_RESULT([none])], [dnl
+		AC_MSG_RESULT([impossible, cross-compiling])
+		if test -f "[]vfile[]" -o \
+			-f "${srcdir}/[]vfile[]" -o \
+			-f "${srcdir}/.version"; then
+			AC_MSG_NOTICE([
+Files that (possibly) mandate versions have been detected.
+These are `]vfile[' or `${srcdir}/]vfile[' or `${srcdir}/.version'.
+However, their contents cannot be automatically checked for integrity
+due to building for a platform other than the current one
+(cross-compiling).
+
+I will proceed with the most conservative guess for the stipulated
+version, which is `${VERSION}'.
+
+If that appears to be wrong, or needs overriding, please edit the
+aforementioned files manually.
+
+Also note, even though this project comes with all the tools to
+perform a successful bootstrap for any of the files above, should
+they go out of date or be deleted, they don't support cross-builds.
+			])
+		fi
+	])
+	CPPFLAGS="${save_CPPFLAGS}"
+	AC_LANG_POP([C])
+
+	if test -n "${STIP_VERSION}"; then
+		VERSION="${STIP_VERSION}"
 	fi
 	## also massage version.mk file
-	if test -f "${srcdir}/[]vfile[]"; then
+	if test -f "[]vfile[]" -a ! -w "[]vfile[]"; then
+		:
+	elif test -f "${srcdir}/[]vfile[]"; then
 		## make sure it's in the builddir as well
-		cp "${srcdir}/[]vfile[]" "[]vfile[]" 2>/dev/null
+		cp -p "${srcdir}/[]vfile[]" "[]vfile[]" 2>/dev/null
 	elif test -f "${srcdir}/[]vfile[].in"; then
 		${M4:-m4} -DYUCK_SCMVER_VERSION="${VERSION}" \
 			"${srcdir}/[]vfile[].in" > "[]vfile[]"
 	else
 		echo "VERSION = ${VERSION}" > "[]vfile[]"
+	fi
+	## make sure .version is generated (for version.mk target in GNUmakefile)
+	if test -f "${srcdir}/.version"; then
+		cp -p "${srcdir}/.version" ".version" 2>/dev/null
+	else
+		echo "v${VERSION}" > ".version" 2>/dev/null
 	fi
 
 	popdef([vfile])
