@@ -27,9 +27,6 @@ AC_COPYRIGHT([dnl
 AM_INIT_AUTOMAKE([foreign dist-xz color-tests parallel-tests subdir-objects])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-AX_YUCK_SCMVER([version.mk])
-AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
-
 ## the build chain
 AC_PROG_CC([icc gcc tcc cc])
 AC_PROG_CPP
@@ -47,6 +44,8 @@ AC_ARG_VAR([GPERF], [full path to the gperf tool])
 
 ## check if yuck is globally available
 AX_CHECK_YUCK
+AX_YUCK_SCMVER([version.mk])
+AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
 
 case "${featflags}" in
 (*"msse2"*)
