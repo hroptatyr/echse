@@ -57,6 +57,14 @@
 #undef EV_P
 #define EV_P  struct ev_loop *loop __attribute__((unused))
 
+typedef struct echs_task_s *echs_task_t;
+
+/* linked list of ev_periodic objects */
+struct echs_task_s {
+	ev_periodic w;
+	echs_task_t next;
+};
+
 struct _echsd_s {
 	ev_signal sigint;
 	ev_signal sighup;
@@ -92,6 +100,88 @@ unblock_sigs(void)
 
 	sigemptyset(empty_signal_set);
 	sigprocmask(SIG_SETMASK, empty_signal_set, (sigset_t*)NULL);
+	return;
+}
+
+
+/* task pool */
+#define ECHS_TASK_POOL_INIZ	(256U)
+static echs_task_t free_pers;
+static size_t nfree_pers;
+static size_t zfree_pers;
+
+/* pool list */
+struct plst_s {
+	echs_task_t _1st;
+	size_t size;
+};
+
+static struct plst_s *pools;
+static size_t npools;
+static size_t zpools;
+
+static echs_task_t
+make_task_pool(size_t n)
+{
+/* generate a pile of ev_periodics and chain them up */
+	echs_task_t res;
+
+	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
+		return NULL;
+	}
+	/* chain them up */
+	res[n - 1U].next = NULL;
+	for (size_t i = n - 1U; i > 0; i--) {
+		res[i - 1U].next = res + i;
+	}
+	/* also add res to the list of pools (for freeing them later) */
+	if (npools >= zpools) {
+		if (!(zpools *= 2U)) {
+			zpools = 16U;
+		}
+		pools = realloc(pools, zpools * sizeof(*pools));
+	}
+	pools[npools]._1st = res;
+	pools[npools].size = n;
+	npools++;
+	return res;
+}
+
+static void
+free_task_pool(void)
+{
+	for (size_t i = 0U; i < npools; i++) {
+		free(pools[i]._1st);
+	}
+	return;
+}
+
+static echs_task_t
+make_task(void)
+{
+/* create one task */
+	echs_task_t res;
+
+	if (UNLIKELY(!nfree_pers)) {
+		/* put some more task objects in the task pool */
+		free_pers = make_task_pool(nfree_pers = zfree_pers ?: 256U);
+		if (UNLIKELY(!(zfree_pers *= 2U))) {
+			zfree_pers = 256U;
+		}
+	}
+	/* pop off the free list */
+	res = free_pers;
+	free_pers = free_pers->next;
+	return res;
+}
+
+static void
+free_task(echs_task_t t)
+{
+/* hand task T over to free list */
+	t->next = free_pers;
+	free_pers = t;
+	nfree_pers++;
 	return;
 }
 
@@ -189,6 +279,7 @@ free_echsd(struct _echsd_s *ctx)
 	if (UNLIKELY(ctx == NULL)) {
 		return;
 	}
+	free_task_pool();
 	free(ctx);
 	return;
 }
