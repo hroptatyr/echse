@@ -256,6 +256,12 @@ make_echsd(void)
 	struct ev_loop *loop = ev_default_loop(EVFLAG_AUTO);
 	struct _echsd_s *res = calloc(1, sizeof(*res));
 
+	if (res == NULL) {
+		return NULL;
+	} else if (loop == NULL) {
+		goto foul;
+	}
+
 	/* initialise private bits */
 	ev_signal_init(&res->sigint, sigint_cb, SIGINT);
 	ev_signal_start(EV_A_ &res->sigint);
