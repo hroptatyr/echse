@@ -194,16 +194,26 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 
+#include "echsd.yucc"
+
 int
-main(void)
+main(int argc, char *argv[])
 {
+	yuck_t argi[1U];
 	struct _echsd_s *ctx;
 	int rc = 0;
 
 	/* best not to be signalled for a minute */
 	block_sigs();
 
-	if (daemonise() < 0) {
+	if (yuck_parse(argi, argc, argv) < 0) {
+		rc = 1;
+		goto out;
+	}
+
+	if (argi->foreground_flag) {
+		echs_log = echs_errlog;
+	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;
 		goto out;
@@ -235,6 +245,7 @@ clo:
 	echs_closelog();
 
 out:
+	yuck_free(argi);
 	return rc;
 }
 

@@ -6,7 +6,7 @@ AM_CPPFLAGS = -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
 AM_LDFLAGS = $(XCCLDFLAGS)
 
 bin_PROGRAMS =
-pkglibexec_PROGRAMS =
+sbin_PROGRAMS =
 noinst_PROGRAMS =
 lib_LTLIBRARIES =
 noinst_LTLIBRARIES =
@@ -87,14 +87,15 @@ echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
 BUILT_SOURCES += echsx.yucc
 
-pkglibexec_PROGRAMS += echsd
-echsd_SOURCES = echsd.c
+sbin_PROGRAMS += echsd
+echsd_SOURCES = echsd.c echsd.yuck
 echsd_SOURCES += logger.c logger.h
 echsd_SOURCES += nifty.h
 echsd_CPPFLAGS = $(AM_CPPFLAGS)
 echsd_LDFLAGS = $(AM_LDFLAGS)
 echsd_CPPFLAGS += $(ev_CFLAGS)
 echsd_LDFLAGS += $(ev_LIBS)
+BUILT_SOURCES += echsd.yucc
 
 ## until we're checked
 ev_CFLAGS = $(shell pkg-config --cflags libev)

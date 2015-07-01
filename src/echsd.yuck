@@ -1,0 +1,5 @@
+Usage: echsd
+
+Run the echse daemon.
+
+  -n, --foreground      Run in foreground mode.
