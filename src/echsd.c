@@ -154,9 +154,9 @@ daemonise(void)
 static void
 echsd_run(const struct _echsd_s *ctx)
 {
-	ECHS_NOTI_LOG("httpd ready");
+	ECHS_NOTI_LOG("echsd ready");
 	ev_loop(ctx->loop, 0);
-	ECHS_NOTI_LOG("httpd unwound");
+	ECHS_NOTI_LOG("echsd exitting ...");
 	return;
 }
 
