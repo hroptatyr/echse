@@ -80,6 +80,13 @@ EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse.yucc
 
 
+bin_PROGRAMS += echsx
+echsx_SOURCES = echsx.c echsx.yuck
+echsx_SOURCES += logger.c logger.h
+echsx_SOURCES += nifty.h
+BUILT_SOURCES += echsx.yucc
+
+
 ## version rules
 version.c: version.c.in $(top_builddir)/.version
 	$(AM_V_GEN) PATH="$(top_builddir)/build-aux:$${PATH}" \

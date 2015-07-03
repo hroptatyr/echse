@@ -1,0 +1,5 @@
+Usage: echsx
+
+Execute job.
+
+  -n, --foreground      Run in forground mode.
