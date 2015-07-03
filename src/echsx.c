@@ -64,13 +64,10 @@ typedef struct echs_task_s *echs_task_t;
 struct echs_task_s {
 	/* beef data for the task in question */
 	const char *cmd;
-	char **args;
 	char **env;
 };
 
 static pid_t chld;
-static char tmpl[] = "/tmp/fileXXXXXX";
-static const char *tmpf;
 
 
 static void
@@ -118,15 +115,6 @@ timeo_cb(int UNUSED(signum))
 	}
 	block_sigs();
 	kill(chld, SIGALRM);
-
-	/* delete temporary files, if any */
-	if (tmpf != NULL) {
-		(void)unlink(tmpf);
-	}
-
-	/* suicide */
-	kill(0, SIGALRM);
-	unblock_sigs();
 	return;
 }
 
@@ -184,8 +172,7 @@ getsh_from_env(char *const *env)
 static int
 run_task(echs_task_t t)
 {
-	static const char *args[] = {"/bin/sh", tmpl, NULL};
-	pid_t r;
+	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
 	int rc = -1;
 
 	/* go to the pwd as specified */
@@ -198,46 +185,28 @@ run_task(echs_task_t t)
 		*args = sh;
 	}
 
-	/* we need the whole command line to go into a script */
-	{
-		int fd;
-		FILE *fp;	
-
-		if (UNLIKELY(*t->args == NULL)) {
-			return -1;
-		} else if ((fd = mkstemp(tmpl)) < 0) {
-			return -1;
-		} else if ((fp = fdopen(fd, "w")) == NULL) {
-			close(fd);
-			return -1;
-		}
-
-		fputs(*t->args, fp);
-		for (char *const *a = t->args + 1U; *a; a++) {
-			fputc(' ', fp);
-			fputs(*a, fp);
-		}
-		fputc('\n', fp);
-
-		fclose(fp);
-		tmpf = tmpl;
-	}
+	ECHS_NOTI_LOG("starting `%s'", t->cmd);
 
 	/* fork off the actual beef process */
-	switch ((r = vfork())) {
+	switch ((chld = vfork())) {
 	case -1:
 		/* yeah bollocks */
 		break;
 
 	case 0:
-		/* child*/
+		/* child, set timeout */
 		rc = execve(*args, deconst(args), t->env);
-		_exit(rc & 0b1U);
+		_exit(rc);
 		/* not reached */
 
 	default:
 		/* parent */
-		while (waitpid(r, &rc, 0) != r);
+		ECHS_NOTI_LOG("job %d", chld);
+		while (waitpid(chld, &rc, 0) != chld);
+		/* unset timeouts */
+		alarm(0);
+		ECHS_NOTI_LOG("process %d finished with %d", chld, rc);
+		chld = 0;
 		break;
 	}
 	return rc;
@@ -298,14 +267,10 @@ main(int argc, char *argv[])
 	echs_openlog();
 
 	/* generate the task in question */
-	char *args[] = {"sleep", "30", NULL};
-	struct echs_task_s t = {
-		.cmd = "/bin/sleep",
-		.args = args,
-	};
+	struct echs_task_s t = {"/bin/sleep 30"};
 
 	/* set up timeout */
-	set_timeout(20);	
+	set_timeout(4);
 
 	/* main loop */
 	{
