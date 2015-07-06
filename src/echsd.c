@@ -43,9 +43,12 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <errno.h>
+#include <signal.h>
 #include <time.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 #include <ev.h>
 #include "logger.h"
 #include "nifty.h"
@@ -61,8 +64,13 @@ typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
 struct echs_task_s {
+	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	echs_task_t next;
+
+	/* beef data for the task in question */
+	char *cmd;
+	char **env;
 };
 
 struct _echsd_s {
@@ -72,8 +80,6 @@ struct _echsd_s {
 	ev_signal sigpipe;
 
 	struct ev_loop *loop;
-
-	ev_io sock;
 };
 
 
@@ -185,13 +191,62 @@ free_task(echs_task_t t)
 	return;
 }
 
+static pid_t
+run_task(const struct _echsd_s *ctx, echs_task_t t, bool dtchp)
+{
+	pid_t r;
+
+	/* indicate that we might want to reuse the loop */
+	ev_loop_fork(ctx->loop);
+
+	switch ((r = vfork())) {
+		int rc;
+
+	case -1:
+		ECHS_ERR_LOG("cannot fork: %s", strerror(errno));
+		break;
+
+	case 0:
+		/* I am daddy's daughter */
+
+		/* close standard socks */
+		if (dtchp) {
+			close(STDIN_FILENO);
+			close(STDOUT_FILENO);
+			close(STDERR_FILENO);
+		}
+
+		static char *args[] = {
+			"echsx",
+			"-c", NULL,
+			"--stdout=/tmp/foo", "--stderr=/tmp/foo",
+			"--mailto=freundt", "--mailfrom=freundt",
+			"-n",
+			NULL
+		};
+		args[2U] = t->cmd;
+		if (dtchp) {
+			args[7U] = NULL;
+		}
+		rc = execve("/home/freundt/devel/echse/=build/src/echsx", args, t->env);
+		_exit(rc);
+		/* not reached */
+
+	default:
+		/* I am daddy */
+		while (waitpid(r, &rc, 0) != r);
+		break;
+	}
+	return r;
+}
+
 
 /* callbacks */
 static void
 sigint_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 {
 	ECHS_NOTI_LOG("C-c caught unrolling everything");
-	ev_unloop(EV_A_ EVUNLOOP_ALL);
+	ev_break(EV_A_ EVBREAK_ALL);
 	return;
 }
 
@@ -205,8 +260,34 @@ sighup_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 static void
 sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 {
-	ECHS_NOTI_LOG("SIGPIPE caught, checking connections ...");
+	ECHS_NOTI_LOG("SIGPIPE caught, doing nothing");
 	return;
+}
+
+static void
+tick_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+{
+	echs_task_t t = (void*)w;
+
+	ECHS_NOTI_LOG("starting job");
+
+	/* this one's fire and forget
+	 * there's not much we can do anyway at this point, inside a callback */
+	(void)run_task(w->data, t, false);
+
+	if (w->reschedule_cb) {
+		/* ah, we're going to be used again */
+		return;
+	}
+	free_task(t);
+	return;
+}
+
+static ev_tstamp
+resched(ev_periodic *w, ev_tstamp now)
+{
+	ECHS_NOTI_LOG("next run %f", now + 10.);
+	return now + 10.;
 }
 
 
@@ -271,6 +352,15 @@ make_echsd(void)
 	ev_signal_start(EV_A_ &res->sigterm);
 	ev_signal_init(&res->sigpipe, sigpipe_cb, SIGPIPE);
 	ev_signal_start(EV_A_ &res->sigpipe);
+
+	if_with (echs_task_t t = make_task(), t != NULL) {
+		ev_periodic_init(&t->w, tick_cb, ev_now(EV_A), 0., NULL);
+		ev_periodic_start(EV_A_ &t->w);
+		t->w.data = res;
+		t->cmd = "xz -vvk /tmp/shit";
+		t->env = NULL;
+	}
+
 	res->loop = loop;
 	return res;
 
@@ -284,6 +374,10 @@ free_echsd(struct _echsd_s *ctx)
 {
 	if (UNLIKELY(ctx == NULL)) {
 		return;
+	}
+	if (LIKELY(ctx->loop != NULL)) {
+		ev_break(ctx->loop, EVBREAK_ALL);
+		ev_loop_destroy(ctx->loop);
 	}
 	free_task_pool();
 	free(ctx);
