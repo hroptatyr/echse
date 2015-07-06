@@ -47,6 +47,7 @@
 #include <signal.h>
 #include <time.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
@@ -596,8 +597,17 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	/* set up timeout */
-	set_timeout(4);
+	if (argi->timeout_arg) {
+		/* set up timeout */
+		long int x = strtol(argi->timeout_arg, NULL, 0);
+
+		if (x < 0 || x >= INT_MAX) {
+			ECHS_ERR_LOG("timeout out of range");
+		} else if (set_timeout((unsigned int)x) < 0) {
+			ECHS_ERR_LOG("\
+cannot set timeout, job execution will be unbounded");
+		}
+	}
 
 	/* main loop */
 	with (struct echs_task_s t = {argi->command_arg}) {
