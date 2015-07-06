@@ -77,6 +77,8 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 # endif	/* __INTEL_COMPILER */
 #endif	/* !SPLICE_F_MOVE */
 
+#define USER_AGENT	"echsx/" VERSION " (echse job execution agent)"
+
 typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
@@ -318,6 +320,7 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	}
 	if (argi->mailfrom_arg) {
 		bp += snprintf(bp, ep - bp, "Content-Type: text/plain\n");
+		bp += snprintf(bp, ep - bp, "User-Agent: " USER_AGENT "\n");
 	}
 
 	if (WIFEXITED(t->xc)) {
