@@ -6,3 +6,5 @@ Execute job.
   -i, --stdin=FILE      Redirect FILE to job's stdin.
   -o, --stdout=FILE     Redirect job's stdout to FILE.
   -e, --stderr=FILE     Redirect job's stderr to FILE.
+  --mailfrom=ADDR       When sending mail use ADDR as from address.
+  --mailto=ADDR...      Send job's output to ADDRs via mail.

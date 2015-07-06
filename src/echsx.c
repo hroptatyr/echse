@@ -85,6 +85,7 @@ struct echs_task_s {
 	int xc;
 	struct timespec t_sta, t_end;
 	struct rusage rus;
+	struct rusage rus_off;
 };
 
 static pid_t chld;
@@ -253,6 +254,38 @@ strfts(char *restrict buf, size_t bsz, struct timespec t)
 	return strftime(buf, bsz, "%FT%TZ", tm);
 }
 
+static struct ts_dur_s {
+	long int s;
+	long int n;
+} ts_dur(struct timespec sta, struct timespec end)
+{
+	struct ts_dur_s res = {
+		.s = end.tv_sec - sta.tv_sec,
+		.n = end.tv_nsec - sta.tv_nsec,
+	};
+	if (res.n < 0) {
+		res.s--;
+		res.n += 1000000000;
+	}
+	return res;
+}
+
+static struct tv_dur_s {
+	long int s;
+	long int u;
+} tv_dur(struct timeval sta, struct timeval end)
+{
+	struct tv_dur_s res = {
+		.s = end.tv_sec - sta.tv_sec,
+		.u = end.tv_usec - sta.tv_usec,
+	};
+	if (res.u < 0) {
+		res.s--;
+		res.u += 1000000;
+	}
+	return res;
+}
+
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
 {
@@ -260,34 +293,48 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	char *bp = buf;
 	const char *const ep = buf + sizeof(buf);
 	char tstmp1[32U], tstmp2[32U];
-	long int dur_s;
-	long int dur_n;
+	struct ts_dur_s real;
+	struct tv_dur_s user;
+	struct tv_dur_s sys;
+	double cpu;
 
 	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
 	strfts(tstmp2, sizeof(tstmp2), t->t_end);
-	dur_s = t->t_end.tv_sec - t->t_sta.tv_sec;
-	if ((dur_n = t->t_end.tv_nsec - t->t_sta.tv_nsec) < 0) {
-		dur_n += 1000000000;
-		dur_s--;
-	}
+	real = ts_dur(t->t_sta, t->t_end);
+	user = tv_dur(t->rus_off.ru_utime, t->rus.ru_utime);
+	sys = tv_dur(t->rus_off.ru_stime, t->rus.ru_stime);
+	cpu = ((double)(user.s + sys.s) + (double)(user.u + sys.u) * 1.e-6) /
+		((double)real.s + (double)real.n * 1.e-9) * 100.;
 
-	bp += snprintf(bp, ep - bp, "From: %s\n", argi->mailfrom_arg);
+	if (argi->mailfrom_arg) {
+		bp += snprintf(bp, ep - bp, "From: %s\n", argi->mailfrom_arg);
+	}
 	for (size_t i = 0U; i < argi->mailto_nargs; i++) {
 		bp += snprintf(bp, ep - bp, "To: %s\n", argi->mailto_args[i]);
 	}
+	if (argi->mailfrom_arg) {
+		bp += snprintf(bp, ep - bp, "Content-Type: text/plain\n");
+	}
+
+	if (WIFEXITED(t->xc)) {
+		bp += snprintf(bp, ep - bp, "\
+X-Exit-Status: %d\n", WEXITSTATUS(t->xc));
+	} else if (WIFSIGNALED(t->xc)) {
+		int sig = WTERMSIG(t->xc);
+		bp += snprintf(bp, ep - bp, "\
+X-Exit-Status: %s (signal %d)\n", strsignal(sig), sig);
+	}
+
 	bp += snprintf(bp, ep - bp, "\
-Content-Type: text/plain\n\
-X-Exit-Status: %d\n\
 X-Job-Start: %s\n\
 X-Job-End: %s\n",
-		       WIFEXITED(t->xc) ? WEXITSTATUS(t->xc)
-		       : WIFSIGNALED(t->xc) ? WTERMSIG(t->xc)
-		       : -1, tstmp1, tstmp2);
+		       tstmp1, tstmp2);
 	bp += snprintf(bp, ep - bp, "\
-X-Job-Time: %ld.%06lis user  %ld.%06lis system  %ld.%09lis total\n",
-		       t->rus.ru_utime.tv_sec, t->rus.ru_utime.tv_usec,
-		       t->rus.ru_stime.tv_sec, t->rus.ru_stime.tv_usec,
-		       dur_s, dur_n);
+X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
+		       user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
+	bp += snprintf(bp, ep - bp, "\
+X-Job-Memory: %ldkB\n",
+		       t->rus.ru_maxrss);
 	*bp++ = '\n';
 
 	for (ssize_t nwr, tot = bp - buf;
@@ -397,6 +444,7 @@ run_task(echs_task_t t)
 		/* parent */
 		ECHS_NOTI_LOG("job %d", chld);
 		clock_gettime(CLOCK_REALTIME, &t->t_sta);
+		getrusage(RUSAGE_SELF, &t->rus_off);
 
 		while (waitpid(chld, &t->xc, 0) != chld);
 		/* unset timeouts */
@@ -411,6 +459,8 @@ run_task(echs_task_t t)
 
 	/* spawn sendmail */
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
+		/* no mail */
+		mail_hdrs(STDOUT_FILENO, t);
 		return rc;
 	} else if (pipe(mpip) < 0) {
 		/* shit, better fuck off? */
@@ -531,7 +581,7 @@ main(int argc, char *argv[])
 	echs_openlog();
 
 	/* generate the task in question */
-	struct echs_task_s t = {"/bin/sleep 30"};
+	struct echs_task_s t = {"xz -k /tmp/shit"};
 
 	/* set up timeout */
 	set_timeout(4);
