@@ -424,8 +424,6 @@ run_task(echs_task_t t)
 		*args = sh;
 	}
 
-	ECHS_NOTI_LOG("starting `%s'", t->cmd);
-
 	/* fork off the actual beef process */
 	switch ((chld = vfork())) {
 		int outfd[3];
@@ -453,7 +451,7 @@ run_task(echs_task_t t)
 
 	default:
 		/* parent */
-		ECHS_NOTI_LOG("job %d", chld);
+		ECHS_NOTI_LOG("starting `%s' -> process %d", t->cmd, chld);
 		clock_gettime(CLOCK_REALTIME, &t->t_sta);
 		getrusage(RUSAGE_SELF, &t->rus_off);
 
