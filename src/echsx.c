@@ -141,7 +141,7 @@ timeo_cb(int UNUSED(signum))
 		sigaction(SIGALRM, &sa, NULL);
 	}
 	block_sigs();
-	kill(chld, SIGALRM);
+	kill(chld, SIGXCPU);
 	return;
 }
 
