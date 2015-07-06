@@ -48,6 +48,8 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
 #include "logger.h"
 #include "nifty.h"
 #include "echsx.yucc"
@@ -59,6 +61,18 @@
 #undef EV_P
 #define EV_P  struct ev_loop *loop __attribute__((unused))
 
+#if !defined SPLICE_F_MOVE
+/* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
+# if defined __INTEL_COMPILER
+#  pragma warning(disable:1419)
+# endif	/* __INTEL_COMPILER */
+extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
+# define SPLICE_F_MOVE	(0U)
+# if defined __INTEL_COMPILER
+#  pragma warning(default:1419)
+# endif	/* __INTEL_COMPILER */
+#endif	/* !SPLICE_F_MOVE */
+
 typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
@@ -66,10 +80,21 @@ struct echs_task_s {
 	/* beef data for the task in question */
 	const char *cmd;
 	char **env;
+
+	/* exit code */
+	int xc;
+	struct timespec t_sta, t_end;
+	struct rusage rus;
 };
 
 static pid_t chld;
 static yuck_t argi[1U];
+
+static char *const _mcmd[] = {
+	"sendmail",
+	"-i", "-odi", "-oem", "-oi", "-t",
+	NULL
+};
 
 
 static void
@@ -216,6 +241,61 @@ init_redirs(int tgt[static 3U])
 	return 0;
 }
 
+static size_t
+strfts(char *restrict buf, size_t bsz, struct timespec t)
+{
+	time_t s = t.tv_sec;
+	struct tm *tm = gmtime(&s);
+
+	if (UNLIKELY(tm == NULL)) {
+		return 0U;
+	}
+	return strftime(buf, bsz, "%FT%TZ", tm);
+}
+
+static int
+mail_hdrs(int tgtfd, echs_task_t t)
+{
+	char buf[4096U];
+	char *bp = buf;
+	const char *const ep = buf + sizeof(buf);
+	char tstmp1[32U], tstmp2[32U];
+	long int dur_s;
+	long int dur_n;
+
+	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
+	strfts(tstmp2, sizeof(tstmp2), t->t_end);
+	dur_s = t->t_end.tv_sec - t->t_sta.tv_sec;
+	if ((dur_n = t->t_end.tv_nsec - t->t_sta.tv_nsec) < 0) {
+		dur_n += 1000000000;
+		dur_s--;
+	}
+
+	bp += snprintf(bp, ep - bp, "From: %s\n", argi->mailfrom_arg);
+	for (size_t i = 0U; i < argi->mailto_nargs; i++) {
+		bp += snprintf(bp, ep - bp, "To: %s\n", argi->mailto_args[i]);
+	}
+	bp += snprintf(bp, ep - bp, "\
+Content-Type: text/plain\n\
+X-Exit-Status: %d\n\
+X-Job-Start: %s\n\
+X-Job-End: %s\n",
+		       WIFEXITED(t->xc) ? WEXITSTATUS(t->xc)
+		       : WIFSIGNALED(t->xc) ? WTERMSIG(t->xc)
+		       : -1, tstmp1, tstmp2);
+	bp += snprintf(bp, ep - bp, "\
+X-Job-Time: %ld.%06lis user  %ld.%06lis system  %ld.%09lis total\n",
+		       t->rus.ru_utime.tv_sec, t->rus.ru_utime.tv_usec,
+		       t->rus.ru_stime.tv_sec, t->rus.ru_stime.tv_usec,
+		       dur_s, dur_n);
+	*bp++ = '\n';
+
+	for (ssize_t nwr, tot = bp - buf;
+	     tot > 0 &&
+		     (nwr = write(tgtfd, bp - tot, tot)) > 0; tot -= nwr);
+	return 0;
+}
+
 static int
 xdup2(int olfd, int nufd)
 {
@@ -227,12 +307,54 @@ xdup2(int olfd, int nufd)
 	return 0;
 }
 
+static int
+xsplice(int tgtfd, int srcfd)
+{
+#if defined HAVE_SPLICE && 0
+	struct stat st;
+	off_t totz;
+
+	if (fstat(srcfd, &st) < 0) {
+		/* big bollocks */
+		return -1;
+	} else if ((totz = st.st_size) < 0) {
+		/* hmmm, nice try */
+		return -1;
+	}
+
+	for (ssize_t nsp, tots = 0;
+	     tots < totz &&
+		     (nsp = splice(srcfd, NULL,
+				   tgtfd, NULL,
+				   totz - tots, SPLICE_F_MOVE)) >= 0;
+	     tots += nsp);
+#elif defined HAVE_SENDFILE && 0
+
+#else  /* !HAVE_SPLICE && !HAVE_SENDFILE */
+	with (char *buf[4096U]) {
+		ssize_t nrd;
+
+		while ((nrd = read(srcfd, buf, sizeof(buf))) > 0) {
+			for (ssize_t nwr, totw = 0;
+			     totw < nrd &&
+				     (nwr = write(
+					      tgtfd,
+					      buf + totw, nrd - totw)) >= 0;
+			     totw += nwr);
+		}
+	}
+#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
+	return 0;
+}
+
 
 static int
 run_task(echs_task_t t)
 {
 	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
-	int rc = -1;
+	pid_t mpid;
+	int mpip[2];
+	int rc = 0;
 
 	/* go to the pwd as specified */
 	if_with (const char *pwd, (pwd = get_env("PWD", t->env)) != NULL) {
@@ -252,6 +374,7 @@ run_task(echs_task_t t)
 
 	case -1:
 		/* yeah bollocks */
+		rc = -1;
 		break;
 
 	case 0:
@@ -273,12 +396,84 @@ run_task(echs_task_t t)
 	default:
 		/* parent */
 		ECHS_NOTI_LOG("job %d", chld);
+		clock_gettime(CLOCK_REALTIME, &t->t_sta);
 
-		while (waitpid(chld, &rc, 0) != chld);
+		while (waitpid(chld, &t->xc, 0) != chld);
 		/* unset timeouts */
 		alarm(0);
-		ECHS_NOTI_LOG("process %d finished with %d", chld, rc);
+		ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
 		chld = 0;
+
+		clock_gettime(CLOCK_REALTIME, &t->t_end);
+		getrusage(RUSAGE_CHILDREN, &t->rus);
+		break;
+	}
+
+	/* spawn sendmail */
+	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
+		return rc;
+	} else if (pipe(mpip) < 0) {
+		/* shit, better fuck off? */
+		return rc;
+	}
+
+	switch ((mpid = vfork())) {
+		int fd;
+
+	case -1:
+		/* yeah bollocks */
+		rc = -1;
+		break;
+
+	case 0:
+		/* child */
+		close(mpip[1U]);
+		xdup2(mpip[0U], STDIN_FILENO);
+		rc = execve("/usr/sbin/sendmail", _mcmd, t->env);
+		_exit(rc);
+		/* not reached */
+
+	default:
+		/* parent */
+		close(mpip[0U]);
+		mail_hdrs(mpip[1U], t);
+
+		if (argi->stdout_arg && argi->stderr_arg &&
+		    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
+			/* joint file */
+			const int fl = O_RDONLY;
+			const char *fn = argi->stdout_arg;
+
+			if ((fd = open(fn, fl)) < 0) {
+				/* fuck */
+				goto send;
+			}
+			xsplice(mpip[1U], fd);
+			close(fd);
+		} else {
+			if (argi->stdout_arg) {
+				const int fl = O_RDONLY;
+
+				if ((fd = open(argi->stdout_arg, fl)) < 0) {
+					/* shit */
+					goto send;
+				}
+				xsplice(mpip[1U], fd);
+				close(fd);
+				if ((fd = open(argi->stderr_arg, fl)) < 0) {
+					/* even more shit */
+					goto send;
+				}
+				xsplice(mpip[1U], fd);
+				close(fd);
+			}
+		}
+
+	send:
+		/* send off the mail */
+		close(mpip[1U]);
+
+		while (waitpid(mpid, &rc, 0) != mpid);
 		break;
 	}
 	return rc;
