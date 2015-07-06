@@ -590,14 +590,17 @@ main(int argc, char *argv[])
 	/* start them log files */
 	echs_openlog();
 
-	/* generate the task in question */
-	struct echs_task_s t = {"xz -k /tmp/shit"};
+	if (!argi->command_arg) {
+		ECHS_ERR_LOG("no command string given");
+		rc = 1;
+		goto out;
+	}
 
 	/* set up timeout */
 	set_timeout(4);
 
 	/* main loop */
-	{
+	with (struct echs_task_s t = {argi->command_arg}) {
 		/* set out sigs loose */
 		unblock_sigs();
 		/* and here we go */

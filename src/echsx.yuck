@@ -2,6 +2,7 @@ Usage: echsx
 
 Execute job.
 
+  -c, --command=STRING  Run command(s) specified in STRING.
   -n, --foreground      Run in forground mode.
   -i, --stdin=FILE      Redirect FILE to job's stdin.
   -o, --stdout=FILE     Redirect job's stdout to FILE.
