@@ -50,6 +50,9 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#if defined HAVE_SENDFILE
+# include <sys/sendfile.h>
+#endif	/* HAVE_SENDFILE */
 #include "logger.h"
 #include "nifty.h"
 #include "echsx.yucc"
@@ -357,26 +360,33 @@ xdup2(int olfd, int nufd)
 static int
 xsplice(int tgtfd, int srcfd)
 {
-#if defined HAVE_SPLICE && 0
+#if defined HAVE_SPLICE || defined HAVE_SENDFILE
 	struct stat st;
 	off_t totz;
 
 	if (fstat(srcfd, &st) < 0) {
 		/* big bollocks */
+		ECHS_ERR_LOG("cannot stat file to splice: %s", strerror(errno));
 		return -1;
 	} else if ((totz = st.st_size) < 0) {
 		/* hmmm, nice try */
+		ECHS_ERR_LOG("cannot obtain size of file to splice");
 		return -1;
 	}
+#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
 
+#if defined HAVE_SPLICE
 	for (ssize_t nsp, tots = 0;
 	     tots < totz &&
 		     (nsp = splice(srcfd, NULL,
 				   tgtfd, NULL,
 				   totz - tots, SPLICE_F_MOVE)) >= 0;
 	     tots += nsp);
-#elif defined HAVE_SENDFILE && 0
-
+#elif defined HAVE_SENDFILE
+	for (ssize_t nsf, tots = 0;
+	     tots < totz &&
+		     (nsf = sendfile(tgtfd, srcfd, NULL, totz - tots)) >= 0;
+	     tots += nsf);
 #else  /* !HAVE_SPLICE && !HAVE_SENDFILE */
 	with (char *buf[4096U]) {
 		ssize_t nrd;
