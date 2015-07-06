@@ -141,30 +141,21 @@ set_timeout(unsigned int tdiff)
 }
 
 static const char*
-getcwd_from_env(char *const *env)
+get_env(const char *key, char *const *env)
 {
-	if (UNLIKELY(env == NULL)) {
-		return NULL;
-	}
-	for (char *const *e = env; *e; e++) {
-		if (!memcmp(*e, "PWD=", 4U)) {
-			/* found him */
-			return *e + 4U;
-		}
-	}
-	return NULL;
-}
+	const size_t nkey = strlen(key);
 
-static const char*
-getsh_from_env(char *const *env)
-{
 	if (UNLIKELY(env == NULL)) {
 		return NULL;
 	}
 	for (char *const *e = env; *e; e++) {
-		if (!memcmp(*e, "SHELL=", 6U)) {
+		const size_t ez = strlen(*e);
+
+		if (ez < nkey + 1U) {
+			continue;
+		} else if (!memcmp(*e, key, nkey) && (*e)[nkey] == '=') {
 			/* found him */
-			return *e + 6U;
+			return *e + nkey + 1U;
 		}
 	}
 	return NULL;
@@ -244,12 +235,12 @@ run_task(echs_task_t t)
 	int rc = -1;
 
 	/* go to the pwd as specified */
-	if_with (const char *pwd, (pwd = getcwd_from_env(t->env)) != NULL) {
+	if_with (const char *pwd, (pwd = get_env("PWD", t->env)) != NULL) {
 		(void)chdir(pwd);
 	}
 
 	/* find out about what shell to start */
-	if_with (const char *sh, (sh = getsh_from_env(t->env)) != NULL) {
+	if_with (const char *sh, (sh = get_env("SHELL", t->env)) != NULL) {
 		*args = sh;
 	}
 
