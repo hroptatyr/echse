@@ -3,3 +3,6 @@ Usage: echsx
 Execute job.
 
   -n, --foreground      Run in forground mode.
+  -i, --stdin=FILE      Redirect FILE to job's stdin.
+  -o, --stdout=FILE     Redirect job's stdout to FILE.
+  -e, --stderr=FILE     Redirect job's stderr to FILE.

@@ -50,6 +50,7 @@
 #include <sys/wait.h>
 #include "logger.h"
 #include "nifty.h"
+#include "echsx.yucc"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -68,6 +69,7 @@ struct echs_task_s {
 };
 
 static pid_t chld;
+static yuck_t argi[1U];
 
 
 static void
@@ -168,6 +170,72 @@ getsh_from_env(char *const *env)
 	return NULL;
 }
 
+static int
+init_iredir(const char *fn)
+{
+	const int fl = O_RDONLY;
+	int fd;
+
+	if ((fd = open(fn, fl)) < 0) {
+		/* grrrr, are we supposed to proceed without? */
+		ECHS_ERR_LOG("\
+Error: cannot open file `%s' for child input: %s", fn, strerror(errno));
+	}
+	return fd;
+}
+
+static int
+init_oredir(const char *fn)
+{
+	const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+	int fd;
+
+	if ((fd = open(fn, fl, 0644)) < 0) {
+		/* grrrr, are we supposed to proceed without? */
+		ECHS_ERR_LOG("\
+Error: cannot open file `%s' for child output: %s", fn, strerror(errno));
+	}
+	return fd;
+}
+
+static int
+init_redirs(int tgt[static 3U])
+{
+	/* initialise somehow */
+	memset(tgt, -1, 3U * sizeof(*tgt));
+
+	if (argi->stdin_arg) {
+		if ((tgt[0U] = init_iredir(argi->stdin_arg)) < 0) {
+			return -1;
+		}
+	}
+
+	if (argi->stdout_arg && argi->stderr_arg &&
+	    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
+		/* caller wants stdout and stderr in the same file */
+		tgt[1U] = tgt[2U] = init_oredir(argi->stdout_arg);
+	} else {
+		if (argi->stdout_arg) {
+			tgt[1U] = init_oredir(argi->stdout_arg);
+		}
+		if (argi->stderr_arg) {
+			tgt[2U] = init_oredir(argi->stderr_arg);
+		}
+	}
+	return 0;
+}
+
+static int
+xdup2(int olfd, int nufd)
+{
+	if (UNLIKELY(dup2(olfd, nufd) < 0)) {
+		/* better close him, aye? */
+		close(nufd);
+		return -1;
+	}
+	return 0;
+}
+
 
 static int
 run_task(echs_task_t t)
@@ -189,12 +257,24 @@ run_task(echs_task_t t)
 
 	/* fork off the actual beef process */
 	switch ((chld = vfork())) {
+		int outfd[3];
+
 	case -1:
 		/* yeah bollocks */
 		break;
 
 	case 0:
-		/* child, set timeout */
+		/* child */
+
+		/* deal with the output */
+		if (UNLIKELY(init_redirs(outfd) < 0)) {
+			/* fuck, something's wrong */
+			_exit(EXIT_FAILURE);
+		}
+		xdup2(outfd[0U], STDIN_FILENO);
+		xdup2(outfd[1U], STDOUT_FILENO);
+		xdup2(outfd[2U], STDERR_FILENO);
+
 		rc = execve(*args, deconst(args), t->env);
 		_exit(rc);
 		/* not reached */
@@ -202,6 +282,7 @@ run_task(echs_task_t t)
 	default:
 		/* parent */
 		ECHS_NOTI_LOG("job %d", chld);
+
 		while (waitpid(chld, &rc, 0) != chld);
 		/* unset timeouts */
 		alarm(0);
@@ -239,12 +320,9 @@ daemonise(void)
 }
 
 
-#include "echsx.yucc"
-
 int
 main(int argc, char *argv[])
 {
-	yuck_t argi[1U];
 	int rc = 0;
 
 	/* best not to be signalled for a minute */
