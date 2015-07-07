@@ -1108,16 +1108,19 @@ prnt_cd(struct cd_s cd)
 static void
 prnt_rrul(rrulsp_t rr)
 {
-	switch (rr->freq) {
-	case FREQ_YEARLY:
-		fputs("FREQ=YEARLY", stdout);
-		break;
-	case FREQ_MONTHLY:
-		fputs("FREQ=MONTHLY", stdout);
-		break;
-	default:
-		break;
-	}
+	static const char *const f[] = {
+		[FREQ_NONE] = "FREQ=NONE",
+		[FREQ_YEARLY] = "FREQ=YEARLY",
+		[FREQ_MONTHLY] = "FREQ=MONTHLY",
+		[FREQ_WEEKLY] = "FREQ=WEEKLY",
+		[FREQ_DAILY] = "FREQ=DAILY",
+		[FREQ_HOURLY] = "FREQ=HOURLY",
+		[FREQ_MINUTELY] = "FREQ=MINUTELY",
+		[FREQ_SECONDLY] = "FREQ=SECONDLY",
+	};
+
+	fputs(f[rr->freq], stdout);
+
 	if (rr->inter > 1U) {
 		fprintf(stdout, ";INTERVAL=%u", rr->inter);
 	}
