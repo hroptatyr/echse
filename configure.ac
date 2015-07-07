@@ -66,6 +66,8 @@ SXE_CHECK_LIBLTDL
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 
+SXE_CHECK_LIBEV
+
 ## mimic automake on this one
 pkglibdir="${libdir}/${PACKAGE}"
 pkgincludedir="${includedir}/${PACKAGE}"
