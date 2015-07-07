@@ -46,9 +46,13 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <signal.h>
+#include <limits.h>
 #include <time.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#if defined __FreeBSD__
+# include <sys/syscall.h>
+#endif	/* __FreeBSD__ */
 #include <ev.h>
 #include "logger.h"
 #include "nifty.h"
@@ -82,6 +86,8 @@ struct _echsd_s {
 	struct ev_loop *loop;
 };
 
+static const char *echsx;
+
 
 static void
 block_sigs(void)
@@ -107,6 +113,118 @@ unblock_sigs(void)
 	sigemptyset(empty_signal_set);
 	sigprocmask(SIG_SETMASK, empty_signal_set, (sigset_t*)NULL);
 	return;
+}
+
+static const char*
+get_exewd(void)
+{
+#if defined __linux__
+	static const char myself[] = "/proc/self/exe";
+	static char wd[PATH_MAX];
+
+	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
+		wd[z] = '\0';
+		return wd;
+	}
+	return NULL;
+#elif defined __NetBSD__
+	static const char myself[] = "/proc/curproc/exe";
+	static char wd[PATH_MAX];
+	ssize_t z;
+
+	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
+		wd[z] = '\0';
+		return wd;
+	}
+	return NULL;
+#elif defined __DragonFly__
+	static const char myself[] = "/proc/curproc/file";
+	static char wd[PATH_MAX];
+
+	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
+		wd[z] = '\0';
+		return wd;
+	}
+	return NULL;
+#elif defined __FreeBSD__
+	static char wd[PATH_MAX];
+	size_t z = sizeof(wd);
+	int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+	sysctl(mib, countof(mib), wd, z, NULL, 0);
+	return wd;
+#elif defined __sun || defined sun
+	static char wd[MAXPATHLEN];
+	ssize_t z;
+
+	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
+	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
+		wd[z] = '\0';
+		return wd;
+	}
+	return NULL;
+#elif defined __APPLE__ && defined __MACH__
+	static char wd[PATH_MAX];
+	uint32_t z;
+	if (_NSGetExecutablePath(wd, &z) == 0) {
+		return wd;
+	}
+	return NULL;
+#else
+	return NULL;
+#endif
+}
+
+static const char*
+get_echsx(void)
+{
+	static const char echsx_nam[] = "echsx";
+	static char echsx_exe[PATH_MAX];
+	const char *xwd;
+	const char *dp;
+
+	if (UNLIKELY((xwd = get_exewd()) == NULL)) {
+		return NULL;
+	} else if ((dp = strrchr(xwd, '/')) == NULL) {
+		return NULL;
+	}
+	/* copy till last slash */
+	memcpy(echsx_exe, xwd, dp - xwd + 1U);
+	with (char *xp = echsx_exe + (dp - xwd + 1U)) {
+		struct stat st;
+
+		memcpy(xp, echsx_nam, sizeof(echsx_nam));
+		if (stat(echsx_exe, &st) < 0) {
+			break;
+		} else if (!S_ISREG(st.st_mode)) {
+			break;
+		} else if (!(st.st_mode & S_IXOTH)) {
+			break;
+		}
+		/* seems to be a good fit */
+		goto found;
+	}
+	/* try ../bin/echsx next */
+	echsx_exe[dp - xwd] = '\0';
+	if_with (char *xp, (xp = strrchr(echsx_exe, '/')) != NULL) {
+		struct stat st;
+
+		memcpy(xp + 1U, "bin/", 4U);
+		memcpy(xp + 1U + 4U, echsx_nam, sizeof(echsx_nam));
+		if (stat(echsx_exe, &st) < 0) {
+			break;
+		} else if (!S_ISREG(st.st_mode)) {
+			break;
+		} else if (!(st.st_mode & S_IXOTH)) {
+			break;
+		}
+		/* seems to be a good fit */
+		goto found;
+	}
+	/* we've run out of options */
+	return NULL;
+
+found:
+	return echsx_exe;
 }
 
 
@@ -228,7 +346,7 @@ run_task(const struct _echsd_s *ctx, echs_task_t t, bool dtchp)
 		if (dtchp) {
 			args[7U] = NULL;
 		}
-		rc = execve("/home/freundt/devel/echse/=build/src/echsx", args, t->env);
+		rc = execve(echsx, args, t->env);
 		_exit(rc);
 		/* not reached */
 
@@ -400,6 +518,11 @@ main(int argc, char *argv[])
 	if (yuck_parse(argi, argc, argv) < 0) {
 		rc = 1;
 		goto out;
+	}
+
+	/* try and find our execution helper */
+	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
+		perror("Error: cannot find execution helper `echsx'");
 	}
 
 	if (argi->foreground_flag) {
