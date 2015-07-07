@@ -87,6 +87,7 @@ echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
 BUILT_SOURCES += echsx.yucc
 
+if HAVE_LIBEV
 sbin_PROGRAMS += echsd
 echsd_SOURCES = echsd.c echsd.yuck
 echsd_SOURCES += logger.c logger.h
@@ -96,10 +97,7 @@ echsd_LDFLAGS = $(AM_LDFLAGS)
 echsd_CPPFLAGS += $(ev_CFLAGS)
 echsd_LDFLAGS += $(ev_LIBS)
 BUILT_SOURCES += echsd.yucc
-
-## until we're checked
-ev_CFLAGS = $(shell pkg-config --cflags libev)
-ev_LIBS = $(shell pkg-config --libs libev)
+endif  HAVE_LIBEV
 
 
 ## version rules

@@ -67,6 +67,7 @@ AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 
 SXE_CHECK_LIBEV
+AM_CONDITIONAL([HAVE_LIBEV], [test "${have_libev}" = "yes"])
 
 ## mimic automake on this one
 pkglibdir="${libdir}/${PACKAGE}"
