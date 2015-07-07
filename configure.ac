@@ -77,6 +77,24 @@ AC_SUBST([pkgincludedir])
 AC_DEFINE_UNQUOTED([PKGLIBDIR], ["${pkglibdir}"], [where modules reside])
 AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside])
 
+
+## compose build summary
+if test "${have_libev}" = "yes"; then
+	libevX="x"
+else
+	libevX=" "
+fi
+
+echo
+echo
+echo "Build summary"
+echo "============="
+echo
+echo "[[x]]  echsx executor agent"
+echo "[[${libevX}]]  echsd job scheduling daemon"
+echo "[[${libevX}]]  echsq queue managing client"
+echo
+
 dnl -------------------------------------------------------------------------
 dnl final output
 dnl -------------------------------------------------------------------------
