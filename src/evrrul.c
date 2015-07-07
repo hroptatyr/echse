@@ -1012,6 +1012,54 @@ fin:
 	return res;
 }
 
+size_t
+rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	size_t nd;
+	size_t res = 0UL;
+	size_t tries;
+	uint8_t wd_mask = 0U;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, tries = 64U; res < nti && --tries;
+	     ({
+		     d += rr->inter;
+		     for (unsigned int maxd; d > (maxd = __get_ndom(y, m));
+			  d--, d %= maxd, d++, ({
+					  if (++m > 12U) {
+						  y++;
+						  m = 1U;
+					  }
+				  }));
+	     })) {
+		/* stick to note 1 on page 44, RFC 5545 */
+		if (wd_mask && nd) {
+			/* ymd, dealt with later */
+			;
+		} else if (wd_mask) {
+			/* huh? */
+			;
+		}
+
+		tgt[res].y = y;
+		tgt[res].m = m;
+		tgt[res].d = d;
+		res++;
+	}
+fin:
+	return res;
+}
+
 
 /* rrules as query language */
 bool
