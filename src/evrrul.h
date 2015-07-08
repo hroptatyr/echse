@@ -172,6 +172,9 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
 extern size_t
 rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
 
+extern size_t
+rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr);
+
 extern bool echs_instant_matches_p(rrulsp_t f, echs_instant_t i);
 
 
