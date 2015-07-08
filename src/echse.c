@@ -220,8 +220,6 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	static const char dflt_fmt[] = "%b\t%s";
 	/* params that filter the output */
 	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
-	/* format string to use */
-	const char *fmt = dflt_fmt;
 	echs_evstrm_t smux;
 
 	if (argi->from_arg) {
@@ -290,18 +288,14 @@ echse: Error: cannot open file `%s'", fn);
 		/* return early */
 		return 1;
 	}
-	if (UNLIKELY(argi->format_arg != NULL)) {
-		fmt = argi->format_arg;
-
-		if (!strcmp(fmt, "ical")) {
-			/* special output format */
-			unroll_ical(smux, p);
-			goto out;
-		}
+	if (argi->format_arg != NULL && !strcmp(argi->format_arg, "ical")) {
+		/* special output format */
+		unroll_ical(smux, p);
+	} else {
+		const char *fmt = argi->format_arg ?: dflt_fmt;
+		unroll_frmt(smux, p, fmt);
 	}
-	unroll_frmt(smux, p, fmt);
 
-out:
 	free_echs_evstrm(smux);
 	return 0;
 }
