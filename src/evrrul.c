@@ -1191,6 +1191,88 @@ fin:
 	return res;
 }
 
+size_t
+rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int H = proto.H;
+	size_t res = 0UL;
+	size_t tries;
+	uint8_t wd_mask = 0U;
+	unsigned int w;
+	/* number of days in the current month */
+	unsigned int maxd;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
+	}
+
+	/* fill up the array the natural way */
+	for (res = 0UL, tries = 64U, w = ymd_get_wday(y, m, d),
+		     maxd = __get_ndom(y, m);
+	     res < nti && --tries;
+	     ({
+		     if ((H += rr->inter) >= 24U) {
+			     H %= 24U;
+			     d++;
+			     if (++w > SUN) {
+				     w = MON;
+			     }
+			     while (d > maxd) {
+				     d--, d %= maxd, d++;
+				     if (++m > 12U) {
+					     y++;
+					     m = 1U;
+				     }
+				     maxd = __get_ndom(y, m);
+			     }
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		}
+
+		tgt[res].y = y;
+		tgt[res].m = m;
+		tgt[res].d = d;
+		tgt[res].H = H;
+		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+			goto fin;
+		}
+		tries = 64U;
+		res++;
+	}
+fin:
+	return res;
+}
+
 
 /* rrules as query language */
 bool
