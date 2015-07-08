@@ -1019,10 +1019,10 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
-	size_t nd;
 	size_t res = 0UL;
 	size_t tries;
 	uint8_t wd_mask = 0U;
+	unsigned int w = ymd_get_wday(y, m, d);
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1030,10 +1030,30 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	/* because we're subtractive, allow all days in the wd_mask if
+	 * all of the actual mask days are 0 */
+	if (!(wd_mask >> 1U)) {
+		wd_mask |= 0b11111110U;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries;
 	     ({
 		     d += rr->inter;
+		     w += rr->inter, w = w % 7U ?: SUN;
 		     for (unsigned int maxd; d > (maxd = __get_ndom(y, m));
 			  d--, d %= maxd, d++, ({
 					  if (++m > 12U) {
@@ -1042,13 +1062,11 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					  }
 				  }));
 	     })) {
-		/* stick to note 1 on page 44, RFC 5545 */
-		if (wd_mask && nd) {
-			/* ymd, dealt with later */
-			;
-		} else if (wd_mask) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
 			/* huh? */
-			;
+			continue;
 		}
 
 		tgt[res].y = y;
