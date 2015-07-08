@@ -580,7 +580,7 @@ snarf_rrule(const char *s, size_t z)
 				tmp = strtol(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MDAY:
-					rr.dom = ass_bi31(rr.dom, tmp - 1);
+					rr.dom = ass_bi31(rr.dom, tmp);
 					break;
 				case BY_WEEK:
 					rr.wk = ass_bi63(rr.wk, tmp);
@@ -1170,9 +1170,9 @@ prnt_rrul(rrulsp_t rr)
 			break;
 		}
 		d = bi31_next(&i, rr->dom);
-		fprintf(stdout, ";BYMONTHDAY=%d", d + 1);
+		fprintf(stdout, ";BYMONTHDAY=%d", d);
 		while (d = bi31_next(&i, rr->dom), i) {
-			fprintf(stdout, ",%d", d + 1);
+			fprintf(stdout, ",%d", d);
 		}
 	}
 

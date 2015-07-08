@@ -808,7 +808,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		nd = 0UL;
 		for (bitint_iter_t di = 0U;
 		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
-		     d[nd++] = tmpd + 1);
+		     d[nd++] = tmpd);
 
 		/* fill up with the default */
 		if (!nd && ymdp && proto.d) {
@@ -933,7 +933,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		nd = 0UL;
 		for (bitint_iter_t di = 0U;
 		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
-		     d[nd++] = tmpd + 1);
+		     d[nd++] = tmpd);
 
 		/* fill up with the default */
 		if (!nd && ymdp && proto.d) {
