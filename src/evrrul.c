@@ -1104,6 +1104,10 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			tgt[res].y = this_y;
 			tgt[res].m = this_m;
 			tgt[res].d = this_d;
+			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+				printf("%u %u %u\n", this_y, this_m, this_d);
+				goto fin;
+			}
 			res++;
 		} while ((incs >>= 4U) && res < nti);
 	}
@@ -1180,6 +1184,9 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		tgt[res].y = y;
 		tgt[res].m = m;
 		tgt[res].d = d;
+		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+			goto fin;
+		}
 		res++;
 	}
 fin:
