@@ -1567,6 +1567,199 @@ fin:
 	return res;
 }
 
+size_t
+rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int H = proto.H;
+	unsigned int M = proto.M;
+	unsigned int S = proto.S;
+	size_t res = 0UL;
+	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	uint_fast32_t H_mask = 0U;
+	uint_fast64_t M_mask = 0U;
+	uint_fast64_t S_mask = 0U;
+	unsigned int w;
+	/* number of days in the current month */
+	unsigned int maxd;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
+		M = 0U;
+		S = 0U;
+	}
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	} else if (rr->inter == 1U) {
+		/* aaaah, what they want in fact is a weekly schedule
+		 * with the days in wd_mask */
+		return rrul_fill_wly(tgt, nti, rr);
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* set up the hour mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Hi = 0UL;
+		     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+			H_mask |= 1U << tmp;
+		}
+	}
+	if (!H_mask) {
+		/* because we're limiting results, allow all hours when
+		 * the H bitsets isn't set */
+		H_mask = ~H_mask;
+	}
+
+	/* set up the minute mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Mi = 0UL;
+		     (tmp = bui63_next(&Mi, rr->M), Mi);) {
+			M_mask |= 1ULL << tmp;
+		}
+	}
+	if (!M_mask) {
+		/* because we're limiting results, allow all minutes when
+		 * the M bits aren't set */
+		M_mask = ~M_mask;
+	}
+
+	/* set up the second mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Si = 0UL;
+		     (tmp = bui63_next(&Si, rr->S), Si);) {
+			S_mask |= 1ULL << tmp;
+		}
+	}
+	if (!S_mask) {
+		/* because we're limiting results, allow all seconds when
+		 * the S bits aren't set */
+		S_mask = ~S_mask;
+	}
+
+	/* fill up the array the naive way */
+	for (res = 0UL, w = ymd_get_wday(y, m, d),
+		     maxd = __get_ndom(y, m);
+	     res < nti;
+	     ({
+		     if ((S += rr->inter) >= 60U) {
+			     M += S / 60U, S %= 60U;
+			     if (M >= 60U) {
+				     H += M / 60U, M %= 60U;
+				     if (H >= 24U) {
+					     d += H / 24U, w += H / 24U;
+					     H %= 24U;
+					     if (w > SUN) {
+						     w = w % 7U ?: SUN;
+					     }
+					     while (d > maxd) {
+						     d--, d %= maxd, d++;
+						     if (++m > 12U) {
+							     y++;
+							     m = 1U;
+						     }
+						     maxd = __get_ndom(y, m);
+					     }
+				     }
+			     }
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		} else if (!(H_mask & (1U << H))) {
+			/* hour is filtered */
+			continue;
+		} else if (!(M_mask & (1ULL << M))) {
+			/* minute is filtered */
+			continue;
+		} else if (!(S_mask & (1ULL << S))) {
+			/* second is filtered */
+			continue;
+		}
+
+		tgt[res].y = y;
+		tgt[res].m = m;
+		tgt[res].d = d;
+		tgt[res].H = H;
+		tgt[res].M = M;
+		tgt[res].S = S;
+		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+			goto fin;
+		}
+		res++;
+	}
+fin:
+	return res;
+}
+
 
 /* rrules as query language */
 bool
