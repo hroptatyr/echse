@@ -1020,6 +1020,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
 	unsigned int wd_mask = 0U;
+	unsigned int m_mask = 0U;
 	size_t res = 0UL;
 	/* number of days in the current month */
 	unsigned int maxd;
@@ -1033,17 +1034,30 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* set up the wday mask */
-	with (int tmp) {
+	with (unsigned int tmp) {
 		for (bitint_iter_t dowi = 0UL;
 		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
-			if (tmp >= (int)MON && tmp <= (int)SUN) {
-				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
-			} else {
-				/* non-0 wday counts, as in nMO,nTU, etc.
-				 * are illegal in the WEEKLY frequency */
-				;
+			/* non-0 wday counts, as in nMO,nTU, etc.
+			 * are illegal in the WEEKLY frequency and
+			 * are ignored here */
+			if (tmp >= MON && tmp <= SUN) {
+				wd_mask |= (uint8_t)(1U << tmp);
 			}
 		}
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask |= 0b1111111111110U;
 	}
 
 	if (wd_mask) {
@@ -1102,8 +1116,12 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			tgt[res].y = this_y;
 			tgt[res].m = this_m;
 			tgt[res].d = this_d;
+
 			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
 				goto fin;
+			} else if (!(m_mask & (1U << this_m))) {
+				/* skip the whole month */
+				break;
 			}
 			res++;
 		} while ((incs >>= 4U) && res < nti);
@@ -1146,9 +1164,9 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 		}
 	}
-	/* because we're subtractive, allow all days in the wd_mask if
-	 * all of the actual mask days are 0 */
 	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
 		wd_mask |= 0b11111110U;
 	} else if (rr->inter == 1U) {
 		/* aaaah, what they want in fact is a weekly schedule
