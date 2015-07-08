@@ -1105,7 +1105,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			tgt[res].m = this_m;
 			tgt[res].d = this_d;
 			res++;
-		} while ((incs >>= 4U));
+		} while ((incs >>= 4U) && res < nti);
 	}
 
 fin:
