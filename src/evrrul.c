@@ -1021,7 +1021,6 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int d = proto.d;
 	unsigned int wd_mask = 0U;
 	size_t res = 0UL;
-	size_t tries;
 	/* number of days in the current month */
 	unsigned int maxd;
 	/* increments induced by wd_mask */
@@ -1070,8 +1069,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* fill up the array the hard way */
-	for (res = 0UL, tries = 64U, maxd = __get_ndom(y, m);
-	     res < nti && --tries;
+	for (res = 0UL, maxd = __get_ndom(y, m); res < nti;
 	     ({
 		     d += rr->inter * 7U;
 		     while (d > maxd) {
@@ -1105,7 +1103,6 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			tgt[res].m = this_m;
 			tgt[res].d = this_d;
 			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-				printf("%u %u %u\n", this_y, this_m, this_d);
 				goto fin;
 			}
 			res++;
@@ -1187,6 +1184,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
 			goto fin;
 		}
+		tries = 64U;
 		res++;
 	}
 fin:
