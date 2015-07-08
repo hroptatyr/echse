@@ -1013,6 +1013,106 @@ fin:
 }
 
 size_t
+rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int wd_mask = 0U;
+	size_t res = 0UL;
+	size_t tries;
+	/* number of days in the current month */
+	unsigned int maxd;
+	/* increments induced by wd_mask */
+	uint_fast32_t wd_incs = 0UL;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the WEEKLY frequency */
+				;
+			}
+		}
+	}
+
+	if (wd_mask) {
+		unsigned int w = ymd_get_wday(y, m, d);
+
+		/* duplicate the wd_mask so we can just right shift it
+		 * and wrap around the end of the week */
+		wd_mask |= wd_mask << 7U;
+		/* zap to current day so increments are relative to DTSTART */
+		wd_mask >>= w;
+		/* clamp wd_mask to exactly 7 days */
+		wd_mask &= 0b111111U;
+		/* calculate wd increments
+		 * i.e. a bitset of increments, 4bits per increment */
+		for (unsigned int i = 0U, j = 0U;
+		     wd_mask; wd_mask >>= 1U, i++) {
+			if (wd_mask & 0b1U) {
+				wd_incs |= (i & 0b1111U) << j;
+				i = 0U;
+				j += 4U;
+			}
+		}
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, tries = 64U, maxd = __get_ndom(y, m);
+	     res < nti && --tries;
+	     ({
+		     d += rr->inter * 7U;
+		     while (d > maxd) {
+			     d--, d %= maxd, d++;
+			     if (++m > 12U) {
+				     y++;
+				     m = 1U;
+			     }
+			     maxd = __get_ndom(y, m);
+		     }
+	     })) {
+		uint_fast32_t incs = wd_incs;
+		unsigned int this_maxd = maxd;
+		unsigned int this_d = d;
+		unsigned int this_m = m;
+		unsigned int this_y = y;
+
+		do {
+			this_d += incs & 0b1111U;
+
+			while (this_d > this_maxd) {
+				this_d--, this_d %= this_maxd, this_d++;
+				if (++this_m > 12U) {
+					this_y++;
+					this_m = 1U;
+				}
+				this_maxd = __get_ndom(this_y, this_m);
+			}
+
+			tgt[res].y = this_y;
+			tgt[res].m = this_m;
+			tgt[res].d = this_d;
+			res++;
+		} while ((incs >>= 4U));
+	}
+
+fin:
+	return res;
+}
+
+size_t
 rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
 	const echs_instant_t proto = *tgt;
@@ -1047,6 +1147,10 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	 * all of the actual mask days are 0 */
 	if (!(wd_mask >> 1U)) {
 		wd_mask |= 0b11111110U;
+	} else if (rr->inter == 1U) {
+		/* aaaah, what they want in fact is a weekly schedule
+		 * with the days in wd_mask */
+		return rrul_fill_wly(tgt, nti, rr);
 	}
 
 	/* fill up the array the hard way */

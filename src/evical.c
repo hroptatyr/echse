@@ -1553,7 +1553,7 @@ refill(struct evrrul_s *restrict strm)
 		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
 		break;
 	case FREQ_WEEKLY:
-		strm->ncch = 0UL;
+		strm->ncch = rrul_fill_wly(strm->cch, countof(strm->cch), rr);
 		break;
 	case FREQ_DAILY:
 		strm->ncch = rrul_fill_dly(strm->cch, countof(strm->cch), rr);
