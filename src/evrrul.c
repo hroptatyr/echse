@@ -1213,7 +1213,10 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	     res < nti;
 	     ({
 		     d += rr->inter;
-		     w += rr->inter, w = w % 7U ?: SUN;
+		     w += rr->inter;
+		     if (w > SUN) {
+			     w = w % 7U ?: SUN;
+		     }
 		     while (d > maxd) {
 			     d--, d %= maxd, d++;
 			     if (++m > 12U) {
@@ -1351,10 +1354,9 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	     res < nti;
 	     ({
 		     if ((H += rr->inter) >= 24U) {
-			     H %= 24U;
-			     d++;
-			     if (++w > SUN) {
-				     w = MON;
+			     d += H / 24U, w += H / 24U, H %= 24U;
+			     if (w > SUN) {
+				     w = w % 7U ?: SUN;
 			     }
 			     while (d > maxd) {
 				     d--, d %= maxd, d++;
@@ -1514,12 +1516,11 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	     res < nti;
 	     ({
 		     if ((M += rr->inter) >= 60U) {
-			     M %= 60U;
-			     if (++H >= 24U) {
-				     H %= 24U;
-				     d++;
-				     if (++w > SUN) {
-					     w = MON;
+			     H += M / 60U, M %= 60U;
+			     if (H >= 24U) {
+				     d += H / 24U, w += H / 24U, H %= 24U;
+				     if (w > SUN) {
+					     w = w % 7U ?: SUN;
 				     }
 				     while (d > maxd) {
 					     d--, d %= maxd, d++;
