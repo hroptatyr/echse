@@ -1122,7 +1122,9 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t res = 0UL;
 	size_t tries;
 	uint8_t wd_mask = 0U;
-	unsigned int w = ymd_get_wday(y, m, d);
+	unsigned int w;
+	/* number of days in the current month */
+	unsigned int maxd;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1152,19 +1154,21 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		 * with the days in wd_mask */
 		return rrul_fill_wly(tgt, nti, rr);
 	}
-
 	/* fill up the array the hard way */
-	for (res = 0UL, tries = 64U; res < nti && --tries;
+	for (res = 0UL, tries = 64U, w = ymd_get_wday(y, m, d),
+		     maxd = __get_ndom(y, m);
+	     res < nti && --tries;
 	     ({
 		     d += rr->inter;
 		     w += rr->inter, w = w % 7U ?: SUN;
-		     for (unsigned int maxd; d > (maxd = __get_ndom(y, m));
-			  d--, d %= maxd, d++, ({
-					  if (++m > 12U) {
-						  y++;
-						  m = 1U;
-					  }
-				  }));
+		     while (d > maxd) {
+			     d--, d %= maxd, d++;
+			     if (++m > 12U) {
+				     y++;
+				     m = 1U;
+			     }
+			     maxd = __get_ndom(y, m);
+		     }
 	     })) {
 		/* we're subtractive, so check if the current ymd matches
 		 * if not, just continue and check the next candidate */
