@@ -1186,7 +1186,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	if (!m_mask) {
 		/* because we're subtractive, allow all months in the m_mask if
 		 * all of the actual mask months are 0 */
-		m_mask |= 0b1111111111110U;
+		m_mask = 0b1111111111110U;
 	}
 
 	/* set up the days masks */
@@ -1258,8 +1258,11 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int d = proto.d;
 	unsigned int H = proto.H;
 	size_t res = 0UL;
-	size_t tries;
 	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	uint_fast32_t H_mask = 0U;
 	unsigned int w;
 	/* number of days in the current month */
 	unsigned int maxd;
@@ -1268,6 +1271,11 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
 	}
 
 	/* set up the wday mask */
@@ -1283,16 +1291,64 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 		}
 	}
-
-	/* check if we're ECHS_ALL_DAY */
-	if (UNLIKELY(H == ECHS_ALL_DAY)) {
-		H = 0U;
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	} else if (rr->inter == 1U) {
+		/* aaaah, what they want in fact is a weekly schedule
+		 * with the days in wd_mask */
+		return rrul_fill_wly(tgt, nti, rr);
 	}
 
-	/* fill up the array the natural way */
-	for (res = 0UL, tries = 64U, w = ymd_get_wday(y, m, d),
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* set up the hour mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Hi = 0UL;
+		     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+			H_mask |= 1U << tmp;
+		}
+	}
+	if (!H_mask) {
+		/* because we're limiting results, allow all hours when
+		 * the H bitsets isn't set */
+		H_mask = ~H_mask;
+	}
+
+	/* fill up the array the naive way */
+	for (res = 0UL, w = ymd_get_wday(y, m, d),
 		     maxd = __get_ndom(y, m);
-	     res < nti && --tries;
+	     res < nti;
 	     ({
 		     if ((H += rr->inter) >= 24U) {
 			     H %= 24U;
@@ -1315,6 +1371,16 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (!(wd_mask & (1U << w))) {
 			/* huh? */
 			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		} else if (!(H_mask & (1U << H))) {
+			/* hour is filtered */
+			continue;
 		}
 
 		tgt[res].y = y;
@@ -1324,7 +1390,6 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
 			goto fin;
 		}
-		tries = 64U;
 		res++;
 	}
 fin:
