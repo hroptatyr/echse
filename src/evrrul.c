@@ -78,6 +78,25 @@ static const echs_wday_t __jan01_28y_wday[] = {
 #undef A
 #undef S
 
+/* we can enumerate the cross product of time components */
+struct enum_s {
+	size_t nel;
+	uint8_t nH, nM, nS;
+	uint8_t H[24U];
+	uint8_t M[60U];
+	uint8_t S[60U];
+};
+
+#define ENUM_INIT(e, s, ...)		size_t s = 0U, ENUM_INIT_M(e, ## __VA_ARGS__, auto_m)
+#define ENUM_INIT_M(e, m, ...)		m = 0U, ENUM_INIT_H(e, ## __VA_ARGS__, auto_h)
+#define ENUM_INIT_H(e, h, ...)		h = 0U
+#define ENUM_COND(e, s, ...)		((s) < (e).nS || ((s = 0U), ENUM_COND_M(e, ## __VA_ARGS__, auto_m)))
+#define ENUM_COND_M(e, m, ...)		((m)++, (m) < (e).nM || ((m = 0U), ENUM_COND_H(e, ## __VA_ARGS__, auto_h)))
+#define ENUM_COND_H(e, h, ...)		((h)++, (h) < (e).nH || (h = 0U))
+#define ENUM_ITER(e, s, ...)		(s)++, ENUM_ITER_M(e, ## __VA_ARGS__, auto_m = -2U)
+#define ENUM_ITER_M(e, m, ...)		(m), ENUM_ITER_H(e, ## __VA_ARGS__, auto_h = -2U)
+#define ENUM_ITER_H(e, h, ...)		(h)
+
 
 /* generic date converters */
 static __attribute__((const, pure)) echs_wday_t
@@ -382,6 +401,44 @@ inc_wd(echs_wday_t wd)
 		wd = MON;
 	}
 	return wd;
+}
+
+static int
+make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
+{
+	size_t nH = 0U;
+	size_t nM = 0U;
+	size_t nS = 0U;
+	unsigned int tmp;
+
+	/* get all hours */
+	for (bitint_iter_t Hi = 0UL;
+	     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+		tgt->H[nH++] = (uint8_t)tmp;
+	}
+	if (!nH) {
+		tgt->H[nH++] = (uint8_t)proto.H;
+	}
+	/* get all minutes */
+	for (bitint_iter_t Mi = 0UL;
+	     (tmp = bui63_next(&Mi, rr->M), Mi);) {
+		tgt->M[nM++] = (uint8_t)tmp;
+	}
+	if (!nM) {
+		tgt->M[nM++] = (uint8_t)proto.M;
+	}
+	/* get all them seconds */
+	for (bitint_iter_t Si = 0UL;
+	     (tmp = bui63_next(&Si, rr->S), Si);) {
+		tgt->S[nS++] = (uint8_t)tmp;
+	}
+	if (!nS) {
+		tgt->S[nS++] = (uint8_t)proto.S;
+	}
+	tgt->nH = nH;
+	tgt->nM = nM;
+	tgt->nS = nS;
+	return 0;
 }
 
 
@@ -1280,6 +1337,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t posd_mask = 0U;
 	uint_fast32_t negd_mask = 0U;
 	uint_fast32_t H_mask = 0U;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1291,6 +1349,9 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	if (UNLIKELY(H == ECHS_ALL_DAY)) {
 		H = 0U;
 	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	/* set up the wday mask */
 	with (int tmp) {
@@ -1406,15 +1467,25 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 			continue;
 		}
+
 	bang:
-		tgt[res].y = y;
-		tgt[res].m = m;
-		tgt[res].d = d;
-		tgt[res].H = H;
-		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-			goto fin;
+		for (ENUM_INIT(e, iS, iM);
+		     ENUM_COND(e, iS, iM); ENUM_ITER(e, iS, iM)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = H,
+				.M = e.M[iM],
+				.S = e.S[iS],
+			};
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+				goto fin;
+			}
+			tgt[res++] = x;
 		}
-		res++;
 	}
 fin:
 	return res;
