@@ -78,6 +78,25 @@ static const echs_wday_t __jan01_28y_wday[] = {
 #undef A
 #undef S
 
+/* we can enumerate the cross product of time components */
+struct enum_s {
+	size_t nel;
+	uint8_t nH, nM, nS;
+	uint8_t H[24U];
+	uint8_t M[60U];
+	uint8_t S[60U];
+};
+
+#define ENUM_INIT(e, s, ...)		size_t s = 0U, ENUM_INIT_M(e, ## __VA_ARGS__, auto_m)
+#define ENUM_INIT_M(e, m, ...)		m = 0U, ENUM_INIT_H(e, ## __VA_ARGS__, auto_h)
+#define ENUM_INIT_H(e, h, ...)		h = 0U
+#define ENUM_COND(e, s, ...)		((s) < (e).nS || ((s = 0U), ENUM_COND_M(e, ## __VA_ARGS__, auto_m)))
+#define ENUM_COND_M(e, m, ...)		((m)++, (m) < (e).nM || ((m = 0U), ENUM_COND_H(e, ## __VA_ARGS__, auto_h)))
+#define ENUM_COND_H(e, h, ...)		((h)++, (h) < (e).nH || (h = 0U))
+#define ENUM_ITER(e, s, ...)		(s)++, ENUM_ITER_M(e, ## __VA_ARGS__, auto_m = -2U)
+#define ENUM_ITER_M(e, m, ...)		(m), ENUM_ITER_H(e, ## __VA_ARGS__, auto_h = -2U)
+#define ENUM_ITER_H(e, h, ...)		(h)
+
 
 /* generic date converters */
 static __attribute__((const, pure)) echs_wday_t
@@ -98,6 +117,20 @@ yd_get_wday(unsigned int y, unsigned int yd)
 {
 	echs_wday_t j01 = ymd_get_wday(y, 1U, 1U);
 	return (echs_wday_t)(((j01 + --yd) % 7U) ?: SUN);
+}
+
+static __attribute__((const, pure)) unsigned int
+ymd_get_yd(unsigned int y, unsigned int m, unsigned int d)
+{
+/* stolen from dateutils (__md_get_yday()) */
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml,
+		 * first element is a bit set of leap days to add */
+		0xfff8, 0,
+		31, 59, 90, 120, 151, 181,
+		212, 243, 273, 304, 334, 365
+	};
+	return __mon_yday[m] + d + UNLIKELY(!(y % 4U)/*leapp(year)*/ && m >= 3);
 }
 
 static __attribute__((const, pure)) inline unsigned int
@@ -368,6 +401,44 @@ inc_wd(echs_wday_t wd)
 		wd = MON;
 	}
 	return wd;
+}
+
+static int
+make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
+{
+	size_t nH = 0U;
+	size_t nM = 0U;
+	size_t nS = 0U;
+	unsigned int tmp;
+
+	/* get all hours */
+	for (bitint_iter_t Hi = 0UL;
+	     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+		tgt->H[nH++] = (uint8_t)tmp;
+	}
+	if (!nH) {
+		tgt->H[nH++] = (uint8_t)proto.H;
+	}
+	/* get all minutes */
+	for (bitint_iter_t Mi = 0UL;
+	     (tmp = bui63_next(&Mi, rr->M), Mi);) {
+		tgt->M[nM++] = (uint8_t)tmp;
+	}
+	if (!nM) {
+		tgt->M[nM++] = (uint8_t)proto.M;
+	}
+	/* get all them seconds */
+	for (bitint_iter_t Si = 0UL;
+	     (tmp = bui63_next(&Si, rr->S), Si);) {
+		tgt->S[nS++] = (uint8_t)tmp;
+	}
+	if (!nS) {
+		tgt->S[nS++] = (uint8_t)proto.S;
+	}
+	tgt->nH = nH;
+	tgt->nM = nM;
+	tgt->nS = nS;
+	return 0;
 }
 
 
@@ -779,6 +850,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t tries;
 	uint8_t wd_mask = 0U;
 	bool ymdp;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -792,6 +864,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		!bi383_has_bits_p(&rr->doy) &&
 		!bi383_has_bits_p(&rr->easter) &&
 		!bi31_has_bits_p(rr->dom);
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -808,7 +883,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		nd = 0UL;
 		for (bitint_iter_t di = 0U;
 		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
-		     d[nd++] = tmpd + 1);
+		     d[nd++] = tmpd);
 
 		/* fill up with the default */
 		if (!nd && ymdp && proto.d) {
@@ -885,18 +960,27 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
 		     res < nti && (yd = bi383_next(&all, &cand), all);) {
-			tgt[res].y = y;
-			tgt[res].m = yd / 32U + 1U;
-			tgt[res].d = yd % 32U;
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
 
-			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-				goto fin;
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				tries = 64U;
+				tgt[res++] = x;
 			}
-			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
-				continue;
-			}
-			tries = 64U;
-			res++;
 		}
 	}
 fin:
@@ -915,6 +999,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t tries;
 	uint8_t wd_mask = 0U;
 	bool ymdp;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -929,11 +1014,14 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	ymdp = !bi447_has_bits_p(&rr->dow) &&
 		!bi31_has_bits_p(rr->dom);
 
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
 	with (int tmpd) {
 		nd = 0UL;
 		for (bitint_iter_t di = 0U;
 		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
-		     d[nd++] = tmpd + 1);
+		     d[nd++] = tmpd);
 
 		/* fill up with the default */
 		if (!nd && ymdp && proto.d) {
@@ -994,19 +1082,828 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
 		     res < nti && (yd = bi383_next(&all, &cand), all);) {
-			tgt[res].y = y;
-			tgt[res].m = yd / 32U + 1U;
-			tgt[res].d = yd % 32U;
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
 
-			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				tries = 64U;
+				tgt[res++] = x;
+			}
+		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	size_t res = 0UL;
+	/* number of days in the current month */
+	unsigned int maxd;
+	/* increments induced by wd_mask */
+	uint_fast32_t wd_incs = 0UL;
+	struct enum_s e;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	/* set up the wday mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			/* non-0 wday counts, as in nMO,nTU, etc.
+			 * are illegal in the WEEKLY frequency and
+			 * are ignored here */
+			if (tmp >= MON && tmp <= SUN) {
+				wd_mask |= (uint8_t)(1U << tmp);
+			}
+		}
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask |= 0b1111111111110U;
+	}
+
+	if (wd_mask) {
+		unsigned int w = ymd_get_wday(y, m, d);
+
+		/* duplicate the wd_mask so we can just right shift it
+		 * and wrap around the end of the week */
+		wd_mask |= wd_mask << 7U;
+		/* zap to current day so increments are relative to DTSTART */
+		wd_mask >>= w;
+		/* clamp wd_mask to exactly 7 days */
+		wd_mask &= 0b111111U;
+		/* calculate wd increments
+		 * i.e. a bitset of increments, 4bits per increment */
+		for (unsigned int i = 0U, j = 0U;
+		     wd_mask; wd_mask >>= 1U, i++) {
+			if (wd_mask & 0b1U) {
+				wd_incs |= (i & 0b1111U) << j;
+				i = 0U;
+				j += 4U;
+			}
+		}
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, maxd = __get_ndom(y, m); res < nti;
+	     ({
+		     d += rr->inter * 7U;
+		     while (d > maxd) {
+			     d--, d %= maxd, d++;
+			     if (++m > 12U) {
+				     y++;
+				     m = 1U;
+			     }
+			     maxd = __get_ndom(y, m);
+		     }
+	     })) {
+		uint_fast32_t incs = wd_incs;
+		unsigned int this_maxd = maxd;
+		unsigned int this_d = d;
+		unsigned int this_m = m;
+		unsigned int this_y = y;
+
+		do {
+			this_d += incs & 0b1111U;
+
+			while (this_d > this_maxd) {
+				this_d--, this_d %= this_maxd, this_d++;
+				if (++this_m > 12U) {
+					this_y++;
+					this_m = 1U;
+				}
+				this_maxd = __get_ndom(this_y, this_m);
+			}
+
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = this_y,
+					.m = this_m,
+					.d = this_d,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
+
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				} else if (!(m_mask & (1U << this_m))) {
+					/* skip the whole month */
+					goto skip;
+				}
+				tgt[res++] = x;
+			}
+		} while ((incs >>= 4U) && res < nti);
+	skip:
+		;
+	}
+
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	size_t res = 0UL;
+	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	unsigned int w;
+	/* number of days in the current month */
+	unsigned int maxd;
+	struct enum_s e;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	} else if (rr->inter == 1U) {
+		/* aaaah, what they want in fact is a weekly schedule
+		 * with the days in wd_mask */
+		return rrul_fill_wly(tgt, nti, rr);
+	}
+
+	/* generate a set of hours, minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, w = ymd_get_wday(y, m, d),
+		     maxd = __get_ndom(y, m);
+	     res < nti;
+	     ({
+		     d += rr->inter;
+		     w += rr->inter;
+		     if (w > SUN) {
+			     w = w % 7U ?: SUN;
+		     }
+		     while (d > maxd) {
+			     d--, d %= maxd, d++;
+			     if (++m > 12U) {
+				     y++;
+				     m = 1U;
+			     }
+			     maxd = __get_ndom(y, m);
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		}
+
+		for (ENUM_INIT(e, iS, iM, iH);
+		     ENUM_COND(e, iS, iM, iH); ENUM_ITER(e, iS, iM, iH)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = e.H[iH],
+				.M = e.M[iM],
+				.S = e.S[iS],
+			};
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
 				goto fin;
 			}
-			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
-				continue;
-			}
-			tries = 64U;
-			res++;
+			tgt[res++] = x;
 		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int H = proto.H;
+	size_t res = 0UL;
+	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	uint_fast32_t H_mask = 0U;
+	struct enum_s e;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
+	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* set up the hour mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Hi = 0UL;
+		     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+			H_mask |= 1U << tmp;
+		}
+	}
+	if (!H_mask) {
+		/* because we're limiting results, allow all hours when
+		 * the H bitsets isn't set */
+		H_mask = ~H_mask;
+	}
+
+	/* fill up the array the naive way */
+	for (unsigned int w = ymd_get_wday(y, m, d), yd = ymd_get_yd(y, m, d),
+		     maxd = __get_ndom(y, m), maxy = (y % 4U) ? 365 : 366;
+	     res < nti;
+	     ({
+		     if ((H += rr->inter) >= 24U) {
+			     d += H / 24U, w += H / 24U, yd += H / 24U;
+			     H %= 24U;
+			     if (w > SUN) {
+				     w = w % 7U ?: SUN;
+			     }
+			     while (d > maxd) {
+				     d--, d %= maxd, d++;
+				     if (++m > 12U) {
+					     y++;
+					     m = 1U;
+					     yd -= maxy - 1;
+					     maxy = (y % 4U) ? 365 : 366;
+				     }
+				     maxd = __get_ndom(y, m);
+			     }
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		} else if (!(H_mask & (1U << H))) {
+			/* hour is filtered */
+			continue;
+		} else if (bi383_has_bits_p(&rr->doy)) {
+			/* iterate manually */
+			int tmp;
+			for (bitint_iter_t doyi = 0UL;
+			     (tmp = bi383_next(&doyi, &rr->doy), doyi);) {
+				if (tmp > 0 && tmp == yd ||
+				    tmp < 0 && maxy - ++tmp == yd) {
+					/* that's clearly a match */
+					goto bang;
+				}
+			}
+			continue;
+		}
+
+	bang:
+		for (ENUM_INIT(e, iS, iM);
+		     ENUM_COND(e, iS, iM); ENUM_ITER(e, iS, iM)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = H,
+				.M = e.M[iM],
+				.S = e.S[iS],
+			};
+
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+				goto fin;
+			}
+			tgt[res++] = x;
+		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int H = proto.H;
+	unsigned int M = proto.M;
+	size_t res = 0UL;
+	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	uint_fast32_t H_mask = 0U;
+	uint_fast64_t M_mask = 0U;
+	struct enum_s e;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
+		M = 0U;
+	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* set up the hour mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Hi = 0UL;
+		     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+			H_mask |= 1U << tmp;
+		}
+	}
+	if (!H_mask) {
+		/* because we're limiting results, allow all hours when
+		 * the H bitsets isn't set */
+		H_mask = ~H_mask;
+	}
+
+	/* set up the minute mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Mi = 0UL;
+		     (tmp = bui63_next(&Mi, rr->M), Mi);) {
+			M_mask |= 1ULL << tmp;
+		}
+	}
+	if (!M_mask) {
+		/* because we're limiting results, allow all minutes when
+		 * the M bits aren't set */
+		M_mask = ~M_mask;
+	}
+
+	/* fill up the array the naive way */
+	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);
+	     res < nti;
+	     ({
+		     if ((M += rr->inter) >= 60U) {
+			     H += M / 60U, M %= 60U;
+			     if (H >= 24U) {
+				     d += H / 24U, w += H / 24U, H %= 24U;
+				     if (w > SUN) {
+					     w = w % 7U ?: SUN;
+				     }
+				     while (d > maxd) {
+					     d--, d %= maxd, d++;
+					     if (++m > 12U) {
+						     y++;
+						     m = 1U;
+					     }
+					     maxd = __get_ndom(y, m);
+				     }
+			     }
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		} else if (!(H_mask & (1U << H))) {
+			/* hour is filtered */
+			continue;
+		} else if (!(M_mask & (1ULL << M))) {
+			/* minute is filtered */
+			continue;
+		}
+
+		for (ENUM_INIT(e, iS); ENUM_COND(e, iS); ENUM_ITER(e, iS)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = H,
+				.M = M,
+				.S = e.S[iS],
+			};
+
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+				goto fin;
+			}
+			tgt[res++] = x;
+		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t proto = *tgt;
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	unsigned int d = proto.d;
+	unsigned int H = proto.H;
+	unsigned int M = proto.M;
+	unsigned int S = proto.S;
+	size_t res = 0UL;
+	uint8_t wd_mask = 0U;
+	unsigned int m_mask = 0U;
+	uint_fast32_t posd_mask = 0U;
+	uint_fast32_t negd_mask = 0U;
+	uint_fast32_t H_mask = 0U;
+	uint_fast64_t M_mask = 0U;
+	uint_fast64_t S_mask = 0U;
+
+	if (UNLIKELY(rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* check if we're ECHS_ALL_DAY */
+	if (UNLIKELY(H == ECHS_ALL_DAY)) {
+		H = 0U;
+		M = 0U;
+		S = 0U;
+	}
+
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* non-0 wday counts, as in nMO,nTU, etc.
+				 * are illegal in the DAILY frequency */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+	if (!(wd_mask >> 1U)) {
+		/* because we're subtractive, allow all days in the wd_mask if
+		 * all of the actual mask days are 0 */
+		wd_mask |= 0b11111110U;
+	}
+
+	/* set up the month mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t moni = 0UL;
+		     (tmp = bui31_next(&moni, rr->mon), moni);) {
+			m_mask |= 1U << tmp;
+		}
+	}
+	if (!m_mask) {
+		/* because we're subtractive, allow all months in the m_mask if
+		 * all of the actual mask months are 0 */
+		m_mask = 0b1111111111110U;
+	}
+
+	/* set up the days masks */
+	with (int tmp) {
+		for (bitint_iter_t domi = 0UL;
+		     (tmp = bi31_next(&domi, rr->dom), domi);) {
+			if (tmp > 0) {
+				posd_mask |= 1U << tmp;
+			} else {
+				negd_mask |= 1U << (unsigned int)(-++tmp);
+			}
+		}
+	}
+	if (!posd_mask && !negd_mask) {
+		/* because we're subtractive, allow all doms in the d_masks if
+		 * all of the actual day-of-months are 0 */
+		posd_mask = 0b11111111111111111111111111111111U;
+		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* set up the hour mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Hi = 0UL;
+		     (tmp = bui31_next(&Hi, rr->H), Hi);) {
+			H_mask |= 1U << tmp;
+		}
+	}
+	if (!H_mask) {
+		/* because we're limiting results, allow all hours when
+		 * the H bitsets isn't set */
+		H_mask = ~H_mask;
+	}
+
+	/* set up the minute mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Mi = 0UL;
+		     (tmp = bui63_next(&Mi, rr->M), Mi);) {
+			M_mask |= 1ULL << tmp;
+		}
+	}
+	if (!M_mask) {
+		/* because we're limiting results, allow all minutes when
+		 * the M bits aren't set */
+		M_mask = ~M_mask;
+	}
+
+	/* set up the second mask */
+	with (unsigned int tmp) {
+		for (bitint_iter_t Si = 0UL;
+		     (tmp = bui63_next(&Si, rr->S), Si);) {
+			S_mask |= 1ULL << tmp;
+		}
+	}
+	if (!S_mask) {
+		/* because we're limiting results, allow all seconds when
+		 * the S bits aren't set */
+		S_mask = ~S_mask;
+	}
+
+
+	/* fill up the array the naive way */
+	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);
+	     res < nti;
+	     ({
+		     if ((S += rr->inter) >= 60U) {
+			     M += S / 60U, S %= 60U;
+			     if (M >= 60U) {
+				     H += M / 60U, M %= 60U;
+				     if (H >= 24U) {
+					     d += H / 24U, w += H / 24U;
+					     H %= 24U;
+					     if (w > SUN) {
+						     w = w % 7U ?: SUN;
+					     }
+					     while (d > maxd) {
+						     d--, d %= maxd, d++;
+						     if (++m > 12U) {
+							     y++;
+							     m = 1U;
+						     }
+						     maxd = __get_ndom(y, m);
+					     }
+				     }
+			     }
+		     }
+	     })) {
+		/* we're subtractive, so check if the current ymd matches
+		 * if not, just continue and check the next candidate */
+		if (!(wd_mask & (1U << w))) {
+			/* huh? */
+			continue;
+		} else if (!(m_mask & (1U << m))) {
+			/* skip the whole month */
+			continue;
+		} else if (!(posd_mask & (1U << d)) &&
+			   !(negd_mask & (1U << (maxd - d)))) {
+			/* day is filtered */
+			continue;
+		} else if (!(H_mask & (1U << H))) {
+			/* hour is filtered */
+			continue;
+		} else if (!(M_mask & (1ULL << M))) {
+			/* minute is filtered */
+			continue;
+		} else if (!(S_mask & (1ULL << S))) {
+			/* second is filtered */
+			continue;
+		}
+
+		tgt[res].y = y;
+		tgt[res].m = m;
+		tgt[res].d = d;
+		tgt[res].H = H;
+		tgt[res].M = M;
+		tgt[res].S = S;
+		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
+			goto fin;
+		}
+		res++;
 	}
 fin:
 	return res;

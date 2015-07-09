@@ -580,7 +580,7 @@ snarf_rrule(const char *s, size_t z)
 				tmp = strtol(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MDAY:
-					rr.dom = ass_bi31(rr.dom, tmp - 1);
+					rr.dom = ass_bi31(rr.dom, tmp);
 					break;
 				case BY_WEEK:
 					rr.wk = ass_bi63(rr.wk, tmp);
@@ -1108,16 +1108,19 @@ prnt_cd(struct cd_s cd)
 static void
 prnt_rrul(rrulsp_t rr)
 {
-	switch (rr->freq) {
-	case FREQ_YEARLY:
-		fputs("FREQ=YEARLY", stdout);
-		break;
-	case FREQ_MONTHLY:
-		fputs("FREQ=MONTHLY", stdout);
-		break;
-	default:
-		break;
-	}
+	static const char *const f[] = {
+		[FREQ_NONE] = "FREQ=NONE",
+		[FREQ_YEARLY] = "FREQ=YEARLY",
+		[FREQ_MONTHLY] = "FREQ=MONTHLY",
+		[FREQ_WEEKLY] = "FREQ=WEEKLY",
+		[FREQ_DAILY] = "FREQ=DAILY",
+		[FREQ_HOURLY] = "FREQ=HOURLY",
+		[FREQ_MINUTELY] = "FREQ=MINUTELY",
+		[FREQ_SECONDLY] = "FREQ=SECONDLY",
+	};
+
+	fputs(f[rr->freq], stdout);
+
 	if (rr->inter > 1U) {
 		fprintf(stdout, ";INTERVAL=%u", rr->inter);
 	}
@@ -1167,9 +1170,9 @@ prnt_rrul(rrulsp_t rr)
 			break;
 		}
 		d = bi31_next(&i, rr->dom);
-		fprintf(stdout, ";BYMONTHDAY=%d", d + 1);
+		fprintf(stdout, ";BYMONTHDAY=%d", d);
 		while (d = bi31_next(&i, rr->dom), i) {
-			fprintf(stdout, ",%d", d + 1);
+			fprintf(stdout, ",%d", d);
 		}
 	}
 
@@ -1548,6 +1551,21 @@ refill(struct evrrul_s *restrict strm)
 	case FREQ_MONTHLY:
 		/* second easiest */
 		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_WEEKLY:
+		strm->ncch = rrul_fill_wly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_DAILY:
+		strm->ncch = rrul_fill_dly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_HOURLY:
+		strm->ncch = rrul_fill_Hly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_MINUTELY:
+		strm->ncch = rrul_fill_Mly(strm->cch, countof(strm->cch), rr);
+		break;
+	case FREQ_SECONDLY:
+		strm->ncch = rrul_fill_Sly(strm->cch, countof(strm->cch), rr);
 		break;
 	}
 
