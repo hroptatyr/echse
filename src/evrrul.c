@@ -100,6 +100,20 @@ yd_get_wday(unsigned int y, unsigned int yd)
 	return (echs_wday_t)(((j01 + --yd) % 7U) ?: SUN);
 }
 
+static __attribute__((const, pure)) unsigned int
+ymd_get_yd(unsigned int y, unsigned int m, unsigned int d)
+{
+/* stolen from dateutils (__md_get_yday()) */
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml,
+		 * first element is a bit set of leap days to add */
+		0xfff8, 0,
+		31, 59, 90, 120, 151, 181,
+		212, 243, 273, 304, 334, 365
+	};
+	return __mon_yday[m] + d + UNLIKELY(!(y % 4U)/*leapp(year)*/ && m >= 3);
+}
+
 static __attribute__((const, pure)) inline unsigned int
 __get_ndom(unsigned int y, unsigned int m)
 {
@@ -1266,9 +1280,6 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t posd_mask = 0U;
 	uint_fast32_t negd_mask = 0U;
 	uint_fast32_t H_mask = 0U;
-	unsigned int w;
-	/* number of days in the current month */
-	unsigned int maxd;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1349,12 +1360,13 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* fill up the array the naive way */
-	for (res = 0UL, w = ymd_get_wday(y, m, d),
-		     maxd = __get_ndom(y, m);
+	for (unsigned int w = ymd_get_wday(y, m, d), yd = ymd_get_yd(y, m, d),
+		     maxd = __get_ndom(y, m), maxy = (y % 4U) ? 365 : 366;
 	     res < nti;
 	     ({
 		     if ((H += rr->inter) >= 24U) {
-			     d += H / 24U, w += H / 24U, H %= 24U;
+			     d += H / 24U, w += H / 24U, yd += H / 24U;
+			     H %= 24U;
 			     if (w > SUN) {
 				     w = w % 7U ?: SUN;
 			     }
@@ -1363,6 +1375,8 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				     if (++m > 12U) {
 					     y++;
 					     m = 1U;
+					     yd -= maxy - 1;
+					     maxy = (y % 4U) ? 365 : 366;
 				     }
 				     maxd = __get_ndom(y, m);
 			     }
@@ -1383,8 +1397,20 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		} else if (!(H_mask & (1U << H))) {
 			/* hour is filtered */
 			continue;
+		} else if (bi383_has_bits_p(&rr->doy)) {
+			/* iterate manually */
+			int tmp;
+			for (bitint_iter_t doyi = 0UL;
+			     (tmp = bi383_next(&doyi, &rr->doy), doyi);) {
+				if (tmp > 0 && tmp == yd ||
+				    tmp < 0 && maxy - ++tmp == yd) {
+					/* that's clearly a match */
+					goto bang;
+				}
+			}
+			continue;
 		}
-
+	bang:
 		tgt[res].y = y;
 		tgt[res].m = m;
 		tgt[res].d = d;
