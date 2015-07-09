@@ -1309,10 +1309,6 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're subtractive, allow all days in the wd_mask if
 		 * all of the actual mask days are 0 */
 		wd_mask |= 0b11111110U;
-	} else if (rr->inter == 1U) {
-		/* aaaah, what they want in fact is a weekly schedule
-		 * with the days in wd_mask */
-		return rrul_fill_wly(tgt, nti, rr);
 	}
 
 	/* set up the month mask */
@@ -1473,10 +1469,6 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're subtractive, allow all days in the wd_mask if
 		 * all of the actual mask days are 0 */
 		wd_mask |= 0b11111110U;
-	} else if (rr->inter == 1U) {
-		/* aaaah, what they want in fact is a weekly schedule
-		 * with the days in wd_mask */
-		return rrul_fill_wly(tgt, nti, rr);
 	}
 
 	/* set up the month mask */
@@ -1645,10 +1637,6 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're subtractive, allow all days in the wd_mask if
 		 * all of the actual mask days are 0 */
 		wd_mask |= 0b11111110U;
-	} else if (rr->inter == 1U) {
-		/* aaaah, what they want in fact is a weekly schedule
-		 * with the days in wd_mask */
-		return rrul_fill_wly(tgt, nti, rr);
 	}
 
 	/* set up the month mask */
