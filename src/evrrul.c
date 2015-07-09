@@ -1507,9 +1507,6 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t negd_mask = 0U;
 	uint_fast32_t H_mask = 0U;
 	uint_fast64_t M_mask = 0U;
-	unsigned int w;
-	/* number of days in the current month */
-	unsigned int maxd;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1600,8 +1597,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* fill up the array the naive way */
-	for (res = 0UL, w = ymd_get_wday(y, m, d),
-		     maxd = __get_ndom(y, m);
+	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);
 	     res < nti;
 	     ({
 		     if ((M += rr->inter) >= 60U) {
@@ -1674,9 +1670,6 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t H_mask = 0U;
 	uint_fast64_t M_mask = 0U;
 	uint_fast64_t S_mask = 0U;
-	unsigned int w;
-	/* number of days in the current month */
-	unsigned int maxd;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1780,9 +1773,9 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		S_mask = ~S_mask;
 	}
 
+
 	/* fill up the array the naive way */
-	for (res = 0UL, w = ymd_get_wday(y, m, d),
-		     maxd = __get_ndom(y, m);
+	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);
 	     res < nti;
 	     ({
 		     if ((S += rr->inter) >= 60U) {
