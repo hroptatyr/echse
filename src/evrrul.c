@@ -850,6 +850,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t tries;
 	uint8_t wd_mask = 0U;
 	bool ymdp;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -863,6 +864,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		!bi383_has_bits_p(&rr->doy) &&
 		!bi383_has_bits_p(&rr->easter) &&
 		!bi31_has_bits_p(rr->dom);
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	with (unsigned int tmpm) {
 		nm = 0UL;
@@ -956,18 +960,27 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
 		     res < nti && (yd = bi383_next(&all, &cand), all);) {
-			tgt[res].y = y;
-			tgt[res].m = yd / 32U + 1U;
-			tgt[res].d = yd % 32U;
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
 
-			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-				goto fin;
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				tries = 64U;
+				tgt[res++] = x;
 			}
-			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
-				continue;
-			}
-			tries = 64U;
-			res++;
 		}
 	}
 fin:
@@ -986,6 +999,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	size_t tries;
 	uint8_t wd_mask = 0U;
 	bool ymdp;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -999,6 +1013,9 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* check if we're ymd only */
 	ymdp = !bi447_has_bits_p(&rr->dow) &&
 		!bi31_has_bits_p(rr->dom);
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	with (int tmpd) {
 		nd = 0UL;
@@ -1065,18 +1082,27 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* now check the bitset */
 		for (bitint_iter_t all = 0UL;
 		     res < nti && (yd = bi383_next(&all, &cand), all);) {
-			tgt[res].y = y;
-			tgt[res].m = yd / 32U + 1U;
-			tgt[res].d = yd % 32U;
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
 
-			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-				goto fin;
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				tries = 64U;
+				tgt[res++] = x;
 			}
-			if (UNLIKELY(echs_instant_lt_p(tgt[res], proto))) {
-				continue;
-			}
-			tries = 64U;
-			res++;
 		}
 	}
 fin:
@@ -1097,12 +1123,16 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int maxd;
 	/* increments induced by wd_mask */
 	uint_fast32_t wd_incs = 0UL;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
 	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	/* set up the wday mask */
 	with (unsigned int tmp) {
@@ -1184,18 +1214,32 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				this_maxd = __get_ndom(this_y, this_m);
 			}
 
-			tgt[res].y = this_y;
-			tgt[res].m = this_m;
-			tgt[res].d = this_d;
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = this_y,
+					.m = this_m,
+					.d = this_d,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+				};
 
-			if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-				goto fin;
-			} else if (!(m_mask & (1U << this_m))) {
-				/* skip the whole month */
-				break;
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				} else if (!(m_mask & (1U << this_m))) {
+					/* skip the whole month */
+					goto skip;
+				}
+				tgt[res++] = x;
 			}
-			res++;
 		} while ((incs >>= 4U) && res < nti);
+	skip:
+		;
 	}
 
 fin:
@@ -1217,6 +1261,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int w;
 	/* number of days in the current month */
 	unsigned int maxd;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1246,6 +1291,9 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		 * with the days in wd_mask */
 		return rrul_fill_wly(tgt, nti, rr);
 	}
+
+	/* generate a set of hours, minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	/* set up the month mask */
 	with (unsigned int tmp) {
@@ -1311,13 +1359,23 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			continue;
 		}
 
-		tgt[res].y = y;
-		tgt[res].m = m;
-		tgt[res].d = d;
-		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-			goto fin;
+		for (ENUM_INIT(e, iS, iM, iH);
+		     ENUM_COND(e, iS, iM, iH); ENUM_ITER(e, iS, iM, iH)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = e.H[iH],
+				.M = e.M[iM],
+				.S = e.S[iS],
+			};
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+				goto fin;
+			}
+			tgt[res++] = x;
 		}
-		res++;
 	}
 fin:
 	return res;
@@ -1479,6 +1537,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.M = e.M[iM],
 				.S = e.S[iS],
 			};
+
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
 			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1507,6 +1566,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t negd_mask = 0U;
 	uint_fast32_t H_mask = 0U;
 	uint_fast64_t M_mask = 0U;
+	struct enum_s e;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1519,6 +1579,9 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		H = 0U;
 		M = 0U;
 	}
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
 
 	/* set up the wday mask */
 	with (int tmp) {
@@ -1638,15 +1701,23 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			continue;
 		}
 
-		tgt[res].y = y;
-		tgt[res].m = m;
-		tgt[res].d = d;
-		tgt[res].H = H;
-		tgt[res].M = M;
-		if (UNLIKELY(echs_instant_lt_p(rr->until, tgt[res]))) {
-			goto fin;
+		for (ENUM_INIT(e, iS); ENUM_COND(e, iS); ENUM_ITER(e, iS)) {
+			echs_instant_t x = {
+				.y = y,
+				.m = m,
+				.d = d,
+				.H = H,
+				.M = M,
+				.S = e.S[iS],
+			};
+
+			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+				continue;
+			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+				goto fin;
+			}
+			tgt[res++] = x;
 		}
-		res++;
 	}
 fin:
 	return res;
