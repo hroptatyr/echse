@@ -388,6 +388,7 @@ mail_hdrs(int tgtfd, echs_task_t t)
 		fdprintf("Content-Type: text/plain\n");
 		fdprintf("User-Agent: " USER_AGENT "\n");
 	}
+	fdprintf("Subject: %s\n", t->cmd);
 
 	if (WIFEXITED(t->xc)) {
 		fdprintf("\
