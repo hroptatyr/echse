@@ -104,50 +104,71 @@ static char *const _mcmd[] = {
 };
 
 
-static __attribute__((format(printf, 2, 3))) int
-fdprintf(int fd, const char *fmt, ...)
+static struct {
+	char buf[4096U];
+	size_t bi;
+	int fd;
+} fd_aux;
+
+static int
+fdbang(int fd)
+{
+	fd_aux.fd = fd;
+	return 0;
+}
+
+static ssize_t
+fdflush(void)
+{
+	ssize_t twr = 0;
+
+	for (ssize_t nwr, tot = fd_aux.bi;
+	     twr < tot &&
+		     (nwr = write(fd_aux.fd, fd_aux.buf + twr, tot - twr)) > 0;
+	     twr += nwr);
+	fd_aux.bi = 0U;
+	return twr;
+}
+
+static int
+fdputc(int c)
+{
+	if (UNLIKELY(fd_aux.bi >= sizeof(fd_aux.buf))) {
+		fdflush();
+	}
+	fd_aux.buf[fd_aux.bi++] = (char)c;
+	return 0;
+}
+
+static __attribute__((format(printf, 1, 2))) int
+fdprintf(const char *fmt, ...)
 {
 /* like fprintf() (i.e. buffering) but write to FD. */
-#define fdputc(fd, c)	fdprintf(fd, "%c", c)
-#define fdflush(fd)	fdprintf(fd, NULL)
-	static char buf[4096U];
-	static char *bp = buf;
-	static const char *const ep = buf + sizeof(buf);
-	char *tp = bp;
+	int tp;
 
 	va_list vap;
 	va_start(vap, fmt);
 
 	/* try and write */
-	if (UNLIKELY(fmt == NULL)) {
-		/* flush */
-		goto flush;
-	} else if (UNLIKELY((tp += vsnprintf(bp, ep - bp, fmt, vap)) >= ep)) {
-	flush:
+	tp = vsnprintf(
+		fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
+		fmt, vap);
+	if (UNLIKELY((size_t)tp >= sizeof(fd_aux.buf) - fd_aux.bi)) {
 		/* yay, finally some write()ing */
-		for (ssize_t nwr, tot = bp - buf;
-		     tot > 0 &&
-			     (nwr = write(fd, bp - tot, tot)) > 0; tot -= nwr);
-		/* reset the whole shebang ... */
-		tp = bp = buf;
-
-		if (UNLIKELY(fmt == NULL)) {
-			/* we have been a flush then? */
-			;
-		} else {
-			/* ... try the formatting again */
-			tp += vsnprintf(bp, ep - bp, fmt, vap);
-		}
-
+		fdflush();
+		/* ... try the formatting again */
+		tp = vsnprintf(
+			fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
+			fmt, vap);
 	}
 	va_end(vap);
 
 	/* reassign and out */
-	if (UNLIKELY(tp < bp || tp >= ep)) {
+	if (UNLIKELY(tp < 0 || sizeof(fd_aux.buf) - tp < fd_aux.bi)) {
 		/* we're fucked */
 		return -1;
 	}
-	bp = tp;
+	fd_aux.bi += tp;
 	return 0;
 }
 
@@ -356,38 +377,37 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	cpu = ((double)(user.s + sys.s) + (double)(user.u + sys.u) * 1.e-6) /
 		((double)real.s + (double)real.n * 1.e-9) * 100.;
 
+	fdbang(tgtfd);
 	if (argi->mailfrom_arg) {
-		fdprintf(tgtfd, "From: %s\n", argi->mailfrom_arg);
+		fdprintf("From: %s\n", argi->mailfrom_arg);
 	}
 	for (size_t i = 0U; i < argi->mailto_nargs; i++) {
-		fdprintf(tgtfd, "To: %s\n", argi->mailto_args[i]);
+		fdprintf("To: %s\n", argi->mailto_args[i]);
 	}
 	if (argi->mailfrom_arg) {
-		fdprintf(tgtfd, "Content-Type: text/plain\n");
-		fdprintf(tgtfd, "User-Agent: " USER_AGENT "\n");
+		fdprintf("Content-Type: text/plain\n");
+		fdprintf("User-Agent: " USER_AGENT "\n");
 	}
 
 	if (WIFEXITED(t->xc)) {
-		fdprintf(tgtfd, "\
+		fdprintf("\
 X-Exit-Status: %d\n", WEXITSTATUS(t->xc));
 	} else if (WIFSIGNALED(t->xc)) {
 		int sig = WTERMSIG(t->xc);
-		fdprintf(tgtfd, "\
+		fdprintf("\
 X-Exit-Status: %s (signal %d)\n", strsignal(sig), sig);
 	}
 
-	fdprintf(tgtfd, "\
+	fdprintf("\
 X-Job-Start: %s\n\
 X-Job-End: %s\n",
 		       tstmp1, tstmp2);
-	fdprintf(tgtfd, "\
+	fdprintf("\
 X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 		       user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
-	fdprintf(tgtfd, "\
-X-Job-Memory: %ldkB\n",
-		       t->rus.ru_maxrss);
-	fdputc(tgtfd, '\n');
-	fdflush(tgtfd);
+	fdprintf("X-Job-Memory: %ldkB\n", t->rus.ru_maxrss);
+	fdputc('\n');
+	fdflush();
 	return 0;
 }
 
