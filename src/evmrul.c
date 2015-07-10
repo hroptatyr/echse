@@ -111,8 +111,8 @@ push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
 static echs_event_t next_evmrul_past(echs_evstrm_t);
 static echs_event_t next_evmrul_futu(echs_evstrm_t);
 static void free_evmrul(echs_evstrm_t);
-static echs_evstrm_t clone_evmrul(echs_evstrm_t);
-static void prnt_evmrul1(echs_evstrm_t);
+static echs_evstrm_t clone_evmrul(echs_const_evstrm_t);
+static void prnt_evmrul1(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmrul_past_cls = {
 	.next = next_evmrul_past,
@@ -282,7 +282,7 @@ free_evmrul(echs_evstrm_t s)
 }
 
 static echs_evstrm_t
-clone_evmrul(echs_evstrm_t s)
+clone_evmrul(echs_const_evstrm_t s)
 {
 	const struct evmrul_s *this = (const struct evmrul_s*)s;
 	struct evmrul_s *clon = malloc(sizeof(*this));
@@ -296,7 +296,7 @@ clone_evmrul(echs_evstrm_t s)
 }
 
 static void
-prnt_evmrul1(echs_evstrm_t s)
+prnt_evmrul1(echs_const_evstrm_t s)
 {
 	const struct evmrul_s *this = (const struct evmrul_s*)s;
 
