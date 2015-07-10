@@ -289,6 +289,10 @@ make_task(void)
 	if (UNLIKELY(!nfree_pers)) {
 		/* put some more task objects in the task pool */
 		free_pers = make_task_pool(nfree_pers = zfree_pers ?: 256U);
+		if (UNLIKELY(free_pers == NULL)) {
+			/* grrrr */
+			return NULL;
+		}
 		if (UNLIKELY(!(zfree_pers *= 2U))) {
 			zfree_pers = 256U;
 		}
