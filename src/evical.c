@@ -1349,8 +1349,8 @@ struct evical_s {
 
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
-static echs_evstrm_t clone_evical_vevent(echs_evstrm_t);
-static void prnt_evical_vevent(echs_evstrm_t);
+static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
+static void prnt_evical_vevent(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
@@ -1384,9 +1384,9 @@ free_evical_vevent(echs_evstrm_t s)
 }
 
 static echs_evstrm_t
-clone_evical_vevent(echs_evstrm_t s)
+clone_evical_vevent(echs_const_evstrm_t s)
 {
-	struct evical_s *this = (struct evical_s*)s;
+	const struct evical_s *this = (const struct evical_s*)s;
 
 	return make_evical_vevent(this->ev + this->i, this->nev - this->i);
 }
@@ -1403,9 +1403,9 @@ next_evical_vevent(echs_evstrm_t s)
 }
 
 static void
-prnt_evical_vevent(echs_evstrm_t s)
+prnt_evical_vevent(echs_const_evstrm_t s)
 {
-	const struct evical_s *this = (struct evical_s*)s;
+	const struct evical_s *this = (const struct evical_s*)s;
 
 	for (size_t i = 0UL; i < this->nev; i++) {
 		prnt_ical_hdr();
@@ -1431,9 +1431,9 @@ struct evrrul_s {
 
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
-static echs_evstrm_t clone_evrrul(echs_evstrm_t);
-static void prnt_evrrul1(echs_evstrm_t);
-static void prnt_evrrulm(const echs_evstrm_t s[], size_t n);
+static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
+static void prnt_evrrul1(echs_const_evstrm_t);
+static void prnt_evrrulm(const echs_const_evstrm_t s[], size_t n);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
@@ -1501,9 +1501,9 @@ free_evrrul(echs_evstrm_t s)
 }
 
 static echs_evstrm_t
-clone_evrrul(echs_evstrm_t s)
+clone_evrrul(echs_const_evstrm_t s)
 {
-	struct evrrul_s *this = (struct evrrul_s*)s;
+	const struct evrrul_s *this = (const struct evrrul_s*)s;
 	struct evrrul_s *clon = malloc(sizeof(*this));
 
 	*clon = *this;
@@ -1637,9 +1637,9 @@ nul:
 }
 
 static void
-prnt_evrrul1(echs_evstrm_t s)
+prnt_evrrul1(echs_const_evstrm_t s)
 {
-	const struct evrrul_s *this = (struct evrrul_s*)s;
+	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
 	prnt_ical_hdr();
 	prnt_ev(this->ve.ev);
@@ -1661,7 +1661,7 @@ prnt_evrrul1(echs_evstrm_t s)
 }
 
 static void
-prnt_evrrulm(const echs_evstrm_t s[], size_t n)
+prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
 {
 /* we know that they all come from one ical_event_s originally,
  * just merge them temporarily in a evrrul_s object and use prnt1() */
@@ -1672,7 +1672,7 @@ prnt_evrrulm(const echs_evstrm_t s[], size_t n)
 		/* proto-duration */
 		echs_idiff_t dur;
 	};
-	struct evrrul_tmp_s this = *(struct evrrul_tmp_s*)*s;
+	struct evrrul_tmp_s this = *(const struct evrrul_tmp_s*)*s;
 
 	/* make sure we talk about a split up VEVENT with multiple rules */
 	for (size_t i = 1U; i < n; i++) {
