@@ -78,6 +78,15 @@ extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
  * Muxer, same as `echs_evstrm_vmux()' but don't clone the event streams. */
 extern echs_evstrm_t make_echs_evmux(echs_evstrm_t s[], size_t n);
 
+/**
+ * Demuxer, put S's streams into TGT (of size TSZ) and return
+ * the number of streams put.
+ * Use OFFSET to skip the first OFFSET streams.
+ * This will not clone the streams in quesion. */
+extern size_t
+echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
+		  const struct echs_evstrm_s *s, size_t offset);
+
 
 static inline echs_event_t
 echs_evstrm_next(echs_evstrm_t s)

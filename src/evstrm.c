@@ -320,6 +320,24 @@ make_echs_evmux(echs_evstrm_t s[], size_t n)
 	return make_evmux(strm, nstrm);
 }
 
+size_t
+echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
+		  const struct echs_evstrm_s *s, size_t offset)
+{
+	const struct evmux_s *this;
+	size_t res = 0U;
+
+	if (UNLIKELY(!(s->class == &evmuxm_cls || s->class == &evmux_cls))) {
+		/* not our can of beer */
+		return 0UL;
+	}
+	this = (const struct evmux_s*)s;
+	for (size_t i = offset; i < this->ns && res < tsz; i++, res++) {
+		tgt[res] = this->s[i];
+	}
+	return res;
+}
+
 
 /* file prober and ctor */
 #include "evical.h"
