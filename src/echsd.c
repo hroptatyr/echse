@@ -300,6 +300,7 @@ make_task(void)
 	/* pop off the free list */
 	res = free_pers;
 	free_pers = free_pers->next;
+	nfree_pers--;
 	return res;
 }
 
