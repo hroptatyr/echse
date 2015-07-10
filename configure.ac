@@ -66,6 +66,18 @@ SXE_CHECK_LIBLTDL
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 
+AC_CHECK_FUNCS([clock_gettime])
+if test "${ac_cv_func_clock_gettime}" != "yes"; then
+	AC_CHECK_LIB([rt], [clock_gettime])
+	if test "${ac_cv_lib_rt_clock_gettime}" != "yes"; then
+		AC_MSG_ERROR([dnl
+clock_gettime() is essential.
+])
+	fi
+	rt_LIBS="-lrt"
+	AC_SUBST([rt_LIBS])
+fi
+
 SXE_CHECK_LIBEV
 AM_CONDITIONAL([HAVE_LIBEV], [test "${have_libev}" = "yes"])
 

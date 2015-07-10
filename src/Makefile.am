@@ -85,6 +85,8 @@ bin_PROGRAMS += echsx
 echsx_SOURCES = echsx.c echsx.yuck
 echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
+echsx_LDFLAGS = $(AM_LDFLAGS)
+echsx_LDFLAGS += $(rt_LIBS)
 BUILT_SOURCES += echsx.yucc
 
 if HAVE_LIBEV
