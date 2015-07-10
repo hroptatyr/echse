@@ -96,6 +96,7 @@ echsd_CPPFLAGS = $(AM_CPPFLAGS)
 echsd_LDFLAGS = $(AM_LDFLAGS)
 echsd_CPPFLAGS += $(ev_CFLAGS)
 echsd_LDFLAGS += $(ev_LIBS)
+echsd_LDADD = libechse.la
 BUILT_SOURCES += echsd.yucc
 endif  HAVE_LIBEV
 

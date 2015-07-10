@@ -54,6 +54,7 @@
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
 #include <ev.h>
+#include "echse.h"
 #include "logger.h"
 #include "nifty.h"
 
@@ -73,7 +74,7 @@ struct echs_task_s {
 	echs_task_t next;
 
 	/* beef data for the task in question */
-	char *cmd;
+	const char *cmd;
 	char **env;
 };
 
@@ -315,12 +316,10 @@ free_task(echs_task_t t)
 }
 
 static pid_t
-run_task(const struct _echsd_s *ctx, echs_task_t t, bool dtchp)
+run_task(echs_task_t t, bool dtchp)
 {
+/* assumes ev_loop_fork() has been called */
 	pid_t r;
-
-	/* indicate that we might want to reuse the loop */
-	ev_loop_fork(ctx->loop);
 
 	switch ((r = vfork())) {
 		int rc;
@@ -347,7 +346,7 @@ run_task(const struct _echsd_s *ctx, echs_task_t t, bool dtchp)
 			"-n",
 			NULL
 		};
-		args[2U] = t->cmd;
+		args[2U] = deconst(t->cmd);
 		if (dtchp) {
 			args[7U] = NULL;
 		}
@@ -361,6 +360,46 @@ run_task(const struct _echsd_s *ctx, echs_task_t t, bool dtchp)
 		break;
 	}
 	return r;
+}
+
+static __attribute__((pure, const)) ev_tstamp
+instant_to_tstamp(echs_instant_t i)
+{
+/* this way around it's easier, date range supported is 2001 to 2099
+ * (i.e. with no bullshit leap years) */
+	static uint16_t __mon_yday[] = {
+		/* this is \sum ml,
+		 * first element is a bit set of leap days to add */
+		0xfff8, 0,
+		31, 59, 90, 120, 151, 181,
+		212, 243, 273, 304, 334, 365
+	};
+	unsigned int nd = 0U;
+	time_t t;
+
+	/* days from 2001-01-01 till day 0 of current year,
+	 * i.e. i.y-01-00 */
+	nd += 365U * (i.y - 2001U) + (i.y - 2001U) / 4U;
+	/* day-of-year */
+	nd += __mon_yday[i.m] + i.d + UNLIKELY(!(i.y % 4U) && i.m >= 3);
+
+	if (LIKELY(!echs_instant_all_day_p(i))) {
+		t = (((time_t)nd * 24U + i.H) * 60U + i.M) * 60U + i.S;
+	} else {
+		t = (time_t)nd * 86400UL;
+	}
+	/* calc number of seconds since unix epoch */
+	t += 11323/*days from unix epoch to our epoch*/ * 86400UL;
+	return (double)t;
+}
+
+static echs_event_t
+unwind_till(echs_evstrm_t x, ev_tstamp t)
+{
+	echs_event_t e;
+	while (!echs_event_0_p(e = echs_evstrm_next(x)) &&
+	       instant_to_tstamp(e.from) < t);
+	return e;
 }
 
 
@@ -388,15 +427,16 @@ sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 }
 
 static void
-tick_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
 	echs_task_t t = (void*)w;
 
-	ECHS_NOTI_LOG("starting job");
+	/* indicate that we might want to reuse the loop */
+	ev_loop_fork(EV_A);
 
 	/* this one's fire and forget
 	 * there's not much we can do anyway at this point, inside a callback */
-	(void)run_task(w->data, t, false);
+	(void)run_task(t, false);
 
 	if (w->reschedule_cb) {
 		/* ah, we're going to be used again */
@@ -407,10 +447,26 @@ tick_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 }
 
 static ev_tstamp
-resched(ev_periodic *w, ev_tstamp now)
+reschedA(ev_periodic *w, ev_tstamp now)
 {
-	ECHS_NOTI_LOG("next run %f", now + 10.);
-	return now + 10.;
+/* the A queue doesn't wait for the jobs to finish, it is asynchronous
+ * however jobs will only be timed AFTER NOW. */
+	echs_task_t t = (void*)w;
+	echs_evstrm_t s = w->data;
+	echs_event_t e;
+	ev_tstamp soon;
+
+	if (UNLIKELY(echs_event_0_p(e = unwind_till(s, now)))) {
+		ECHS_NOTI_LOG("event in the past, will not schedule");
+		return 0.;
+	}
+
+	soon = instant_to_tstamp(e.from);
+	t->cmd = obint_name(e.sum);
+	t->env = NULL;
+
+	ECHS_NOTI_LOG("next run %f", soon);
+	return soon;
 }
 
 
@@ -457,12 +513,12 @@ echsd_run(const struct _echsd_s *ctx)
 static struct _echsd_s*
 make_echsd(void)
 {
-	struct ev_loop *loop = ev_default_loop(EVFLAG_AUTO);
 	struct _echsd_s *res = calloc(1, sizeof(*res));
+	EV_P = ev_default_loop(EVFLAG_AUTO);
 
 	if (res == NULL) {
 		return NULL;
-	} else if (loop == NULL) {
+	} else if (EV_A == NULL) {
 		goto foul;
 	}
 
@@ -476,15 +532,7 @@ make_echsd(void)
 	ev_signal_init(&res->sigpipe, sigpipe_cb, SIGPIPE);
 	ev_signal_start(EV_A_ &res->sigpipe);
 
-	if_with (echs_task_t t = make_task(), t != NULL) {
-		ev_periodic_init(&t->w, tick_cb, ev_now(EV_A), 0., NULL);
-		ev_periodic_start(EV_A_ &t->w);
-		t->w.data = res;
-		t->cmd = "xz -vvk /tmp/shit";
-		t->env = NULL;
-	}
-
-	res->loop = loop;
+	res->loop = EV_A;
 	return res;
 
 foul:
@@ -507,6 +555,44 @@ free_echsd(struct _echsd_s *ctx)
 	return;
 }
 
+static void
+echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
+{
+	echs_evstrm_t strm[64U];
+	EV_P = ctx->loop;
+
+	auto inline void task_from_strm(echs_evstrm_t x)
+	{
+		echs_task_t t;
+
+		if (UNLIKELY((t = make_task()) == NULL)) {
+			ECHS_ERR_LOG("cannot submit new task");
+			return;
+		}
+
+		/* store the stream */
+		t->w.data = x;
+		ev_periodic_init(&t->w, taskA_cb, 0./*ignored*/, 0., reschedA);
+		ev_periodic_start(EV_A_ &t->w);
+		return;
+	}
+
+	for (size_t tots = 0U, nstrm;
+	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
+		     tots == 0U; tots += nstrm) {
+		/* we've either got some streams or our stream S isn't muxed */
+		if (nstrm == 0) {
+			/* put original stream as task */
+			task_from_strm(s);
+			break;
+		}
+		for (size_t i = 0U; i < nstrm; i++) {
+			task_from_strm(strm[i]);
+		}
+	}
+	return;
+}
+
 
 #include "echsd.yucc"
 
@@ -515,6 +601,7 @@ main(int argc, char *argv[])
 {
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
+	echs_evstrm_t s;
 	int rc = 0;
 
 	/* best not to be signalled for a minute */
@@ -528,6 +615,14 @@ main(int argc, char *argv[])
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
 		perror("Error: cannot find execution helper `echsx'");
+		rc = 1;
+		goto out;
+	}
+
+	if (UNLIKELY((s = make_echs_evstrm_from_file("bla.echs")) == NULL)) {
+		perror("Error: cannot open job list file");
+		rc = 1;
+		goto out;
 	}
 
 	if (argi->foreground_flag) {
@@ -547,6 +642,9 @@ main(int argc, char *argv[])
 		goto clo;
 	}
 
+	/* inject our state */
+	echsd_inject_evstrm(ctx, s);
+
 	/* main loop */
 	{
 		/* set out sigs loose */
@@ -557,6 +655,8 @@ main(int argc, char *argv[])
 		block_sigs();
 	}
 
+
+	free_echs_evstrm(s);
 	free_echsd(ctx);
 
 clo:

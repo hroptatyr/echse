@@ -79,8 +79,8 @@ extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
 extern echs_evstrm_t make_echs_evmux(echs_evstrm_t s[], size_t n);
 
 /**
- * Demuxer, put S's streams into TGT (of size TSZ) and return
- * the number of streams put.
+ * Demuxer, put at most NTGT streams of S into TGT and return
+ * the number of streams actually put.
  * Use OFFSET to skip the first OFFSET streams.
  * This will not clone the streams in quesion. */
 extern size_t
