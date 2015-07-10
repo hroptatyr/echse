@@ -104,6 +104,74 @@ static char *const _mcmd[] = {
 };
 
 
+static struct {
+	char buf[4096U];
+	size_t bi;
+	int fd;
+} fd_aux;
+
+static int
+fdbang(int fd)
+{
+	fd_aux.fd = fd;
+	return 0;
+}
+
+static ssize_t
+fdflush(void)
+{
+	ssize_t twr = 0;
+
+	for (ssize_t nwr, tot = fd_aux.bi;
+	     twr < tot &&
+		     (nwr = write(fd_aux.fd, fd_aux.buf + twr, tot - twr)) > 0;
+	     twr += nwr);
+	fd_aux.bi = 0U;
+	return twr;
+}
+
+static int
+fdputc(int c)
+{
+	if (UNLIKELY(fd_aux.bi >= sizeof(fd_aux.buf))) {
+		fdflush();
+	}
+	fd_aux.buf[fd_aux.bi++] = (char)c;
+	return 0;
+}
+
+static __attribute__((format(printf, 1, 2))) int
+fdprintf(const char *fmt, ...)
+{
+/* like fprintf() (i.e. buffering) but write to FD. */
+	int tp;
+
+	va_list vap;
+	va_start(vap, fmt);
+
+	/* try and write */
+	tp = vsnprintf(
+		fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
+		fmt, vap);
+	if (UNLIKELY((size_t)tp >= sizeof(fd_aux.buf) - fd_aux.bi)) {
+		/* yay, finally some write()ing */
+		fdflush();
+		/* ... try the formatting again */
+		tp = vsnprintf(
+			fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
+			fmt, vap);
+	}
+	va_end(vap);
+
+	/* reassign and out */
+	if (UNLIKELY(tp < 0 || sizeof(fd_aux.buf) - tp < fd_aux.bi)) {
+		/* we're fucked */
+		return -1;
+	}
+	fd_aux.bi += tp;
+	return 0;
+}
+
 static void
 block_sigs(void)
 {
@@ -295,9 +363,6 @@ static struct tv_dur_s {
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
 {
-	char buf[4096U];
-	char *bp = buf;
-	const char *const ep = buf + sizeof(buf);
 	char tstmp1[32U], tstmp2[32U];
 	struct ts_dur_s real;
 	struct tv_dur_s user;
@@ -312,41 +377,38 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	cpu = ((double)(user.s + sys.s) + (double)(user.u + sys.u) * 1.e-6) /
 		((double)real.s + (double)real.n * 1.e-9) * 100.;
 
+	fdbang(tgtfd);
 	if (argi->mailfrom_arg) {
-		bp += snprintf(bp, ep - bp, "From: %s\n", argi->mailfrom_arg);
+		fdprintf("From: %s\n", argi->mailfrom_arg);
 	}
 	for (size_t i = 0U; i < argi->mailto_nargs; i++) {
-		bp += snprintf(bp, ep - bp, "To: %s\n", argi->mailto_args[i]);
+		fdprintf("To: %s\n", argi->mailto_args[i]);
 	}
 	if (argi->mailfrom_arg) {
-		bp += snprintf(bp, ep - bp, "Content-Type: text/plain\n");
-		bp += snprintf(bp, ep - bp, "User-Agent: " USER_AGENT "\n");
+		fdprintf("Content-Type: text/plain\n");
+		fdprintf("User-Agent: " USER_AGENT "\n");
 	}
+	fdprintf("Subject: %s\n", t->cmd);
 
 	if (WIFEXITED(t->xc)) {
-		bp += snprintf(bp, ep - bp, "\
+		fdprintf("\
 X-Exit-Status: %d\n", WEXITSTATUS(t->xc));
 	} else if (WIFSIGNALED(t->xc)) {
 		int sig = WTERMSIG(t->xc);
-		bp += snprintf(bp, ep - bp, "\
+		fdprintf("\
 X-Exit-Status: %s (signal %d)\n", strsignal(sig), sig);
 	}
 
-	bp += snprintf(bp, ep - bp, "\
+	fdprintf("\
 X-Job-Start: %s\n\
 X-Job-End: %s\n",
 		       tstmp1, tstmp2);
-	bp += snprintf(bp, ep - bp, "\
+	fdprintf("\
 X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 		       user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
-	bp += snprintf(bp, ep - bp, "\
-X-Job-Memory: %ldkB\n",
-		       t->rus.ru_maxrss);
-	*bp++ = '\n';
-
-	for (ssize_t nwr, tot = bp - buf;
-	     tot > 0 &&
-		     (nwr = write(tgtfd, bp - tot, tot)) > 0; tot -= nwr);
+	fdprintf("X-Job-Memory: %ldkB\n", t->rus.ru_maxrss);
+	fdputc('\n');
+	fdflush();
 	return 0;
 }
 
