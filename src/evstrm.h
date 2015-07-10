@@ -41,18 +41,19 @@
 #include "event.h"
 
 typedef struct echs_evstrm_s *echs_evstrm_t;
+typedef const struct echs_evstrm_s *echs_const_evstrm_t;
 typedef const struct echs_evstrm_class_s *echs_evstrm_class_t;
 
 struct echs_evstrm_class_s {
 	/** next method */
 	echs_event_t(*next)(echs_evstrm_t);
 	/** clone method */
-	echs_evstrm_t(*clone)(echs_evstrm_t);
+	echs_evstrm_t(*clone)(echs_const_evstrm_t);
 	/** dtor method */
 	void(*free)(echs_evstrm_t);
 	/** printer methods */
-	void(*prnt1)(echs_evstrm_t);
-	void(*prntm)(const echs_evstrm_t s[], size_t n);
+	void(*prnt1)(echs_const_evstrm_t);
+	void(*prntm)(const echs_const_evstrm_t s[], size_t n);
 };
 
 struct echs_evstrm_s {

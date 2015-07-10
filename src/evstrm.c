@@ -57,9 +57,9 @@ struct evmux_s {
 
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
-static echs_evstrm_t clone_evmux(echs_evstrm_t);
-static void prnt_evmux1(echs_evstrm_t);
-static void prnt_evmuxm(echs_evstrm_t);
+static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
+static void prnt_evmux1(echs_const_evstrm_t);
+static void prnt_evmuxm(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
@@ -142,9 +142,9 @@ next_evmux(echs_evstrm_t strm)
 }
 
 static void
-prnt_evmux1(echs_evstrm_t strm)
+prnt_evmux1(echs_const_evstrm_t strm)
 {
-	const struct evmux_s *this = (struct evmux_s*)strm;
+	const struct evmux_s *this = (const struct evmux_s*)strm;
 
 	for (size_t i = 0UL; i < this->ns; i++) {
 		echs_evstrm_prnt(this->s[i]);
@@ -153,9 +153,9 @@ prnt_evmux1(echs_evstrm_t strm)
 }
 
 static void
-prnt_evmuxm(echs_evstrm_t strm)
+prnt_evmuxm(echs_const_evstrm_t strm)
 {
-	const struct evmux_s *this = (struct evmux_s*)strm;
+	const struct evmux_s *this = (const struct evmux_s*)strm;
 
 	this->s[0]->class->prntm(this->s, this->ns);
 	return;
@@ -224,9 +224,9 @@ free_evmux(echs_evstrm_t s)
 }
 
 static echs_evstrm_t
-clone_evmux(echs_evstrm_t s)
+clone_evmux(echs_const_evstrm_t s)
 {
-	struct evmux_s *this = (struct evmux_s*)s;
+	const struct evmux_s *this = (const struct evmux_s*)s;
 	struct evmux_s *res;
 
 	if (UNLIKELY(this->s == NULL)) {
