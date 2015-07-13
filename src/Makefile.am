@@ -81,6 +81,7 @@ EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse.yucc
 
 
+if HAVE_RT_FUNS
 bin_PROGRAMS += echsx
 echsx_SOURCES = echsx.c echsx.yuck
 echsx_SOURCES += logger.c logger.h
@@ -88,6 +89,7 @@ echsx_SOURCES += nifty.h
 echsx_LDFLAGS = $(AM_LDFLAGS)
 echsx_LDFLAGS += $(rt_LIBS)
 BUILT_SOURCES += echsx.yucc
+endif  HAVE_RT_FUNS
 
 if HAVE_LIBEV
 sbin_PROGRAMS += echsd
