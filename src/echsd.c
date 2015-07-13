@@ -50,9 +50,11 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
+#include <pwd.h>
 #include <ev.h>
 #include "echse.h"
 #include "logger.h"
@@ -72,6 +74,10 @@ struct echs_task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	echs_task_t next;
+	ev_child c;
+
+	/* the stream where this task comes from */
+	echs_evstrm_t strm;
 
 	/* beef data for the task in question */
 	const char *cmd;
@@ -90,6 +96,18 @@ struct _echsd_s {
 static const char *echsx;
 
 
+static __attribute__((unused)) size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	size_t ssz = strlen(src);
+	if (ssz > dsz) {
+		ssz = dsz - 1U;
+	}
+	memcpy(dst, src, ssz);
+	dst[ssz] = '\0';
+	return ssz;
+}
+
 static void
 block_sigs(void)
 {
@@ -228,6 +246,56 @@ found:
 	return echsx_exe;
 }
 
+static const char*
+get_vardir(void)
+{
+	static const char ldir[] = ".echse";
+	static char vdir[PATH_MAX];
+	uid_t u;
+
+	switch ((u = geteuid())) {
+	case 0:
+		break;
+	default:
+		if_with (struct passwd *pw,
+			 (pw = getpwuid(u)) && pw->pw_dir &&
+			 /* make sure home directory is actually there */
+			 mkdir(pw->pw_dir, 0755) == -1 && errno == EEXIST) {
+			size_t vi = 0U;
+
+			vi += xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
+			vdir[vi++] = '/';
+			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
+			/* just mkdir the result and throw away errors */
+			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
+				/* we consider our job done */
+				return vdir;
+			}
+			/* otherwise it's just horseshit */
+		}
+		break;
+	}
+	/* we've run out of options */
+	return NULL;
+}
+
+static const char*
+pathcat(const char *dirnm, ...)
+{
+	static char res[PATH_MAX];
+	va_list ap;
+	size_t ri = 0U;
+
+	va_start(ap, dirnm);
+	ri += xstrlcpy(res + ri, dirnm, sizeof(res) - ri);
+	for (const char *fn; (fn = va_arg(ap, const char*));) {
+		res[ri++] = '/';
+		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
+	}
+	va_end(ap);
+	return res;
+}
+
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
@@ -356,7 +424,9 @@ run_task(echs_task_t t, bool dtchp)
 
 	default:
 		/* I am daddy */
-		while (waitpid(r, &rc, 0) != r);
+		if (dtchp) {
+			while (waitpid(r, &rc, 0) != r);
+		}
 		break;
 	}
 	return r;
@@ -427,16 +497,59 @@ sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 }
 
 static void
+chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
+{
+	ECHS_NOTI_LOG("chld %d coughed: %d", w->rpid, w->rstatus);
+	ev_child_stop(EV_A_ w);
+	w->rpid = w->pid = 0;
+	return;
+}
+
+static void
 taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
+/* A tasks always run asynchronously, echsx decouples itself from echsd
+ * and manages the job with no further interaction */
 	echs_task_t t = (void*)w;
 
 	/* indicate that we might want to reuse the loop */
 	ev_loop_fork(EV_A);
 
-	/* this one's fire and forget
-	 * there's not much we can do anyway at this point, inside a callback */
-	(void)run_task(t, false);
+	/* these are completely asynchronous with no further monitoring
+	 * so fire and forget */
+	(void)run_task(t, true);
+
+	if (w->reschedule_cb) {
+		/* ah, we're going to be used again */
+		return;
+	}
+	free_task(t);
+	return;
+}
+
+static void
+taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+{
+/* B tasks always run under supervision of our event loop, should the task
+ * be scheduled again while it's still running, cancel the execution and
+ * reschedule for the next time. */
+	echs_task_t t = (void*)w;
+
+	/* the global context holds the currently running child
+	 * if there is one running, defer the execution of this task */
+	if (!t->c.pid) {
+		/* indicate that we might want to reuse the loop */
+		ev_loop_fork(EV_A);
+
+		/* unlike A tasks these will run only once
+		 * keep track of the spawned child pid and register
+		 * a watcher for status changes */
+		with (pid_t p = run_task(t, false)) {
+			ECHS_NOTI_LOG("supervising pid %d", p);
+			ev_child_init(&t->c, chld_cb, p, false);
+			ev_child_start(EV_A_ &t->c);
+		}
+	}
 
 	if (w->reschedule_cb) {
 		/* ah, we're going to be used again */
@@ -447,12 +560,12 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 }
 
 static ev_tstamp
-reschedA(ev_periodic *w, ev_tstamp now)
+resched(ev_periodic *w, ev_tstamp now)
 {
 /* the A queue doesn't wait for the jobs to finish, it is asynchronous
  * however jobs will only be timed AFTER NOW. */
 	echs_task_t t = (void*)w;
-	echs_evstrm_t s = w->data;
+	echs_evstrm_t s = t->strm;
 	echs_event_t e;
 	ev_tstamp soon;
 
@@ -556,9 +669,10 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-echsd_inject_evstrm1(EV_P_ echs_evstrm_t s)
+echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
 	echs_task_t t;
+	EV_P = ctx->loop;
 
 	if (UNLIKELY((t = make_task()) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
@@ -566,17 +680,16 @@ echsd_inject_evstrm1(EV_P_ echs_evstrm_t s)
 	}
 
 	/* store the stream */
-	t->w.data = s;
-	ev_periodic_init(&t->w, taskA_cb, 0./*ignored*/, 0., reschedA);
+	t->strm = s;
+	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
+echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
-	EV_P = ctx->loop;
 
 	for (size_t tots = 0U, nstrm;
 	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
@@ -584,11 +697,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			echsd_inject_evstrm1(EV_A_ s);
+			echsd_inject_evstrm1(ctx, s, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			echsd_inject_evstrm1(EV_A_ strm[i]);
+			echsd_inject_evstrm1(ctx, strm[i], cb);
 		}
 	}
 	return;
@@ -602,6 +715,7 @@ main(int argc, char *argv[])
 {
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
+	const char *edir;
 	echs_evstrm_t s;
 	int rc = 0;
 
@@ -620,8 +734,9 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (UNLIKELY((s = make_echs_evstrm_from_file("bla.echs")) == NULL)) {
-		perror("Error: cannot open job list file");
+	/* read queues, we've got one echs file per queue */
+	if (UNLIKELY((edir = get_vardir()) == NULL)) {
+		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
 	}
@@ -644,7 +759,23 @@ main(int argc, char *argv[])
 	}
 
 	/* inject our state */
-	echsd_inject_evstrm(ctx, s);
+	with (const char *qfn = pathcat(edir, "echsq_a.ics", NULL)) {
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s, taskA_cb);
+	}
+
+	with (const char *qfn = pathcat(edir, "echsq_b.ics", NULL)) {
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s, taskB_cb);
+	}
 
 	/* main loop */
 	{
