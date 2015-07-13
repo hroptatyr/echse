@@ -75,6 +75,9 @@ struct echs_task_s {
 	ev_periodic w;
 	echs_task_t next;
 
+	/* the stream where this task comes from */
+	echs_evstrm_t strm;
+
 	/* beef data for the task in question */
 	const char *cmd;
 	char **env;
@@ -85,6 +88,8 @@ struct _echsd_s {
 	ev_signal sighup;
 	ev_signal sigterm;
 	ev_signal sigpipe;
+	/* currently running child in batch mode */
+	ev_child chld;
 
 	struct ev_loop *loop;
 };
@@ -420,7 +425,9 @@ run_task(echs_task_t t, bool dtchp)
 
 	default:
 		/* I am daddy */
-		while (waitpid(r, &rc, 0) != r);
+		if (dtchp) {
+			while (waitpid(r, &rc, 0) != r);
+		}
 		break;
 	}
 	return r;
@@ -491,8 +498,19 @@ sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 }
 
 static void
+chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
+{
+	ECHS_NOTI_LOG("chld %d coughed", w->rpid);
+	ev_child_stop(EV_A_ w);
+	w->rpid = w->pid = 0;
+	return;
+}
+
+static void
 taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
+/* A tasks always run asynchronously, echsx decouples itself from echsd
+ * and manages the job with no further interaction */
 	echs_task_t t = (void*)w;
 
 	/* indicate that we might want to reuse the loop */
@@ -500,7 +518,39 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 
 	/* this one's fire and forget
 	 * there's not much we can do anyway at this point, inside a callback */
-	(void)run_task(t, false);
+	(void)run_task(t, true);
+
+	if (w->reschedule_cb) {
+		/* ah, we're going to be used again */
+		return;
+	}
+	free_task(t);
+	return;
+}
+
+static void
+taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+{
+/* B tasks always run under supervision of our event loop, other jobs will
+ * be deferred until the last B task finished. */
+	echs_task_t t = (void*)w;
+	struct _echsd_s *ctx = w->data;
+
+	/* the global context holds the currently running child
+	 * if there is one running, defer the execution of this task */
+	if (!ctx->chld.pid) {
+		/* indicate that we might want to reuse the loop */
+		ev_loop_fork(EV_A);
+
+		/* unlike A tasks, these will be monitored closely,
+		 * so keep track of the spawn child pid and register
+		 * a watcher for status changes */
+		with (pid_t p = run_task(t, false)) {
+			ECHS_NOTI_LOG("supervising pid %d", p);
+			ev_child_init(&ctx->chld, chld_cb, p, false);
+			ev_child_start(EV_A_ &ctx->chld);
+		}
+	}
 
 	if (w->reschedule_cb) {
 		/* ah, we're going to be used again */
@@ -511,12 +561,12 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 }
 
 static ev_tstamp
-reschedA(ev_periodic *w, ev_tstamp now)
+resched(ev_periodic *w, ev_tstamp now)
 {
 /* the A queue doesn't wait for the jobs to finish, it is asynchronous
  * however jobs will only be timed AFTER NOW. */
 	echs_task_t t = (void*)w;
-	echs_evstrm_t s = w->data;
+	echs_evstrm_t s = t->strm;
 	echs_event_t e;
 	ev_tstamp soon;
 
@@ -620,9 +670,10 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-echsd_inject_evstrm1(EV_P_ echs_evstrm_t s)
+echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s)
 {
 	echs_task_t t;
+	EV_P = ctx->loop;
 
 	if (UNLIKELY((t = make_task()) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
@@ -630,8 +681,9 @@ echsd_inject_evstrm1(EV_P_ echs_evstrm_t s)
 	}
 
 	/* store the stream */
-	t->w.data = s;
-	ev_periodic_init(&t->w, taskA_cb, 0./*ignored*/, 0., reschedA);
+	t->w.data = ctx;
+	t->strm = s;
+	ev_periodic_init(&t->w, taskB_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
@@ -640,7 +692,6 @@ static void
 echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 {
 	echs_evstrm_t strm[64U];
-	EV_P = ctx->loop;
 
 	for (size_t tots = 0U, nstrm;
 	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
@@ -648,11 +699,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			echsd_inject_evstrm1(EV_A_ s);
+			echsd_inject_evstrm1(ctx, s);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			echsd_inject_evstrm1(EV_A_ strm[i]);
+			echsd_inject_evstrm1(ctx, strm[i]);
 		}
 	}
 	return;
