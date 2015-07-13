@@ -556,26 +556,27 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
+echsd_inject_evstrm1(EV_P_ echs_evstrm_t s)
+{
+	echs_task_t t;
+
+	if (UNLIKELY((t = make_task()) == NULL)) {
+		ECHS_ERR_LOG("cannot submit new task");
+		return;
+	}
+
+	/* store the stream */
+	t->w.data = s;
+	ev_periodic_init(&t->w, taskA_cb, 0./*ignored*/, 0., reschedA);
+	ev_periodic_start(EV_A_ &t->w);
+	return;
+}
+
+static void
 echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 {
 	echs_evstrm_t strm[64U];
 	EV_P = ctx->loop;
-
-	auto inline void task_from_strm(echs_evstrm_t x)
-	{
-		echs_task_t t;
-
-		if (UNLIKELY((t = make_task()) == NULL)) {
-			ECHS_ERR_LOG("cannot submit new task");
-			return;
-		}
-
-		/* store the stream */
-		t->w.data = x;
-		ev_periodic_init(&t->w, taskA_cb, 0./*ignored*/, 0., reschedA);
-		ev_periodic_start(EV_A_ &t->w);
-		return;
-	}
 
 	for (size_t tots = 0U, nstrm;
 	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
@@ -583,11 +584,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			task_from_strm(s);
+			echsd_inject_evstrm1(EV_A_ s);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			task_from_strm(strm[i]);
+			echsd_inject_evstrm1(EV_A_ strm[i]);
 		}
 	}
 	return;
