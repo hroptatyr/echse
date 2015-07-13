@@ -69,14 +69,16 @@ AC_CHECK_FUNCS([sendfile])
 AC_CHECK_FUNCS([clock_gettime])
 if test "${ac_cv_func_clock_gettime}" != "yes"; then
 	AC_CHECK_LIB([rt], [clock_gettime])
-	if test "${ac_cv_lib_rt_clock_gettime}" != "yes"; then
-		AC_MSG_ERROR([dnl
-clock_gettime() is essential.
-])
+	if test "${ac_cv_lib_rt_clock_gettime}" = "yes"; then
+		rt_LIBS="-lrt"
+		AC_SUBST([rt_LIBS])
+		have_rt_funs="yes"
 	fi
-	rt_LIBS="-lrt"
-	AC_SUBST([rt_LIBS])
+else
+	have_rt_funs="yes"
 fi
+AM_CONDITIONAL([HAVE_RT_FUNS], [test "${have_rt_funs}" = "yes"])
+
 
 SXE_CHECK_LIBEV
 AM_CONDITIONAL([HAVE_LIBEV], [test "${have_libev}" = "yes"])
@@ -91,8 +93,7 @@ AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside]
 
 
 ## compose build summary
-if test "${ac_cv_lib_rt_clock_gettime}" = "yes" -o \
-	"${ac_cv_func_clock_gettime}" = "yes"; then
+if test "${have_rt_funs}" = "yes"; then
 	echsxX="x"
 else
 	echsxX=" "
@@ -108,6 +109,7 @@ echo
 echo "Build summary"
 echo "============="
 echo
+echo "[[x]]  echse helper tool"
 echo "[[${echsxX}]]  echsx executor agent"
 echo "[[${libevX}]]  echsd job scheduling daemon"
 echo "[[${libevX}]]  echsq queue managing client"
