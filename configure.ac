@@ -91,6 +91,12 @@ AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside]
 
 
 ## compose build summary
+if test "${ac_cv_lib_rt_clock_gettime}" = "yes" -o \
+	"${ac_cv_func_clock_gettime}" = "yes"; then
+	echsxX="x"
+else
+	echsxX=" "
+fi
 if test "${have_libev}" = "yes"; then
 	libevX="x"
 else
@@ -102,7 +108,7 @@ echo
 echo "Build summary"
 echo "============="
 echo
-echo "[[x]]  echsx executor agent"
+echo "[[${echsxX}]]  echsx executor agent"
 echo "[[${libevX}]]  echsd job scheduling daemon"
 echo "[[${libevX}]]  echsq queue managing client"
 echo
