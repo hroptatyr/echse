@@ -50,9 +50,11 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
+#include <pwd.h>
 #include <ev.h>
 #include "echse.h"
 #include "logger.h"
@@ -90,6 +92,18 @@ struct _echsd_s {
 static const char *echsx;
 
 
+static __attribute__((unused)) size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	size_t ssz = strlen(src);
+	if (ssz > dsz) {
+		ssz = dsz - 1U;
+	}
+	memcpy(dst, src, ssz);
+	dst[ssz] = '\0';
+	return ssz;
+}
+
 static void
 block_sigs(void)
 {
@@ -226,6 +240,56 @@ get_echsx(void)
 
 found:
 	return echsx_exe;
+}
+
+static const char*
+get_vardir(void)
+{
+	static const char ldir[] = ".echse";
+	static char vdir[PATH_MAX];
+	uid_t u;
+
+	switch ((u = geteuid())) {
+	case 0:
+		break;
+	default:
+		if_with (struct passwd *pw,
+			 (pw = getpwuid(u)) && pw->pw_dir &&
+			 /* make sure home directory is actually there */
+			 mkdir(pw->pw_dir, 0755) == -1 && errno == EEXIST) {
+			size_t vi = 0U;
+
+			vi += xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
+			vdir[vi++] = '/';
+			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
+			/* just mkdir the result and throw away errors */
+			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
+				/* we consider our job done */
+				return vdir;
+			}
+			/* otherwise it's just horseshit */
+		}
+		break;
+	}
+	/* we've run out of options */
+	return NULL;
+}
+
+static const char*
+pathcat(const char *dirnm, ...)
+{
+	static char res[PATH_MAX];
+	va_list ap;
+	size_t ri = 0U;
+
+	va_start(ap, dirnm);
+	ri += xstrlcpy(res + ri, dirnm, sizeof(res) - ri);
+	for (const char *fn; (fn = va_arg(ap, const char*));) {
+		res[ri++] = '/';
+		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
+	}
+	va_end(ap);
+	return res;
 }
 
 
@@ -602,6 +666,7 @@ main(int argc, char *argv[])
 {
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
+	const char *edir;
 	echs_evstrm_t s;
 	int rc = 0;
 
@@ -620,8 +685,9 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (UNLIKELY((s = make_echs_evstrm_from_file("bla.echs")) == NULL)) {
-		perror("Error: cannot open job list file");
+	/* read queues, we've got one echs file per queue */
+	if (UNLIKELY((edir = get_vardir()) == NULL)) {
+		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
 	}
@@ -644,7 +710,23 @@ main(int argc, char *argv[])
 	}
 
 	/* inject our state */
-	echsd_inject_evstrm(ctx, s);
+	with (const char *qfn = pathcat(edir, "echsq_a.ics", NULL)) {
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s);
+	}
+
+	with (const char *qfn = pathcat(edir, "echsq_b.ics", NULL)) {
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s);
+	}
 
 	/* main loop */
 	{
