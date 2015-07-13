@@ -74,6 +74,7 @@ struct echs_task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	echs_task_t next;
+	ev_child c;
 
 	/* the stream where this task comes from */
 	echs_evstrm_t strm;
@@ -88,8 +89,6 @@ struct _echsd_s {
 	ev_signal sighup;
 	ev_signal sigterm;
 	ev_signal sigpipe;
-	/* currently running child in batch mode */
-	ev_child chld;
 
 	struct ev_loop *loop;
 };
@@ -500,7 +499,7 @@ sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 static void
 chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
 {
-	ECHS_NOTI_LOG("chld %d coughed", w->rpid);
+	ECHS_NOTI_LOG("chld %d coughed: %d", w->rpid, w->rstatus);
 	ev_child_stop(EV_A_ w);
 	w->rpid = w->pid = 0;
 	return;
@@ -516,8 +515,8 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	/* indicate that we might want to reuse the loop */
 	ev_loop_fork(EV_A);
 
-	/* this one's fire and forget
-	 * there's not much we can do anyway at this point, inside a callback */
+	/* these are completely asynchronous with no further monitoring
+	 * so fire and forget */
 	(void)run_task(t, true);
 
 	if (w->reschedule_cb) {
@@ -531,24 +530,24 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 static void
 taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
-/* B tasks always run under supervision of our event loop, other jobs will
- * be deferred until the last B task finished. */
+/* B tasks always run under supervision of our event loop, should the task
+ * be scheduled again while it's still running, cancel the execution and
+ * reschedule for the next time. */
 	echs_task_t t = (void*)w;
-	struct _echsd_s *ctx = w->data;
 
 	/* the global context holds the currently running child
 	 * if there is one running, defer the execution of this task */
-	if (!ctx->chld.pid) {
+	if (!t->c.pid) {
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		/* unlike A tasks, these will be monitored closely,
-		 * so keep track of the spawn child pid and register
+		/* unlike A tasks these will run only once
+		 * keep track of the spawned child pid and register
 		 * a watcher for status changes */
 		with (pid_t p = run_task(t, false)) {
 			ECHS_NOTI_LOG("supervising pid %d", p);
-			ev_child_init(&ctx->chld, chld_cb, p, false);
-			ev_child_start(EV_A_ &ctx->chld);
+			ev_child_init(&t->c, chld_cb, p, false);
+			ev_child_start(EV_A_ &t->c);
 		}
 	}
 
@@ -670,7 +669,7 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s)
+echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
 	echs_task_t t;
 	EV_P = ctx->loop;
@@ -681,15 +680,14 @@ echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s)
 	}
 
 	/* store the stream */
-	t->w.data = ctx;
 	t->strm = s;
-	ev_periodic_init(&t->w, taskB_cb, 0./*ignored*/, 0., resched);
+	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
+echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
 
@@ -699,11 +697,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s)
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			echsd_inject_evstrm1(ctx, s);
+			echsd_inject_evstrm1(ctx, s, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			echsd_inject_evstrm1(ctx, strm[i]);
+			echsd_inject_evstrm1(ctx, strm[i], cb);
 		}
 	}
 	return;
@@ -767,7 +765,7 @@ main(int argc, char *argv[])
 queue file `%s' does not exist ...", qfn);
 			break;
 		}
-		echsd_inject_evstrm(ctx, s);
+		echsd_inject_evstrm(ctx, s, taskA_cb);
 	}
 
 	with (const char *qfn = pathcat(edir, "echsq_b.ics", NULL)) {
@@ -776,7 +774,7 @@ queue file `%s' does not exist ...", qfn);
 queue file `%s' does not exist ...", qfn);
 			break;
 		}
-		echsd_inject_evstrm(ctx, s);
+		echsd_inject_evstrm(ctx, s, taskB_cb);
 	}
 
 	/* main loop */
