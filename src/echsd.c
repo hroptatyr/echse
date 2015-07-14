@@ -51,6 +51,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
@@ -89,6 +91,8 @@ struct _echsd_s {
 	ev_signal sighup;
 	ev_signal sigterm;
 	ev_signal sigpipe;
+
+	ev_io ctlsock;
 
 	struct ev_loop *loop;
 };
@@ -249,21 +253,34 @@ found:
 static const char*
 get_vardir(void)
 {
+	static const char rdir[] = "/var/run";
 	static const char ldir[] = ".echse";
 	static char vdir[PATH_MAX];
 	uid_t u;
 
 	switch ((u = geteuid())) {
 	case 0:
+		if (mkdir(rdir, 0755) == -1 && errno == EEXIST) {
+			size_t vi;
+
+			vi = xstrlcpy(vdir, rdir, sizeof(vdir));
+			vdir[vi++] = '/';
+			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
+			/* just mkdir the result and throw away errors */
+			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
+				/* we consider our job done */
+				return vdir;
+			}
+		}
 		break;
 	default:
 		if_with (struct passwd *pw,
 			 (pw = getpwuid(u)) && pw->pw_dir &&
 			 /* make sure home directory is actually there */
 			 mkdir(pw->pw_dir, 0755) == -1 && errno == EEXIST) {
-			size_t vi = 0U;
+			size_t vi;
 
-			vi += xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
+			vi = xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
 			vdir[vi++] = '/';
 			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
 			/* just mkdir the result and throw away errors */
@@ -293,6 +310,40 @@ pathcat(const char *dirnm, ...)
 		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
 	}
 	va_end(ap);
+	return res;
+}
+
+static int
+make_socket(const char *edir)
+{
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	const char *fn;
+	size_t sz;
+	int s;
+
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		return -1;
+	}
+	fn = pathcat(edir, "=echsd", NULL);
+	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
+	sz += sizeof(sa.sun_family);
+	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
+		goto fail;
+	} else if (listen(s, 5U) < 0) {
+		goto fail;
+	}
+	return s;
+fail:
+	close(s);
+	return -1;
+}
+
+static int
+free_socket(int s, const char *edir)
+{
+	const char *fn = pathcat(edir, "=echsd", NULL);
+	int res = unlink(fn);
+	close(s);
 	return res;
 }
 
@@ -473,6 +524,45 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 }
 
 
+/* libev conn handling */
+#define MAX_CONNS	(sizeof(free_conns) * 8U)
+#define MAX_QUEUE	MAX_CONNS
+static uint64_t free_conns = -1;
+static struct echs_conn_s {
+	ev_io r;
+} conns[MAX_CONNS];
+
+static struct echs_conn_s*
+make_conn(void)
+{
+	int i = ffs(free_conns & 0xffffffffU)
+		?: ffs(free_conns >> 32U & 0xffffffffU);
+
+	if (LIKELY(i-- > 0)) {
+		/* toggle bit in free conns */
+		free_conns ^= 1ULL << i;
+		return conns + i;
+	}
+	return NULL;
+}
+
+static void
+free_conn(struct echs_conn_s *c)
+{
+	size_t i = c - conns;
+
+	if (UNLIKELY(i >= MAX_CONNS)) {
+		/* huh? */
+		ECHS_ERR_LOG("unknown connection passed to free_conn()");
+		return;
+	}
+	/* toggle C-th bit */
+	free_conns ^= 1ULL << i;
+	memset(c, 0, sizeof(*c));
+	return;
+}
+
+
 /* callbacks */
 static void
 sigint_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
@@ -580,6 +670,60 @@ resched(ev_periodic *w, ev_tstamp now)
 
 	ECHS_NOTI_LOG("next run %f", soon);
 	return soon;
+}
+
+static void
+shut_conn(struct echs_conn_s *c)
+{
+/* shuts a connection partially or fully down */
+	const int fd = c->r.fd;
+
+	if (fd > 0) {
+		/* just shutdown all */
+		shutdown(fd, SHUT_RDWR);
+	}
+	close(fd);
+	free_conn(c);
+	return;
+}
+
+static void
+sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	char buf[4096U];
+	const int fd = w->fd;
+	ssize_t nrd;
+
+	nrd = read(fd, buf, sizeof(buf));
+	fwrite(buf, 1, nrd, stdout);
+
+	ev_io_stop(EV_A_ w);
+	shut_conn((struct echs_conn_s*)w);
+	return;
+}
+
+static void
+sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	struct echs_conn_s *ec;
+	struct sockaddr_un sa;
+	socklen_t z = sizeof(sa);
+	int s;
+
+	if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+		ECHS_ERR_LOG("connection vanished");
+		return;
+	}
+	/* very good, get us an io watcher */
+	ECHS_NOTI_LOG("connection from `%s'", sa.sun_path);
+	if (UNLIKELY((ec = make_conn()) == NULL)) {
+		ECHS_ERR_LOG("too many concurrent connections");
+		close(s);
+		return;
+	}
+	ev_io_init(&ec->r, sock_data_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ec->r);
+	return;
 }
 
 
@@ -707,6 +851,16 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 	return;
 }
 
+static void
+echsd_inject_sock(struct _echsd_s *ctx, int s)
+{
+	EV_P = ctx->loop;
+
+	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ctx->ctlsock);
+	return;
+}
+
 
 #include "echsd.yucc"
 
@@ -717,6 +871,7 @@ main(int argc, char *argv[])
 	struct _echsd_s *ctx;
 	const char *edir;
 	echs_evstrm_t s;
+	int esok = -1;
 	int rc = 0;
 
 	/* best not to be signalled for a minute */
@@ -741,6 +896,12 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
+	if (UNLIKELY((esok = make_socket(edir)) < 0)) {
+		perror("Error: cannot create socket file");
+		rc = 1;
+		goto out;
+	}
+
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 	} else if (daemonise() < 0) {
@@ -757,6 +918,9 @@ main(int argc, char *argv[])
 		ECHS_ERR_LOG("cannot instantiate echsd context");
 		goto clo;
 	}
+
+	/* inject the echsd socket */
+	echsd_inject_sock(ctx, esok);
 
 	/* inject our state */
 	with (const char *qfn = pathcat(edir, "echsq_a.ics", NULL)) {
@@ -796,6 +960,9 @@ clo:
 	echs_closelog();
 
 out:
+	if (esok >= 0) {
+		(void)free_socket(esok, edir);
+	}
 	yuck_free(argi);
 	return rc;
 }
