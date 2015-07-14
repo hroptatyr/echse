@@ -100,7 +100,7 @@ struct _echsd_s {
 static const char *echsx;
 
 
-static __attribute__((unused)) size_t
+static size_t
 xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 {
 	size_t ssz = strlen(src);
