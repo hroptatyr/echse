@@ -265,7 +265,7 @@ get_vardir(void)
 
 			vi = xstrlcpy(vdir, rdir, sizeof(vdir));
 			vdir[vi++] = '/';
-			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
+			vi += xstrlcpy(vdir + vi, ldir + 1U, sizeof(vdir) - vi);
 			/* just mkdir the result and throw away errors */
 			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
 				/* we consider our job done */
