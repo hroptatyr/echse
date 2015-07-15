@@ -77,6 +77,11 @@
 
 #define STRERR	(strerror(errno))
 
+typedef struct {
+	uid_t u;
+	gid_t g;
+} cred_t;
+
 typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
@@ -88,6 +93,9 @@ struct echs_task_s {
 
 	/* the stream where this task comes from */
 	echs_evstrm_t strm;
+
+	/* user id and group id we want this job run as */
+	cred_t cred;
 
 	/* beef data for the task in question */
 	const char *cmd;
@@ -564,6 +572,15 @@ run_task(echs_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
 	pid_t r;
+	cred_t c = {geteuid(), getegid()};
+
+	if (UNLIKELY(seteuid(t->cred.u)) < 0) {
+		ECHS_ERR_LOG("cannot set effective user id: %s", STRERR);
+		return -1;
+	} else if (UNLIKELY(setegid(t->cred.g)) < 0) {
+		ECHS_ERR_LOG("cannot set effective group id: %s", STRERR);
+		return -1;
+	}
 
 	switch ((r = vfork())) {
 		int rc;
@@ -604,6 +621,14 @@ run_task(echs_task_t t, bool dtchp)
 			while (waitpid(r, &rc, 0) != r);
 		}
 		break;
+	}
+
+	if (UNLIKELY(seteuid(c.u)) < 0) {
+		ECHS_ERR_LOG("cannot set effective user id back: %s", STRERR);
+		return -1;
+	} else if (UNLIKELY(setegid(c.g)) < 0) {
+		ECHS_ERR_LOG("cannot set effective group id back: %s", STRERR);
+		return -1;
 	}
 	return r;
 }
