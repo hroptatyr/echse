@@ -56,6 +56,12 @@
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
+#if defined HAVE_UCRED_H
+# include <ucred.h>
+#endif	/* HAVE_UCRED_H */
+#ifdef HAVE_SYS_UCRED_H
+# include <sys/ucred.h>
+#endif	/* HAVE_SYS_UCRED_H */
 #include <pwd.h>
 #include <ev.h>
 #include "echse.h"
@@ -98,6 +104,14 @@ struct _echsd_s {
 };
 
 static const char *echsx;
+
+#if !defined HAVE_STRUCT_UCRED
+struct ucred {
+	pid_t pid;
+	uid_t uid;
+	gid_t gid;
+};
+#endif	/* !HAVE_STRUCT_UCRED */
 
 
 static size_t
@@ -402,6 +416,58 @@ free_socket(int s, const char *edir)
 	int res = unlink(fn);
 	close(s);
 	return res;
+}
+
+static int
+get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
+{
+/* return UID/GID pair of connected peer in S. */
+#if defined SO_PEERCRED
+	struct ucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, SOL_SOCKET, SO_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*uid = c.uid;
+	*gid = c.gid;
+	return 0;
+#elif defined LOCAL_PEERCRED
+	struct xucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, 0, LOCAL_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		return -1;
+	} else if (c.cr_version != XUCRED_VERSION) {
+		return -1;
+	}
+	*uid = c.cr_uid;
+	*gid = c.cr_gid;
+	return 0;
+#elif defined HAVE_GETPEERUCRED
+	ucred_t *c = NULL;
+
+	if (getpeerucred(s, &c) < 0) {
+		return -1;
+	}
+
+	*uid = ucred_geteuid(c);
+	*gid = ucred_getegid(c);
+	ucred_free(c);
+
+	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
+		return -1;
+	}
+	return 0;
+#else
+	errno = ENOSYS;
+	return -1;
+#endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
 
