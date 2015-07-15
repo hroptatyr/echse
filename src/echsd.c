@@ -75,6 +75,8 @@
 #undef EV_P
 #define EV_P  struct ev_loop *loop __attribute__((unused))
 
+#define STRERR	(strerror(errno))
+
 typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
@@ -567,7 +569,7 @@ run_task(echs_task_t t, bool dtchp)
 		int rc;
 
 	case -1:
-		ECHS_ERR_LOG("cannot fork: %s", strerror(errno));
+		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		break;
 
 	case 0:
@@ -843,10 +845,10 @@ sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 
 	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
 		ECHS_ERR_LOG("\
-authenticity of connection %d cannot be established", w->fd);
+authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 		return;
 	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
-		ECHS_ERR_LOG("connection vanished");
+		ECHS_ERR_LOG("connection vanished: %s", STRERR);
 		return;
 	}
 
