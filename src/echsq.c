@@ -168,30 +168,30 @@ free_conn(int s)
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-	const char *dir;
 	unsigned char q;
-	ssize_t cmz;
-	int s;
 
-	/* let's try the local echsd and then the system-wide one */
-	if (!(dir = pathcat(get_vardir(false), ".echse", "=echsd", NULL))) {
-		goto next1;
-	} else if ((s = make_conn(dir)) < 0) {
-		serror("Error: cannot connect to `%s'", dir);
-		goto next1;
-	}
 	/* which queue to request */
 	if (argi->queue_arg) {
 		q = (unsigned char)(*argi->queue_arg | 0x20U);
 	} else {
 		q = 'a';
 	}
-	/* otherwise try and request the queues */
+	/* try and request the queues */
 	for (; q >= 'a' && q <= 'b';
 	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
 		char buf[4096U];
 		char cmd[64];
+		const char *dir;
+		ssize_t cmz;
+		int s;
 
+		/* let's try the local echsd and then the system-wide one */
+		if (!(dir = pathcat(get_vardir(false), ".echse", "=echsd", NULL))) {
+			break;
+		} else if ((s = make_conn(dir)) < 0) {
+			serror("Error: cannot connect to `%s'", dir);
+			break;
+		}
 		cmz = snprintf(cmd, sizeof(cmd),
 			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
 			       getuid(), q);
@@ -200,10 +200,41 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
 		}
+		free_conn(s);
 	}
-	free_conn(s);
 
-next1:
+	/* which queue to request */
+	if (argi->queue_arg) {
+		q = (unsigned char)(*argi->queue_arg | 0x20U);
+	} else {
+		q = 'a';
+	}
+	/* try the global queues now */
+	for (; q >= 'a' && q <= 'b';
+	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
+		char buf[4096U];
+		char cmd[64];
+		const char *dir;
+		ssize_t cmz;
+		int s;
+
+		/* let's try the local echsd and then the system-wide one */
+		if (!(dir = pathcat(get_vardir(true), "echse", "=echsd", NULL))) {
+			break;
+		} else if ((s = make_conn(dir)) < 0) {
+			serror("Error: cannot connect to `%s'", dir);
+			break;
+		}
+		cmz = snprintf(cmd, sizeof(cmd),
+			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
+			       getuid(), q);
+		write(s, cmd, cmz);
+
+		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
+			write(STDOUT_FILENO, buf, nrd);
+		}
+		free_conn(s);
+	}
 	return 0;
 }
 
