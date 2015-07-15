@@ -837,14 +837,21 @@ sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	struct echs_conn_s *ec;
 	struct sockaddr_un sa;
 	socklen_t z = sizeof(sa);
+	uid_t u;
+	gid_t g;
 	int s;
 
-	if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
+		ECHS_ERR_LOG("\
+authenticity of connection %d cannot be established", w->fd);
+		return;
+	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
 		ECHS_ERR_LOG("connection vanished");
 		return;
 	}
+
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection from `%s'", sa.sun_path);
+	ECHS_NOTI_LOG("connection from %u/%u", u, g);
 	if (UNLIKELY((ec = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
