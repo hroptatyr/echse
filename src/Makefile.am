@@ -80,6 +80,12 @@ echse_LDADD = libechse.la
 EXTRA_echse_DEPENDENCIES = $(LTDLDEPS)
 BUILT_SOURCES += echse.yucc
 
+bin_PROGRAMS += echsq
+echsq_SOURCES = echsq.c echsq.yuck
+echsq_SOURCES += version.h version.c
+echsq_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
+echsq_CPPFLAGS += -DHAVE_VERSION_H
+BUILT_SOURCES += echsq.yucc
 
 if HAVE_RT_FUNS
 bin_PROGRAMS += echsx
