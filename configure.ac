@@ -66,6 +66,33 @@ SXE_CHECK_LIBLTDL
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 
+AC_CHECK_HEADERS([ucred.h])
+AC_CHECK_HEADERS([sys/ucred.h])
+AC_CHECK_TYPES([struct ucred], [], [], [[
+#if defined HAVE_UCRED_H
+# include <ucred.h>
+#endif
+#if defined HAVE_SYS_UCRED_H
+# include <sys/ucred.h>
+#endif
+]])
+AC_CHECK_TYPES([struct xucred], [], [], [[
+#if defined HAVE_UCRED_H
+# include <ucred.h>
+#endif
+#if defined HAVE_SYS_UCRED_H
+# include <sys/ucred.h>
+#endif
+]])
+AC_CHECK_TYPES([ucred_t], [], [], [[
+#if defined HAVE_UCRED_H
+# include <ucred.h>
+#endif
+#if defined HAVE_SYS_UCRED_H
+# include <sys/ucred.h>
+#endif
+]])
+
 AC_CHECK_FUNCS([clock_gettime])
 if test "${ac_cv_func_clock_gettime}" != "yes"; then
 	AC_CHECK_LIB([rt], [clock_gettime])

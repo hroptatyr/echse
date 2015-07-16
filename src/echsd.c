@@ -51,9 +51,20 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
+#if defined HAVE_UCRED_H
+# include <ucred.h>
+#endif	/* HAVE_UCRED_H */
+#ifdef HAVE_SYS_UCRED_H
+# include <sys/ucred.h>
+#endif	/* HAVE_SYS_UCRED_H */
+#if defined HAVE_SENDFILE
+# include <sys/sendfile.h>
+#endif	/* HAVE_SENDFILE */
 #include <pwd.h>
 #include <ev.h>
 #include "echse.h"
@@ -67,6 +78,13 @@
 #undef EV_P
 #define EV_P  struct ev_loop *loop __attribute__((unused))
 
+#define STRERR	(strerror(errno))
+
+typedef struct {
+	uid_t u;
+	gid_t g;
+} cred_t;
+
 typedef struct echs_task_s *echs_task_t;
 
 /* linked list of ev_periodic objects */
@@ -79,6 +97,9 @@ struct echs_task_s {
 	/* the stream where this task comes from */
 	echs_evstrm_t strm;
 
+	/* user id and group id we want this job run as */
+	cred_t cred;
+
 	/* beef data for the task in question */
 	const char *cmd;
 	char **env;
@@ -90,13 +111,24 @@ struct _echsd_s {
 	ev_signal sigterm;
 	ev_signal sigpipe;
 
+	ev_io ctlsock;
+
 	struct ev_loop *loop;
 };
 
+#if !defined HAVE_STRUCT_UCRED
+struct ucred {
+	pid_t pid;
+	uid_t uid;
+	gid_t gid;
+};
+#endif	/* !HAVE_STRUCT_UCRED */
+
 static const char *echsx;
+static int qdirfd;
 
 
-static __attribute__((unused)) size_t
+static size_t
 xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 {
 	size_t ssz = strlen(src);
@@ -106,6 +138,63 @@ xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 	memcpy(dst, src, ssz);
 	dst[ssz] = '\0';
 	return ssz;
+}
+
+static char*
+xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
+{
+	const char *const eoh = hay + hayz;
+	const char *const eon = ndl + ndlz;
+	const char *hp;
+	const char *np;
+	const char *cand;
+	unsigned int hsum;
+	unsigned int nsum;
+	unsigned int eqp;
+
+	/* trivial checks first
+         * a 0-sized needle is defined to be found anywhere in haystack
+         * then run strchr() to find a candidate in HAYSTACK (i.e. a portion
+         * that happens to begin with *NEEDLE) */
+	if (ndlz == 0UL) {
+		return deconst(hay);
+	} else if ((hay = memchr(hay, *ndl, hayz)) == NULL) {
+		/* trivial */
+		return NULL;
+	}
+
+	/* First characters of haystack and needle are the same now. Both are
+	 * guaranteed to be at least one character long.  Now computes the sum
+	 * of characters values of needle together with the sum of the first
+	 * needle_len characters of haystack. */
+	for (hp = hay + 1U, np = ndl + 1U, hsum = *hay, nsum = *hay, eqp = 1U;
+	     hp < eoh && np < eon;
+	     hsum ^= *hp, nsum ^= *np, eqp &= *hp == *np, hp++, np++);
+
+	/* HP now references the (NZ + 1)-th character. */
+	if (np < eon) {
+		/* haystack is smaller than needle, :O */
+		return NULL;
+	} else if (eqp) {
+		/* found a match */
+		return deconst(hay);
+	}
+
+	/* now loop through the rest of haystack,
+	 * updating the sum iteratively */
+	for (cand = hay; hp < eoh; hp++) {
+		hsum ^= *cand++;
+		hsum ^= *hp;
+
+		/* Since the sum of the characters is already known to be
+		 * equal at that point, it is enough to check just NZ - 1
+		 * characters for equality,
+		 * also CAND is by design < HP, so no need for range checks */
+		if (hsum == nsum && memcmp(cand, ndl, ndlz - 1U) == 0) {
+			return deconst(cand);
+		}
+	}
+	return NULL;
 }
 
 static void
@@ -249,21 +338,34 @@ found:
 static const char*
 get_vardir(void)
 {
+	static const char rdir[] = "/var/run";
 	static const char ldir[] = ".echse";
 	static char vdir[PATH_MAX];
 	uid_t u;
 
 	switch ((u = geteuid())) {
 	case 0:
+		if (mkdir(rdir, 0755) == -1 && errno == EEXIST) {
+			size_t vi;
+
+			vi = xstrlcpy(vdir, rdir, sizeof(vdir));
+			vdir[vi++] = '/';
+			vi += xstrlcpy(vdir + vi, ldir + 1U, sizeof(vdir) - vi);
+			/* just mkdir the result and throw away errors */
+			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
+				/* we consider our job done */
+				return vdir;
+			}
+		}
 		break;
 	default:
 		if_with (struct passwd *pw,
 			 (pw = getpwuid(u)) && pw->pw_dir &&
 			 /* make sure home directory is actually there */
 			 mkdir(pw->pw_dir, 0755) == -1 && errno == EEXIST) {
-			size_t vi = 0U;
+			size_t vi;
 
-			vi += xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
+			vi = xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
 			vdir[vi++] = '/';
 			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
 			/* just mkdir the result and throw away errors */
@@ -294,6 +396,92 @@ pathcat(const char *dirnm, ...)
 	}
 	va_end(ap);
 	return res;
+}
+
+static int
+make_socket(const char *edir)
+{
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	const char *fn;
+	size_t sz;
+	int s;
+
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		return -1;
+	}
+	fn = pathcat(edir, "=echsd", NULL);
+	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
+	sz += sizeof(sa.sun_family);
+	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
+		goto fail;
+	} else if (listen(s, 5U) < 0) {
+		goto fail;
+	}
+	return s;
+fail:
+	close(s);
+	return -1;
+}
+
+static int
+free_socket(int s, const char *edir)
+{
+	const char *fn = pathcat(edir, "=echsd", NULL);
+	int res = unlink(fn);
+	close(s);
+	return res;
+}
+
+static int
+get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
+{
+/* return UID/GID pair of connected peer in S. */
+#if defined SO_PEERCRED
+	struct ucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, SOL_SOCKET, SO_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*uid = c.uid;
+	*gid = c.gid;
+	return 0;
+#elif defined LOCAL_PEERCRED
+	struct xucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, 0, LOCAL_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		return -1;
+	} else if (c.cr_version != XUCRED_VERSION) {
+		return -1;
+	}
+	*uid = c.cr_uid;
+	*gid = c.cr_gid;
+	return 0;
+#elif defined HAVE_GETPEERUCRED
+	ucred_t *c = NULL;
+
+	if (getpeerucred(s, &c) < 0) {
+		return -1;
+	}
+
+	*uid = ucred_geteuid(c);
+	*gid = ucred_getegid(c);
+	ucred_free(c);
+
+	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
+		return -1;
+	}
+	return 0;
+#else
+	errno = ENOSYS;
+	return -1;
+#endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
 
@@ -388,12 +576,21 @@ run_task(echs_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
 	pid_t r;
+	cred_t c = {geteuid(), getegid()};
+
+	if (UNLIKELY(seteuid(t->cred.u)) < 0) {
+		ECHS_ERR_LOG("cannot set effective user id: %s", STRERR);
+		return -1;
+	} else if (UNLIKELY(setegid(t->cred.g)) < 0) {
+		ECHS_ERR_LOG("cannot set effective group id: %s", STRERR);
+		return -1;
+	}
 
 	switch ((r = vfork())) {
 		int rc;
 
 	case -1:
-		ECHS_ERR_LOG("cannot fork: %s", strerror(errno));
+		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		break;
 
 	case 0:
@@ -428,6 +625,14 @@ run_task(echs_task_t t, bool dtchp)
 			while (waitpid(r, &rc, 0) != r);
 		}
 		break;
+	}
+
+	if (UNLIKELY(seteuid(c.u)) < 0) {
+		ECHS_ERR_LOG("cannot set effective user id back: %s", STRERR);
+		return -1;
+	} else if (UNLIKELY(setegid(c.g)) < 0) {
+		ECHS_ERR_LOG("cannot set effective group id back: %s", STRERR);
+		return -1;
 	}
 	return r;
 }
@@ -470,6 +675,179 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 	while (!echs_event_0_p(e = echs_evstrm_next(x)) &&
 	       instant_to_tstamp(e.from) < t);
 	return e;
+}
+
+
+/* s2c communication */
+typedef enum {
+	ECHS_CMD_UNK,
+	ECHS_CMD_LIST,
+
+	/* to indicate that we need more data to finish the command */
+	ECHS_CMD_MORE = -1
+} echs_cmd_t;
+
+struct echs_cmd_list_s {
+	const char *fn;
+	size_t len;
+};
+
+struct echs_cmdparam_s {
+	echs_cmd_t cmd;
+	union {
+		struct echs_cmd_list_s list;
+	};
+};
+
+static echs_cmd_t
+cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	static const char ht_verb[] = "GET ";
+	static const char ht_vers[] = " HTTP/1.1\r\n";
+	const char *ep;
+
+	if (!memcmp(buf, ht_verb, strlenof(ht_verb)) &&
+	    (ep = xmemmem(buf, bsz, ht_vers, strlenof(ht_vers)))) {
+		/* aaaah http shit and looks like a GET request */
+		const char *bp;
+
+		for (; ep > buf && ep[-1] == ' '; ep--);
+		for (bp = ep; bp > buf && bp[-1] != '/'; bp--);
+		param->cmd = ECHS_CMD_LIST;
+		param->list = (struct echs_cmd_list_s){bp, ep - bp};
+		return xmemmem(ep, bsz - (ep - buf), "\r\n\r\n", 4U)
+			? ECHS_CMD_LIST : ECHS_CMD_MORE;
+	}
+	return ECHS_CMD_UNK;
+}
+
+static ssize_t
+cmd_list(int ofd, const struct echs_cmd_list_s cmd[static 1U])
+{
+	static const char rpl403[] = "\
+HTTP/1.1 403 Forbidden\r\n\r\n";
+	static const char rpl404[] = "\
+HTTP/1.1 404 Not Found\r\n\r\n";
+	static const char rpl200[] = "\
+HTTP/1.1 200 Ok\r\n\r\n";
+	char fn[cmd->len + 1U];
+	const char *rpl;
+	size_t rpz;
+	struct stat st;
+	int fd = -1;
+	ssize_t nwr = 0;
+
+	memcpy(fn, cmd->fn, cmd->len);
+	fn[cmd->len] = '\0';
+	if (fstatat(qdirfd, fn, &st, 0) < 0) {
+		rpl = rpl404, rpz = strlenof(rpl404);
+	} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+		rpl = rpl403, rpz = strlenof(rpl403);
+	} else {
+		rpl = rpl200, rpz = strlenof(rpl200);
+	}
+	/* write reply header */
+	nwr += write(ofd, rpl, rpz);
+	/* and content, if any */
+#if defined HAVE_SENDFILE
+	if (!(fd < 0)) {
+		size_t fz = st.st_size;
+
+		for (ssize_t nsf;
+		     fz && (nsf = sendfile(ofd, fd, NULL, fz)) > 0;
+		     fz -= nsf, nwr += nsf);
+	}
+#endif	/* HAVE_SENDFILE */
+	return nwr;
+}
+
+static echs_cmd_t
+guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	echs_cmd_t r = ECHS_CMD_UNK;
+
+	if ((r = cmd_list_p(param, buf, bsz))) {
+		;
+	} else if (0) {
+		;
+	}
+	return r;
+}
+
+static ssize_t
+handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
+{
+	ssize_t nwr = 0;
+
+	switch (param->cmd) {
+	case ECHS_CMD_LIST:
+		nwr = cmd_list(fd, &param->list);
+		break;
+
+	case ECHS_CMD_MORE:
+	default:
+		/* just do fuckall */
+		break;
+	}
+	return nwr;
+}
+
+
+/* libev conn handling */
+#define MAX_CONNS	(sizeof(free_conns) * 8U)
+#define MAX_QUEUE	MAX_CONNS
+static uint64_t free_conns = -1;
+static struct echs_conn_s {
+	ev_io r;
+	/* i/o buffer, its size and an offset */
+	char *buf;
+	size_t bsz;
+	off_t bix;
+	/* the command we're building up
+	 * this contains a partial or full parse of all parameters */
+	struct echs_cmdparam_s cmd[1U];
+} conns[MAX_CONNS];
+
+static struct echs_conn_s*
+make_conn(void)
+{
+	int i = ffs(free_conns & 0xffffffffU)
+		?: ffs(free_conns >> 32U & 0xffffffffU);
+
+	if (LIKELY(i-- > 0)) {
+		/* toggle bit in free conns */
+		free_conns ^= 1ULL << i;
+
+		conns[i].buf = malloc(conns[i].bsz = 4096U);
+		conns[i].bix = 0;
+
+		memset(conns[i].cmd, 0, sizeof(*conns[i].cmd));
+
+		if (LIKELY(conns[i].buf != NULL)) {
+			return conns + i;
+		}
+	}
+	return NULL;
+}
+
+static void
+free_conn(struct echs_conn_s *c)
+{
+	size_t i = c - conns;
+
+	if (UNLIKELY(i >= MAX_CONNS)) {
+		/* huh? */
+		ECHS_ERR_LOG("unknown connection passed to free_conn()");
+		return;
+	}
+	/* toggle C-th bit */
+	free_conns ^= 1ULL << i;
+	memset(c, 0, sizeof(*c));
+	/* also free buffer resources */
+	if (LIKELY(c->buf != NULL)) {
+		free(c->buf);
+	}
+	return;
 }
 
 
@@ -580,6 +958,86 @@ resched(ev_periodic *w, ev_tstamp now)
 
 	ECHS_NOTI_LOG("next run %f", soon);
 	return soon;
+}
+
+static void
+shut_conn(struct echs_conn_s *c)
+{
+/* shuts a connection partially or fully down */
+	const int fd = c->r.fd;
+
+	if (fd > 0) {
+		/* just shutdown all */
+		shutdown(fd, SHUT_RDWR);
+	}
+	close(fd);
+	free_conn(c);
+	return;
+}
+
+static void
+sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	struct echs_conn_s *c = (void*)w;
+	const int fd = c->r.fd;
+	ssize_t nrd;
+
+	if (UNLIKELY((nrd = read(fd, c->buf + c->bix, c->bsz - c->bix)) < 0)) {
+		goto shut;
+	}
+	/* check the command we're supposed to obey */
+	switch (guess_cmd(c->cmd, c->buf, c->bix += nrd)) {
+	default:
+		handle_cmd(fd, c->cmd);
+		goto shut;
+
+	case ECHS_CMD_MORE:
+		/* don't close the connection, prepare for more */
+		if ((size_t)c->bix >= c->bsz) {
+			c->buf = realloc(c->buf, c->bsz *= 2U);
+			if (UNLIKELY(c->buf == NULL)) {
+				goto shut;
+			}
+		}
+		break;
+	}
+	return;
+
+shut:
+	ev_io_stop(EV_A_ w);
+	shut_conn((struct echs_conn_s*)w);
+	return;
+}
+
+static void
+sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	struct echs_conn_s *ec;
+	struct sockaddr_un sa;
+	socklen_t z = sizeof(sa);
+	uid_t u;
+	gid_t g;
+	int s;
+
+	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
+		ECHS_ERR_LOG("\
+authenticity of connection %d cannot be established: %s", w->fd, STRERR);
+		return;
+	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+		ECHS_ERR_LOG("connection vanished: %s", STRERR);
+		return;
+	}
+
+	/* very good, get us an io watcher */
+	ECHS_NOTI_LOG("connection from %u/%u", u, g);
+	if (UNLIKELY((ec = make_conn()) == NULL)) {
+		ECHS_ERR_LOG("too many concurrent connections");
+		close(s);
+		return;
+	}
+	ev_io_init(&ec->r, sock_data_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ec->r);
+	return;
 }
 
 
@@ -707,6 +1165,16 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 	return;
 }
 
+static void
+echsd_inject_sock(struct _echsd_s *ctx, int s)
+{
+	EV_P = ctx->loop;
+
+	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ctx->ctlsock);
+	return;
+}
+
 
 #include "echsd.yucc"
 
@@ -717,6 +1185,7 @@ main(int argc, char *argv[])
 	struct _echsd_s *ctx;
 	const char *edir;
 	echs_evstrm_t s;
+	int esok = -1;
 	int rc = 0;
 
 	/* best not to be signalled for a minute */
@@ -739,6 +1208,16 @@ main(int argc, char *argv[])
 		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
+	} else if (UNLIKELY((qdirfd = open(edir, O_RDONLY)) < 0)) {
+		perror("Error: cannot open echsd run directory");
+		rc = 1;
+		goto out;
+	}
+
+	if (UNLIKELY((esok = make_socket(edir)) < 0)) {
+		perror("Error: cannot create socket file");
+		rc = 1;
+		goto out;
 	}
 
 	if (argi->foreground_flag) {
@@ -758,8 +1237,11 @@ main(int argc, char *argv[])
 		goto clo;
 	}
 
-	/* inject our state */
-	with (const char *qfn = pathcat(edir, "echsq_a.ics", NULL)) {
+	/* inject the echsd socket */
+	echsd_inject_sock(ctx, esok);
+
+	/* inject our state, i.e. read all echsq files */
+	with (const char *qfn = pathcat(edir, "echsq_1006a.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
@@ -768,7 +1250,7 @@ queue file `%s' does not exist ...", qfn);
 		echsd_inject_evstrm(ctx, s, taskA_cb);
 	}
 
-	with (const char *qfn = pathcat(edir, "echsq_b.ics", NULL)) {
+	with (const char *qfn = pathcat(edir, "echsq_1006b.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
@@ -796,6 +1278,9 @@ clo:
 	echs_closelog();
 
 out:
+	if (esok >= 0) {
+		(void)free_socket(esok, edir);
+	}
 	yuck_free(argi);
 	return rc;
 }

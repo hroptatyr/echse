@@ -1,0 +1,16 @@
+Usage: echsq COMMAND
+
+Control echse queues.
+
+  -l, --list            List jobs in the queue (much like crontab's -l)
+  -q, --queue=A|B       Use specified queue. A for absolute, B for batch.
+
+
+Usage: echsq add [FILE]...
+
+Add FILEs to the queue.
+
+
+Usage: echsq list
+
+List jobs in the queue.
