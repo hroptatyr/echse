@@ -52,8 +52,12 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <fcntl.h>
+#if defined HAVE_PATHS_H
+# include <paths.h>
+#endif	/* HAVE_PATHS_H */
 #include <pwd.h>
 #include "nifty.h"
 
@@ -71,6 +75,10 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 #  pragma warning(default:1419)
 # endif	/* __INTEL_COMPILER */
 #endif	/* HAVE_SPLICE && !SPLICE_F_MOVE */
+
+#if !defined _PATH_TMP
+# define _PATH_TMP	"/tmp/"
+#endif	/* _PATH_TMP */
 
 
 static __attribute__((format(printf, 1, 2))) void
@@ -101,36 +109,53 @@ xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 	return ssz;
 }
 
-static const char*
-pathcat(const char *dirnm, ...)
-{
-	static char res[PATH_MAX];
-	va_list ap;
-	size_t ri = 0U;
-
-	if (UNLIKELY(dirnm == NULL)) {
-		return NULL;
-	}
-
-	va_start(ap, dirnm);
-	ri += xstrlcpy(res + ri, dirnm, sizeof(res) - ri);
-	for (const char *fn; (fn = va_arg(ap, const char*));) {
-		res[ri++] = '/';
-		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
-	}
-	va_end(ap);
-	return res;
-}
-
 
 static const char*
-get_vardir(bool systemp)
+get_esock(bool systemp)
 {
-	if (!systemp) {
-		struct passwd *pw = getpwuid(getuid());
-		return pw->pw_dir;
+/* return a candidate for the echsd socket, system-wide or user local */
+	static const char rundir[] = "/var/run";
+	static const char sockfn[] = "echse/=echsd";
+	struct stat st;
+	static char d[PATH_MAX];
+	size_t di;
+
+	if (systemp) {
+		di = xstrlcpy(d, rundir, sizeof(d));
+		d[di++] = '/';
+		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
+
+		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+			return NULL;
+		}
+		/* success */
+		return d;
+	} else {
+		uid_t u = getuid();
+
+		di = xstrlcpy(d, rundir, sizeof(d));
+		d[di++] = '/';
+		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
+		d[di++] = '/';
+		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
+
+		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+			goto tmpdir;
+		}
+		/* success */
+		return d;
+
+	tmpdir:
+		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
+		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
+
+		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+			/* no more alternatives */
+			return NULL;
+		}
+		/* success */
+		return d;
 	}
-	return "/var/run";
 }
 
 static int
@@ -181,15 +206,15 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
 		char buf[4096U];
 		char cmd[64];
-		const char *dir;
+		const char *e;
 		ssize_t cmz;
 		int s;
 
 		/* let's try the local echsd and then the system-wide one */
-		if (!(dir = pathcat(get_vardir(false), ".echse", "=echsd", NULL))) {
+		if (!(e = get_esock(false))) {
 			break;
-		} else if ((s = make_conn(dir)) < 0) {
-			serror("Error: cannot connect to `%s'", dir);
+		} else if ((s = make_conn(e)) < 0) {
+			serror("Error: cannot connect to `%s'", e);
 			break;
 		}
 		cmz = snprintf(cmd, sizeof(cmd),
@@ -214,15 +239,15 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
 		char buf[4096U];
 		char cmd[64];
-		const char *dir;
+		const char *e;
 		ssize_t cmz;
 		int s;
 
 		/* let's try the local echsd and then the system-wide one */
-		if (!(dir = pathcat(get_vardir(true), "echse", "=echsd", NULL))) {
+		if (!(e = get_esock(true))) {
 			break;
-		} else if ((s = make_conn(dir)) < 0) {
-			serror("Error: cannot connect to `%s'", dir);
+		} else if ((s = make_conn(e)) < 0) {
+			serror("Error: cannot connect to `%s'", e);
 			break;
 		}
 		cmz = snprintf(cmd, sizeof(cmd),
