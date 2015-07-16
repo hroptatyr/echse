@@ -65,6 +65,9 @@
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
+#if defined HAVE_PATHS_H
+# include <paths.h>
+#endif	/* HAVE_PATHS_H */
 #include <pwd.h>
 #include <ev.h>
 #include "echse.h"
@@ -123,6 +126,10 @@ struct ucred {
 	gid_t gid;
 };
 #endif	/* !HAVE_STRUCT_UCRED */
+
+#if !defined _PATH_TMP
+# define _PATH_TMP	"/tmp"
+#endif	/* _PATH_TMP */
 
 static const char *echsx;
 static int qdirfd;
@@ -336,46 +343,130 @@ found:
 }
 
 static const char*
-get_vardir(void)
+get_queudir(void)
 {
-	static const char rdir[] = "/var/run";
-	static const char ldir[] = ".echse";
-	static char vdir[PATH_MAX];
+	static const char spodir[] = "/var/spool";
+	static const char appdir[] = ".echse";
+	static char d[PATH_MAX];
 	uid_t u;
 
 	switch ((u = geteuid())) {
+		struct passwd *pw;
+		struct stat st;
+		size_t di;
 	case 0:
-		if (mkdir(rdir, 0755) == -1 && errno == EEXIST) {
-			size_t vi;
-
-			vi = xstrlcpy(vdir, rdir, sizeof(vdir));
-			vdir[vi++] = '/';
-			vi += xstrlcpy(vdir + vi, ldir + 1U, sizeof(vdir) - vi);
-			/* just mkdir the result and throw away errors */
-			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
-				/* we consider our job done */
-				return vdir;
-			}
+		if (stat(spodir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			break;
 		}
-		break;
+
+		di = xstrlcpy(d, spodir, sizeof(d));
+		d[di++] = '/';
+		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		/* just mkdir the result and throw away errors */
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* bollocks */
+			break;
+		}
+		/* we consider our job done */
+		return d;
+
 	default:
-		if_with (struct passwd *pw,
-			 (pw = getpwuid(u)) && pw->pw_dir &&
-			 /* make sure home directory is actually there */
-			 mkdir(pw->pw_dir, 0755) == -1 && errno == EEXIST) {
-			size_t vi;
-
-			vi = xstrlcpy(vdir, pw->pw_dir, sizeof(vdir));
-			vdir[vi++] = '/';
-			vi += xstrlcpy(vdir + vi, ldir, sizeof(vdir) - vi);
-			/* just mkdir the result and throw away errors */
-			if (mkdir(vdir, 0700) == 0 || errno == EEXIST) {
-				/* we consider our job done */
-				return vdir;
-			}
-			/* otherwise it's just horseshit */
+		/* users have a tougher time since there's no local
+		 * directory that serves the purpose of /var/spool/
+		 * but where users have write permission
+		 * also, since cron and at cannot be run without
+		 * super-privileges we don't have any inspirations
+		 * of how it could be done
+		 * *sigh* let's put the queue files into ~/.echse
+		 * then, prefixed with the machine we're working on */
+		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
+			/* there's nothing else we can do */
+			break;
+		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			/* gimme a break! */
+			break;
 		}
-		break;
+		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
+		d[di++] = '/';
+		di += xstrlcpy(d + di, appdir, sizeof(d) - di);
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* plain horseshit again */
+			break;
+		}
+		d[di++] = '/';
+		/* now the machine name */
+		if (gethostname(d + di, sizeof(d) - di) < 0) {
+			/* is there anything that works on this machine? */
+			break;
+		}
+		/* and mkdir it again, just in case */
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* plain horseshit again */
+			break;
+		}
+		/* now that's a big success */
+		return d;
+	}
+	/* we've run out of options */
+	return NULL;
+}
+
+static const char*
+get_sockdir(void)
+{
+	static const char rundir[] = "/var/run";
+	static const char appdir[] = ".echse";
+	static char d[PATH_MAX];
+	struct stat st;
+	uid_t u;
+
+	/* barf right away when there's no /var/run */
+	if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+		return NULL;
+	}
+
+	switch ((u = geteuid())) {
+		size_t di;
+	case 0:
+		di = xstrlcpy(d, rundir, sizeof(d));
+		d[di++] = '/';
+		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		/* just mkdir the result and throw away errors */
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* it's just horseshit */
+			break;
+		}
+		/* we consider our job done */
+		return d;
+	default:
+		di = xstrlcpy(d, rundir, sizeof(d));
+		d[di++] = '/';
+		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
+		if (stat(d, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			/* no /var/run/user/XXX,
+			 * try /tmp/echse */
+			goto tmpdir;
+		}
+		d[di++] = '/';
+		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		/* now mkdir the result and throw away errors */
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* plain horseshit again */
+			break;
+		}
+		/* we consider our job done */
+		return d;
+
+	tmpdir:
+		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
+		d[di++] = '/';
+		di += xstrlcpy(d + di, appdir, sizeof(d) - di);
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* plain horseshit again */
+			break;
+		}
+		/* now that's a big success */
+		return d;
 	}
 	/* we've run out of options */
 	return NULL;
@@ -1183,7 +1274,8 @@ main(int argc, char *argv[])
 {
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
-	const char *edir;
+	const char *qdir;
+	const char *sdir;
 	echs_evstrm_t s;
 	int esok = -1;
 	int rc = 0;
@@ -1204,17 +1296,21 @@ main(int argc, char *argv[])
 	}
 
 	/* read queues, we've got one echs file per queue */
-	if (UNLIKELY((edir = get_vardir()) == NULL)) {
+	if (UNLIKELY((qdir = get_queudir()) == NULL)) {
 		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY((qdirfd = open(edir, O_RDONLY)) < 0)) {
-		perror("Error: cannot open echsd run directory");
+	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY)) < 0)) {
+		perror("Error: cannot open echsd spool directory");
+		rc = 1;
+		goto out;
+	} else if (UNLIKELY((sdir = get_sockdir()) == NULL)) {
+		perror("Error: cannot find directory to put the socket in");
 		rc = 1;
 		goto out;
 	}
 
-	if (UNLIKELY((esok = make_socket(edir)) < 0)) {
+	if (UNLIKELY((esok = make_socket(sdir)) < 0)) {
 		perror("Error: cannot create socket file");
 		rc = 1;
 		goto out;
@@ -1241,7 +1337,7 @@ main(int argc, char *argv[])
 	echsd_inject_sock(ctx, esok);
 
 	/* inject our state, i.e. read all echsq files */
-	with (const char *qfn = pathcat(edir, "echsq_1006a.ics", NULL)) {
+	with (const char *qfn = pathcat(qdir, "echsq_1006a.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
@@ -1250,7 +1346,7 @@ queue file `%s' does not exist ...", qfn);
 		echsd_inject_evstrm(ctx, s, taskA_cb);
 	}
 
-	with (const char *qfn = pathcat(edir, "echsq_1006b.ics", NULL)) {
+	with (const char *qfn = pathcat(qdir, "echsq_1006b.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
@@ -1279,7 +1375,7 @@ clo:
 
 out:
 	if (esok >= 0) {
-		(void)free_socket(esok, edir);
+		(void)free_socket(esok, sdir);
 	}
 	yuck_free(argi);
 	return rc;
