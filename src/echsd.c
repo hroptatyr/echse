@@ -129,7 +129,7 @@ struct ucred {
 #endif	/* !HAVE_STRUCT_UCRED */
 
 #if !defined _PATH_TMP
-# define _PATH_TMP	"/tmp"
+# define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
 static const char *echsx;
@@ -460,7 +460,6 @@ get_sockdir(void)
 
 	tmpdir:
 		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
-		d[di++] = '/';
 		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
