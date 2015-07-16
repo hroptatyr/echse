@@ -491,7 +491,7 @@ pathcat(const char *dirnm, ...)
 }
 
 static int
-make_socket(const char *edir)
+make_socket(const char *sdir)
 {
 	struct sockaddr_un sa = {.sun_family = AF_UNIX};
 	const char *fn;
@@ -501,7 +501,7 @@ make_socket(const char *edir)
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
 	}
-	fn = pathcat(edir, "=echsd", NULL);
+	fn = pathcat(sdir, "=echsd", NULL);
 	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
 	sz += sizeof(sa.sun_family);
 	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
@@ -516,9 +516,9 @@ fail:
 }
 
 static int
-free_socket(int s, const char *edir)
+free_socket(int s, const char *sdir)
 {
-	const char *fn = pathcat(edir, "=echsd", NULL);
+	const char *fn = pathcat(sdir, "=echsd", NULL);
 	int res = unlink(fn);
 	close(s);
 	return res;
