@@ -117,6 +117,7 @@ struct _echsd_s {
 	ev_io ctlsock;
 
 	struct ev_loop *loop;
+	cred_t dflt_cred;
 };
 
 #if !defined HAVE_STRUCT_UCRED
@@ -1195,6 +1196,10 @@ make_echsd(void)
 	ev_signal_start(EV_A_ &res->sigpipe);
 
 	res->loop = EV_A;
+
+	/* obtain our effective credentials */
+	res->dflt_cred.u = geteuid();
+	res->dflt_cred.g = getegid();
 	return res;
 
 foul:
@@ -1230,6 +1235,7 @@ echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 
 	/* store the stream */
 	t->strm = s;
+	t->cred = (cred_t){1006, 100};
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
