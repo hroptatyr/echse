@@ -421,14 +421,14 @@ get_sockdir(void)
 	struct stat st;
 	uid_t u;
 
-	/* barf right away when there's no /var/run */
-	if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-		return NULL;
-	}
-
 	switch ((u = geteuid())) {
 		size_t di;
 	case 0:
+		/* barf right away when there's no /var/run */
+		if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			return NULL;
+		}
+
 		di = xstrlcpy(d, rundir, sizeof(d));
 		d[di++] = '/';
 		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
