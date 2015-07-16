@@ -674,12 +674,107 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 }
 
 
+/* s2c communication */
+typedef enum {
+	ECHS_CMD_UNK,
+	ECHS_CMD_LIST,
+
+	/* to indicate that we need more data to finish the command */
+	ECHS_CMD_MORE = -1
+} echs_cmd_t;
+
+struct echs_cmd_list_s {
+	const char *fn;
+	size_t len;
+};
+
+struct echs_cmdparam_s {
+	echs_cmd_t cmd;
+	union {
+		struct echs_cmd_list_s list;
+	};
+};
+
+static echs_cmd_t
+cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	static const char ht_verb[] = "GET ";
+	static const char ht_vers[] = " HTTP/1.1\r\n";
+	const char *ep;
+
+	if (!memcmp(buf, ht_verb, strlenof(ht_verb)) &&
+	    (ep = xmemmem(buf, bsz, ht_vers, strlenof(ht_vers)))) {
+		/* aaaah http shit and looks like a GET request */
+		const char *bp;
+
+		for (; ep > buf && ep[-1] == ' '; ep--);
+		for (bp = ep; bp > buf && bp[-1] != '/'; bp--);
+		param->cmd = ECHS_CMD_LIST;
+		param->list = (struct echs_cmd_list_s){bp, ep - bp};
+		return xmemmem(ep, bsz - (ep - buf), "\r\n\r\n", 4U)
+			? ECHS_CMD_LIST : ECHS_CMD_MORE;
+	}
+	return ECHS_CMD_UNK;
+}
+
+static ssize_t
+cmd_list(int fd, const struct echs_cmd_list_s cmd[static 1U])
+{
+	static const char rpl[] = "\
+HTTP/1.1 204 No Content\r\n\r\n";
+	ssize_t nwr = 0;
+
+	nwr += write(fd, rpl, strlenof(rpl));
+	nwr += write(fd, cmd->fn, cmd->len);
+	nwr += write(fd, "\n", 1U);
+	return nwr;
+}
+
+static echs_cmd_t
+guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	echs_cmd_t r = ECHS_CMD_UNK;
+
+	if ((r = cmd_list_p(param, buf, bsz))) {
+		;
+	} else if (0) {
+		;
+	}
+	return r;
+}
+
+static ssize_t
+handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
+{
+	ssize_t nwr = 0;
+
+	switch (param->cmd) {
+	case ECHS_CMD_LIST:
+		nwr = cmd_list(fd, &param->list);
+		break;
+
+	case ECHS_CMD_MORE:
+	default:
+		/* just do fuckall */
+		break;
+	}
+	return nwr;
+}
+
+
 /* libev conn handling */
 #define MAX_CONNS	(sizeof(free_conns) * 8U)
 #define MAX_QUEUE	MAX_CONNS
 static uint64_t free_conns = -1;
 static struct echs_conn_s {
 	ev_io r;
+	/* i/o buffer, its size and an offset */
+	char *buf;
+	size_t bsz;
+	off_t bix;
+	/* the command we're building up
+	 * this contains a partial or full parse of all parameters */
+	struct echs_cmdparam_s cmd[1U];
 } conns[MAX_CONNS];
 
 static struct echs_conn_s*
@@ -691,7 +786,15 @@ make_conn(void)
 	if (LIKELY(i-- > 0)) {
 		/* toggle bit in free conns */
 		free_conns ^= 1ULL << i;
-		return conns + i;
+
+		conns[i].buf = malloc(conns[i].bsz = 4096U);
+		conns[i].bix = 0;
+
+		memset(conns[i].cmd, 0, sizeof(*conns[i].cmd));
+
+		if (LIKELY(conns[i].buf != NULL)) {
+			return conns + i;
+		}
 	}
 	return NULL;
 }
@@ -709,6 +812,10 @@ free_conn(struct echs_conn_s *c)
 	/* toggle C-th bit */
 	free_conns ^= 1ULL << i;
 	memset(c, 0, sizeof(*c));
+	/* also free buffer resources */
+	if (LIKELY(c->buf != NULL)) {
+		free(c->buf);
+	}
 	return;
 }
 
@@ -840,19 +947,32 @@ shut_conn(struct echs_conn_s *c)
 static void
 sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
-	char buf[4096U];
-	const int fd = w->fd;
+	struct echs_conn_s *c = (void*)w;
+	const int fd = c->r.fd;
 	ssize_t nrd;
 
-	nrd = read(fd, buf, sizeof(buf));
-	/* check the command we're supposed to obey */
-	if (xmemmem(buf, nrd, " HTTP/1.1\r\n", strlenof(" HTTP/1.1\r\n"))) {
-		/* aaaah http shit */
-		static const char rpl[] = "\
-HTTP/1.1 204 No Content\r\n\r\n";
-		write(fd, rpl, strlenof(rpl));
+	if (UNLIKELY((nrd = read(fd, c->buf + c->bix, c->bsz - c->bix)) < 0)) {
+		goto shut;
 	}
+	/* check the command we're supposed to obey */
+	switch (guess_cmd(c->cmd, c->buf, c->bix += nrd)) {
+	default:
+		handle_cmd(fd, c->cmd);
+		goto shut;
 
+	case ECHS_CMD_MORE:
+		/* don't close the connection, prepare for more */
+		if ((size_t)c->bix >= c->bsz) {
+			c->buf = realloc(c->buf, c->bsz *= 2U);
+			if (UNLIKELY(c->buf == NULL)) {
+				goto shut;
+			}
+		}
+		break;
+	}
+	return;
+
+shut:
 	ev_io_stop(EV_A_ w);
 	shut_conn((struct echs_conn_s*)w);
 	return;
@@ -1085,8 +1205,8 @@ main(int argc, char *argv[])
 	/* inject the echsd socket */
 	echsd_inject_sock(ctx, esok);
 
-	/* inject our state */
-	with (const char *qfn = pathcat(edir, "echsq_a.ics", NULL)) {
+	/* inject our state, i.e. read all echsq files */
+	with (const char *qfn = pathcat(edir, "echsq_1006a.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
@@ -1095,7 +1215,7 @@ queue file `%s' does not exist ...", qfn);
 		echsd_inject_evstrm(ctx, s, taskA_cb);
 	}
 
-	with (const char *qfn = pathcat(edir, "echsq_b.ics", NULL)) {
+	with (const char *qfn = pathcat(edir, "echsq_1006b.ics", NULL)) {
 		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
 			ECHS_NOTI_LOG("\
 queue file `%s' does not exist ...", qfn);
