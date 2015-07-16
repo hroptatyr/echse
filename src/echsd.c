@@ -461,7 +461,7 @@ get_sockdir(void)
 	tmpdir:
 		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
 		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir, sizeof(d) - di);
+		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
 			break;
