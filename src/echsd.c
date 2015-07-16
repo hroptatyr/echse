@@ -1371,8 +1371,10 @@ queue file `%s' does not exist ...", qfn);
 		block_sigs();
 	}
 
-
-	free_echs_evstrm(s);
+	/* we've got multiple streams, so where are they all? */
+	if (LIKELY(s != NULL)) {
+		free_echs_evstrm(s);
+	}
 	free_echsd(ctx);
 
 clo:
