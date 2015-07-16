@@ -62,6 +62,9 @@
 #ifdef HAVE_SYS_UCRED_H
 # include <sys/ucred.h>
 #endif	/* HAVE_SYS_UCRED_H */
+#if defined HAVE_SENDFILE
+# include <sys/sendfile.h>
+#endif	/* HAVE_SENDFILE */
 #include <pwd.h>
 #include <ev.h>
 #include "echse.h"
@@ -113,8 +116,6 @@ struct _echsd_s {
 	struct ev_loop *loop;
 };
 
-static const char *echsx;
-
 #if !defined HAVE_STRUCT_UCRED
 struct ucred {
 	pid_t pid;
@@ -122,6 +123,9 @@ struct ucred {
 	gid_t gid;
 };
 #endif	/* !HAVE_STRUCT_UCRED */
+
+static const char *echsx;
+static int qdirfd;
 
 
 static size_t
@@ -718,15 +722,42 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 }
 
 static ssize_t
-cmd_list(int fd, const struct echs_cmd_list_s cmd[static 1U])
+cmd_list(int ofd, const struct echs_cmd_list_s cmd[static 1U])
 {
-	static const char rpl[] = "\
-HTTP/1.1 204 No Content\r\n\r\n";
+	static const char rpl403[] = "\
+HTTP/1.1 403 Forbidden\r\n\r\n";
+	static const char rpl404[] = "\
+HTTP/1.1 404 Not Found\r\n\r\n";
+	static const char rpl200[] = "\
+HTTP/1.1 200 Ok\r\n\r\n";
+	char fn[cmd->len + 1U];
+	const char *rpl;
+	size_t rpz;
+	struct stat st;
+	int fd = -1;
 	ssize_t nwr = 0;
 
-	nwr += write(fd, rpl, strlenof(rpl));
-	nwr += write(fd, cmd->fn, cmd->len);
-	nwr += write(fd, "\n", 1U);
+	memcpy(fn, cmd->fn, cmd->len);
+	fn[cmd->len] = '\0';
+	if (fstatat(qdirfd, fn, &st, 0) < 0) {
+		rpl = rpl404, rpz = strlenof(rpl404);
+	} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+		rpl = rpl403, rpz = strlenof(rpl403);
+	} else {
+		rpl = rpl200, rpz = strlenof(rpl200);
+	}
+	/* write reply header */
+	nwr += write(ofd, rpl, rpz);
+	/* and content, if any */
+#if defined HAVE_SENDFILE
+	if (!(fd < 0)) {
+		size_t fz = st.st_size;
+
+		for (ssize_t nsf;
+		     fz && (nsf = sendfile(ofd, fd, NULL, fz)) > 0;
+		     fz -= nsf, nwr += nsf);
+	}
+#endif	/* HAVE_SENDFILE */
 	return nwr;
 }
 
@@ -1175,6 +1206,10 @@ main(int argc, char *argv[])
 	/* read queues, we've got one echs file per queue */
 	if (UNLIKELY((edir = get_vardir()) == NULL)) {
 		perror("Error: cannot obtain local state directory");
+		rc = 1;
+		goto out;
+	} else if (UNLIKELY((qdirfd = open(edir, O_RDONLY)) < 0)) {
+		perror("Error: cannot open echsd run directory");
 		rc = 1;
 		goto out;
 	}
