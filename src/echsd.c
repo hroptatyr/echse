@@ -132,7 +132,7 @@ struct ucred {
 #endif	/* _PATH_TMP */
 
 static const char *echsx;
-static int qdirfd;
+static int qdirfd = -1;
 
 
 static size_t
@@ -1376,6 +1376,9 @@ clo:
 out:
 	if (esok >= 0) {
 		(void)free_socket(esok, sdir);
+	}
+	if (qdirfd >= 0) {
+		close(qdirfd);
 	}
 	yuck_free(argi);
 	return rc;
