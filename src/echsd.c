@@ -117,7 +117,6 @@ struct _echsd_s {
 	ev_io ctlsock;
 
 	struct ev_loop *loop;
-	cred_t dflt_cred;
 };
 
 #if !defined HAVE_STRUCT_UCRED
@@ -134,6 +133,7 @@ struct ucred {
 
 static const char *echsx;
 static int qdirfd = -1;
+static struct ucred meself;
 
 
 static size_t
@@ -351,7 +351,7 @@ get_queudir(void)
 	static char d[PATH_MAX];
 	uid_t u;
 
-	switch ((u = geteuid())) {
+	switch ((u = meself.uid)) {
 		struct passwd *pw;
 		struct stat st;
 		size_t di;
@@ -421,7 +421,7 @@ get_sockdir(void)
 	struct stat st;
 	uid_t u;
 
-	switch ((u = geteuid())) {
+	switch ((u = meself.uid)) {
 		size_t di;
 	case 0:
 		/* barf right away when there's no /var/run */
@@ -1181,10 +1181,6 @@ make_echsd(void)
 	ev_signal_start(EV_A_ &res->sigpipe);
 
 	res->loop = EV_A;
-
-	/* obtain our effective credentials */
-	res->dflt_cred.u = geteuid();
-	res->dflt_cred.g = getegid();
 	return res;
 
 foul:
@@ -1257,6 +1253,45 @@ echsd_inject_sock(struct _echsd_s *ctx, int s)
 	return;
 }
 
+static void
+echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
+{
+	uid_t u;
+
+	switch ((u = meself.uid)) {
+		static char qfn[PATH_MAX];
+		size_t qz;
+		echs_evstrm_t s;
+
+	case 0:
+		/* we are a super-echsd, load all .ics files we can find */
+		break;
+
+	default:
+		/* we're just an ordinary luser */
+		qz = xstrlcpy(qfn, qd, sizeof(qfn));
+
+		snprintf(qfn + qz, sizeof(qfn) - qz, "echsq_%ua.ics", u);
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s, taskA_cb);
+		free_echs_evstrm(s);
+
+		snprintf(qfn + qz, sizeof(qfn) - qz, "echsq_%ub.ics", u);
+		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
+			ECHS_NOTI_LOG("\
+queue file `%s' does not exist ...", qfn);
+			break;
+		}
+		echsd_inject_evstrm(ctx, s, taskB_cb);
+		free_echs_evstrm(s);
+		break;
+	}
+}
+
 
 #include "echsd.yucc"
 
@@ -1267,7 +1302,6 @@ main(int argc, char *argv[])
 	struct _echsd_s *ctx;
 	const char *qdir;
 	const char *sdir;
-	echs_evstrm_t s;
 	int esok = -1;
 	int rc = 0;
 
@@ -1278,6 +1312,11 @@ main(int argc, char *argv[])
 		rc = 1;
 		goto out;
 	}
+
+	/* who are we? */
+	meself.pid = getpid();
+	meself.uid = geteuid();
+	meself.gid = getegid();
 
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
@@ -1328,25 +1367,7 @@ main(int argc, char *argv[])
 	echsd_inject_sock(ctx, esok);
 
 	/* inject our state, i.e. read all echsq files */
-	with (const char *qfn = pathcat(qdir, "echsq_1006a.ics", NULL)) {
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
-		}
-		echsd_inject_evstrm(ctx, s, taskA_cb);
-		free_echs_evstrm(s);
-	}
-
-	with (const char *qfn = pathcat(qdir, "echsq_1006b.ics", NULL)) {
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
-		}
-		echsd_inject_evstrm(ctx, s, taskB_cb);
-		free_echs_evstrm(s);
-	}
+	echsd_inject_queues(ctx, qdir);
 
 	/* main loop */
 	{
