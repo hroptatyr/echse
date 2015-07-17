@@ -51,6 +51,9 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#if defined HAVE_GRP_H
+# include <grp.h>
+#endif	/* HAVE_GRP_H */
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
@@ -61,9 +64,6 @@
 #if defined __INTEL_COMPILER
 # define auto	static
 #endif	/* __INTEL_COMPILER */
-
-#undef EV_P
-#define EV_P  struct ev_loop *loop __attribute__((unused))
 
 #if !defined SPLICE_F_MOVE
 /* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
@@ -81,7 +81,6 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 
 typedef struct echs_task_s *echs_task_t;
 
-/* linked list of ev_periodic objects */
 struct echs_task_s {
 	/* beef data for the task in question */
 	const char *cmd;
@@ -641,6 +640,32 @@ main(int argc, char *argv[])
 	if (yuck_parse(argi, argc, argv) < 0) {
 		rc = 1;
 		goto out;
+	}
+
+	/* switch to user/group early */
+	if (argi->gid_arg) {
+		long unsigned int g = strtoul(argi->gid_arg, NULL, 10);
+		gid_t supgs[1UL] = {(gid_t)g};
+
+		if (g > (gid_t)~0UL ||
+#if defined HAVE_GRP_H
+		    setgroups(countof(supgs), supgs) < 0 ||
+#endif	/* HAVE_GRP_H */
+		    setgid((gid_t)g) < 0) {
+			perror("Error: cannot set group id");
+			rc = 1;
+			goto out;
+		}
+	}
+	if (argi->uid_arg) {
+		long unsigned int u = strtoul(argi->uid_arg, NULL, 10);
+
+		if (u > (uid_t)~0UL ||
+		    setuid((uid_t)u) < 0) {
+			perror("Error: cannot set user id");
+			rc = 1;
+			goto out;
+		}
 	}
 
 	if (argi->foreground_flag) {
