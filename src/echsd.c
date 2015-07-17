@@ -1205,7 +1205,7 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 {
 	echs_task_t t;
 	EV_P = ctx->loop;
@@ -1217,14 +1217,14 @@ echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 
 	/* store the stream */
 	t->strm = clone_echs_evstrm(s);
-	t->cred = (cred_t){1006, 100};
+	t->cred = c;
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
 
@@ -1234,11 +1234,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			echsd_inject_evstrm1(ctx, s, cb);
+			_inject_evstrm1(ctx, s, c, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			echsd_inject_evstrm1(ctx, strm[i], cb);
+			_inject_evstrm1(ctx, strm[i], c, cb);
 		}
 	}
 	return;
@@ -1315,7 +1315,7 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				continue;
 			}
 			/* wow, this really must be it */
-			echsd_inject_evstrm(ctx, s, cb);
+			_inject_evstrm(ctx, s, (cred_t){xu, 100}, cb);
 			free_echs_evstrm(s);
 		}
 		closedir(d);
