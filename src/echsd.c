@@ -1219,7 +1219,7 @@ echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 	}
 
 	/* store the stream */
-	t->strm = s;
+	t->strm = clone_echs_evstrm(s);
 	t->cred = (cred_t){1006, 100};
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
@@ -1335,6 +1335,7 @@ queue file `%s' does not exist ...", qfn);
 			break;
 		}
 		echsd_inject_evstrm(ctx, s, taskA_cb);
+		free_echs_evstrm(s);
 	}
 
 	with (const char *qfn = pathcat(qdir, "echsq_1006b.ics", NULL)) {
@@ -1344,6 +1345,7 @@ queue file `%s' does not exist ...", qfn);
 			break;
 		}
 		echsd_inject_evstrm(ctx, s, taskB_cb);
+		free_echs_evstrm(s);
 	}
 
 	/* main loop */
@@ -1356,10 +1358,7 @@ queue file `%s' does not exist ...", qfn);
 		block_sigs();
 	}
 
-	/* we've got multiple streams, so where are they all? */
-	if (LIKELY(s != NULL)) {
-		free_echs_evstrm(s);
-	}
+	/* free context and associated resources */
 	free_echsd(ctx);
 
 clo:
