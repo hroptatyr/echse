@@ -667,15 +667,6 @@ run_task(echs_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
 	pid_t r;
-	cred_t c = {geteuid(), getegid()};
-
-	if (UNLIKELY(seteuid(t->cred.u)) < 0) {
-		ECHS_ERR_LOG("cannot set effective user id: %s", STRERR);
-		return -1;
-	} else if (UNLIKELY(setegid(t->cred.g)) < 0) {
-		ECHS_ERR_LOG("cannot set effective group id: %s", STRERR);
-		return -1;
-	}
 
 	switch ((r = vfork())) {
 		int rc;
@@ -694,18 +685,21 @@ run_task(echs_task_t t, bool dtchp)
 			close(STDERR_FILENO);
 		}
 
+		static char uid[32U], gid[32U];
 		static char *args[] = {
 			"echsx",
 			"-c", NULL,
 			"--stdout=/tmp/foo", "--stderr=/tmp/foo",
 			"--mailto=freundt", "--mailfrom=freundt",
-			"-n",
+			uid, gid, "-n",
 			NULL
 		};
 		args[2U] = deconst(t->cmd);
 		if (dtchp) {
-			args[7U] = NULL;
+			args[9U] = NULL;
 		}
+		snprintf(uid, sizeof(uid), "--uid=%u", t->cred.u);
+		snprintf(gid, sizeof(gid), "--gid=%u", t->cred.g);
 		rc = execve(echsx, args, t->env);
 		_exit(rc);
 		/* not reached */
@@ -716,14 +710,6 @@ run_task(echs_task_t t, bool dtchp)
 			while (waitpid(r, &rc, 0) != r);
 		}
 		break;
-	}
-
-	if (UNLIKELY(seteuid(c.u)) < 0) {
-		ECHS_ERR_LOG("cannot set effective user id back: %s", STRERR);
-		return -1;
-	} else if (UNLIKELY(setegid(c.g)) < 0) {
-		ECHS_ERR_LOG("cannot set effective group id back: %s", STRERR);
-		return -1;
 	}
 	return r;
 }

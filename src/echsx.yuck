@@ -10,3 +10,5 @@ Execute job.
   --mailfrom=ADDR       When sending mail use ADDR as from address.
   --mailto=ADDR...      Send job's output to ADDRs via mail.
   --timeout=VALUE       Terminate job after VALUE seconds.
+  --uid=UID             Run as user UID.
+  --gid=GID             Run as user GID.

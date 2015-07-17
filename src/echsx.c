@@ -643,6 +643,30 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
+	/* switch to user/group early */
+	if (argi->gid_arg) {
+		long unsigned int g = strtoul(argi->gid_arg, NULL, 10);
+		gid_t supgs[1UL] = {(gid_t)g};
+
+		if (g > (gid_t)~0UL ||
+		    setgroups(countof(supgs), supgs) < 0 ||
+		    setgid((gid_t)g) < 0) {
+			perror("Error: cannot set group id");
+			rc = 1;
+			goto out;
+		}
+	}
+	if (argi->uid_arg) {
+		long unsigned int u = strtoul(argi->uid_arg, NULL, 10);
+
+		if (u > (uid_t)~0UL ||
+		    setuid((uid_t)u) < 0) {
+			perror("Error: cannot set user id");
+			rc = 1;
+			goto out;
+		}
+	}
+
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 	} else if (daemonise() < 0) {
