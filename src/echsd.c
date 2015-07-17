@@ -53,6 +53,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <dirent.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
@@ -1256,39 +1257,68 @@ echsd_inject_sock(struct _echsd_s *ctx, int s)
 static void
 echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 {
-	uid_t u;
+	static char qfn[PATH_MAX];
+	size_t qz;
+	uid_t u = meself.uid;
 
-	switch ((u = meself.uid)) {
-		static char qfn[PATH_MAX];
-		size_t qz;
-		echs_evstrm_t s;
+	/* prepare our filename */
+	qz = xstrlcpy(qfn, qd, sizeof(qfn));
+	qfn[qz++] = '/';
 
-	case 0:
-		/* we are a super-echsd, load all .ics files we can find */
-		break;
+	/* we are a super-echsd, load all .ics files we can find */
+	if_with (DIR *d, d = opendir(qd)) {
+		static const char prfx[] = "echsq_";
+		static const char sufx[] = ".ics";
 
-	default:
-		/* we're just an ordinary luser */
-		qz = xstrlcpy(qfn, qd, sizeof(qfn));
+		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
+			const char *dn = dp->d_name;
+			long unsigned int xu;
+			char *on;
+			unsigned char qi;
+			echs_evstrm_t s;
+			void(*cb)();
 
-		snprintf(qfn + qz, sizeof(qfn) - qz, "echsq_%ua.ics", u);
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
+			/* check if it's the right prefix */
+			if (strncmp(dn, prfx, strlenof(prfx))) {
+				/* not our thing */
+				continue;
+			}
+			/* snarf the uid */
+			xu = strtoul(dn + strlenof(prfx), &on, 10);
+			/* looking good? */
+			if (UNLIKELY(xu >= (uid_t)~0UL)) {
+				continue;
+			} else if (u && xu != u) {
+				continue;
+			}
+			/* has it got A or B indicator? */
+			qi = (unsigned char)*on++;
+			switch (qi | 0x20U) {
+			case 'a':
+				cb = taskA_cb;
+				break;
+			case 'b':
+				cb = taskB_cb;
+				break;
+			default:
+				continue;
+			}
+			/* check suffix */
+			if (strncmp(on, sufx, strlenof(sufx))) {
+				/* nope */
+				continue;
+			}
+			/* looking good ... */
+			xstrlcpy(qfn + qz, dn, sizeof(qfn) - qz);
+			/* otherwise, try and load it */
+			if ((s = make_echs_evstrm_from_file(qfn)) == NULL) {
+				continue;
+			}
+			/* wow, this really must be it */
+			echsd_inject_evstrm(ctx, s, cb);
+			free_echs_evstrm(s);
 		}
-		echsd_inject_evstrm(ctx, s, taskA_cb);
-		free_echs_evstrm(s);
-
-		snprintf(qfn + qz, sizeof(qfn) - qz, "echsq_%ub.ics", u);
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
-		}
-		echsd_inject_evstrm(ctx, s, taskB_cb);
-		free_echs_evstrm(s);
-		break;
+		closedir(d);
 	}
 }
 
