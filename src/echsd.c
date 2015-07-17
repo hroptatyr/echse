@@ -53,6 +53,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <dirent.h>
 #if defined __FreeBSD__
 # include <sys/syscall.h>
 #endif	/* __FreeBSD__ */
@@ -117,7 +118,6 @@ struct _echsd_s {
 	ev_io ctlsock;
 
 	struct ev_loop *loop;
-	cred_t dflt_cred;
 };
 
 #if !defined HAVE_STRUCT_UCRED
@@ -134,6 +134,7 @@ struct ucred {
 
 static const char *echsx;
 static int qdirfd = -1;
+static struct ucred meself;
 
 
 static size_t
@@ -351,7 +352,7 @@ get_queudir(void)
 	static char d[PATH_MAX];
 	uid_t u;
 
-	switch ((u = geteuid())) {
+	switch ((u = meself.uid)) {
 		struct passwd *pw;
 		struct stat st;
 		size_t di;
@@ -421,7 +422,7 @@ get_sockdir(void)
 	struct stat st;
 	uid_t u;
 
-	switch ((u = geteuid())) {
+	switch ((u = meself.uid)) {
 		size_t di;
 	case 0:
 		/* barf right away when there's no /var/run */
@@ -1181,10 +1182,6 @@ make_echsd(void)
 	ev_signal_start(EV_A_ &res->sigpipe);
 
 	res->loop = EV_A;
-
-	/* obtain our effective credentials */
-	res->dflt_cred.u = geteuid();
-	res->dflt_cred.g = getegid();
 	return res;
 
 foul:
@@ -1208,7 +1205,7 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 {
 	echs_task_t t;
 	EV_P = ctx->loop;
@@ -1219,15 +1216,15 @@ echsd_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 	}
 
 	/* store the stream */
-	t->strm = s;
-	t->cred = (cred_t){1006, 100};
+	t->strm = clone_echs_evstrm(s);
+	t->cred = c;
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
 
@@ -1237,11 +1234,11 @@ echsd_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			echsd_inject_evstrm1(ctx, s, cb);
+			_inject_evstrm1(ctx, s, c, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			echsd_inject_evstrm1(ctx, strm[i], cb);
+			_inject_evstrm1(ctx, strm[i], c, cb);
 		}
 	}
 	return;
@@ -1257,6 +1254,74 @@ echsd_inject_sock(struct _echsd_s *ctx, int s)
 	return;
 }
 
+static void
+echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
+{
+	static char qfn[PATH_MAX];
+	size_t qz;
+	uid_t u = meself.uid;
+
+	/* prepare our filename */
+	qz = xstrlcpy(qfn, qd, sizeof(qfn));
+	qfn[qz++] = '/';
+
+	/* we are a super-echsd, load all .ics files we can find */
+	if_with (DIR *d, d = opendir(qd)) {
+		static const char prfx[] = "echsq_";
+		static const char sufx[] = ".ics";
+
+		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
+			const char *dn = dp->d_name;
+			long unsigned int xu;
+			char *on;
+			unsigned char qi;
+			echs_evstrm_t s;
+			void(*cb)();
+
+			/* check if it's the right prefix */
+			if (strncmp(dn, prfx, strlenof(prfx))) {
+				/* not our thing */
+				continue;
+			}
+			/* snarf the uid */
+			xu = strtoul(dn + strlenof(prfx), &on, 10);
+			/* looking good? */
+			if (UNLIKELY(xu >= (uid_t)~0UL)) {
+				continue;
+			} else if (u && xu != u) {
+				continue;
+			}
+			/* has it got A or B indicator? */
+			qi = (unsigned char)*on++;
+			switch (qi | 0x20U) {
+			case 'a':
+				cb = taskA_cb;
+				break;
+			case 'b':
+				cb = taskB_cb;
+				break;
+			default:
+				continue;
+			}
+			/* check suffix */
+			if (strncmp(on, sufx, strlenof(sufx))) {
+				/* nope */
+				continue;
+			}
+			/* looking good ... */
+			xstrlcpy(qfn + qz, dn, sizeof(qfn) - qz);
+			/* otherwise, try and load it */
+			if ((s = make_echs_evstrm_from_file(qfn)) == NULL) {
+				continue;
+			}
+			/* wow, this really must be it */
+			_inject_evstrm(ctx, s, (cred_t){xu, 100}, cb);
+			free_echs_evstrm(s);
+		}
+		closedir(d);
+	}
+}
+
 
 #include "echsd.yucc"
 
@@ -1267,7 +1332,6 @@ main(int argc, char *argv[])
 	struct _echsd_s *ctx;
 	const char *qdir;
 	const char *sdir;
-	echs_evstrm_t s;
 	int esok = -1;
 	int rc = 0;
 
@@ -1278,6 +1342,11 @@ main(int argc, char *argv[])
 		rc = 1;
 		goto out;
 	}
+
+	/* who are we? */
+	meself.pid = getpid();
+	meself.uid = geteuid();
+	meself.gid = getegid();
 
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
@@ -1328,23 +1397,7 @@ main(int argc, char *argv[])
 	echsd_inject_sock(ctx, esok);
 
 	/* inject our state, i.e. read all echsq files */
-	with (const char *qfn = pathcat(qdir, "echsq_1006a.ics", NULL)) {
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
-		}
-		echsd_inject_evstrm(ctx, s, taskA_cb);
-	}
-
-	with (const char *qfn = pathcat(qdir, "echsq_1006b.ics", NULL)) {
-		if (UNLIKELY((s = make_echs_evstrm_from_file(qfn)) == NULL)) {
-			ECHS_NOTI_LOG("\
-queue file `%s' does not exist ...", qfn);
-			break;
-		}
-		echsd_inject_evstrm(ctx, s, taskB_cb);
-	}
+	echsd_inject_queues(ctx, qdir);
 
 	/* main loop */
 	{
@@ -1356,10 +1409,7 @@ queue file `%s' does not exist ...", qfn);
 		block_sigs();
 	}
 
-	/* we've got multiple streams, so where are they all? */
-	if (LIKELY(s != NULL)) {
-		free_echs_evstrm(s);
-	}
+	/* free context and associated resources */
 	free_echsd(ctx);
 
 clo:
