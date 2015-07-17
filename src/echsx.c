@@ -51,9 +51,6 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
-#if defined HAVE_GRP_H
-# include <grp.h>
-#endif	/* HAVE_GRP_H */
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
@@ -645,12 +642,8 @@ main(int argc, char *argv[])
 	/* switch to user/group early */
 	if (argi->gid_arg) {
 		long unsigned int g = strtoul(argi->gid_arg, NULL, 10);
-		gid_t supgs[1UL] = {(gid_t)g};
 
 		if (g > (gid_t)~0UL ||
-#if defined HAVE_GRP_H
-		    setgroups(countof(supgs), supgs) < 0 ||
-#endif	/* HAVE_GRP_H */
 		    setgid((gid_t)g) < 0) {
 			perror("Error: cannot set group id");
 			rc = 1;
