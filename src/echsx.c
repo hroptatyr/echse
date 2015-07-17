@@ -62,9 +62,6 @@
 # define auto	static
 #endif	/* __INTEL_COMPILER */
 
-#undef EV_P
-#define EV_P  struct ev_loop *loop __attribute__((unused))
-
 #if !defined SPLICE_F_MOVE
 /* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
 # if defined __INTEL_COMPILER
@@ -81,7 +78,6 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 
 typedef struct echs_task_s *echs_task_t;
 
-/* linked list of ev_periodic objects */
 struct echs_task_s {
 	/* beef data for the task in question */
 	const char *cmd;
