@@ -94,6 +94,7 @@ AC_CHECK_TYPES([ucred_t], [], [], [[
 ]])
 
 AC_CHECK_HEADERS([paths.h])
+AC_CHECK_HEADERS([grp.h])
 
 AC_CHECK_FUNCS([clock_gettime])
 if test "${ac_cv_func_clock_gettime}" != "yes"; then
