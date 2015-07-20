@@ -265,6 +265,17 @@ clon_atlst(struct atlst_s al)
 	return res;
 }
 
+static struct echs_task_s
+make_proto_task(struct ical_vevent_s *ve)
+{
+	struct echs_task_s res = ve->t;
+
+	if (ve->att.nap) {
+		res.att = ve->att.ap;
+	}
+	return res;
+}
+
 
 /* file name stack (and include depth control) */
 static const char *gfn[4U];
@@ -923,6 +934,7 @@ read_ical(const char *fn)
 				(void)add1_to_atlst(&ve.att, cal_0_addr);
 			}
 			/* assign */
+			ve.t = make_proto_task(&ve);
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
 			st = ST_BODY;
