@@ -157,14 +157,17 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
-				if (e.task->cmd) {
+				if (e.task && e.task->cmd) {
 					const char *cmd = e.task->cmd;
 					bp += xstrlcpy(bp, cmd, ebp - bp);
 				}
 				continue;
 			case 'u':
-				x = e.task->uid;
-				goto cpy_obint;
+				if (e.task) {
+					x = e.task->uid;
+					goto cpy_obint;
+				}
+				continue;
 			case '%':
 				*bp++ = '%';
 			default:
