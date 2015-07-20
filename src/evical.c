@@ -243,7 +243,7 @@ add1_to_atlst(struct atlst_s *al, struct cal_addr_s attendee)
 	if (LIKELY(attendee.s != NULL)) {
 		al->ap[al->nap++] = strndup(attendee.s, attendee.z);
 	} else {
-		al->ap[al->nap++] = NULL;
+		al->ap[al->nap] = NULL;
 	}
 	return;
 }
@@ -253,6 +253,10 @@ clon_atlst(struct atlst_s al)
 {
 	struct atlst_s res = al;
 
+	if (!al.zap) {
+		return (struct atlst_s){NULL};
+	}
+	/* otherwise clone every single element */
 	res.ap = malloc(al.zap * sizeof(*al.ap));
 	for (size_t i = 0U; i < al.nap; i++) {
 		res.ap[i] = strdup(al.ap[i]);
@@ -919,7 +923,9 @@ read_ical(const char *fn)
 				add_to_urlst(&ve.mf, mf, nmf);
 			}
 			/* also finalise attendee list */
-			(void)add1_to_atlst(&ve.att, cal_0_addr);
+			if (ve.att.nap) {
+				(void)add1_to_atlst(&ve.att, cal_0_addr);
+			}
 			/* assign */
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
