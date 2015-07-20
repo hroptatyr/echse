@@ -480,6 +480,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_WDAY:
 			/* this one's special in that weekday names
 			 * are allowed to follow the indicator number */
+			on = NULL;
 			do {
 				echs_wday_t w;
 
@@ -489,7 +490,7 @@ snarf_rrule(const char *s, size_t z)
 				}
 				/* otherwise assign */
 				ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
-			} while ((kv = strchr(on, ',')) != NULL);
+			} while (on && (kv = strchr(on, ',')) != NULL);
 			break;
 		case BY_MON:
 		case BY_HOUR:
