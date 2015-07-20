@@ -89,24 +89,16 @@ typedef struct {
 	gid_t g;
 } cred_t;
 
-typedef struct echs_task_s *echs_task_t;
+typedef struct _task_s *_task_t;
 
 /* linked list of ev_periodic objects */
-struct echs_task_s {
+struct _task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
-	echs_task_t next;
+	_task_t next;
 	ev_child c;
 
-	/* the stream where this task comes from */
-	echs_evstrm_t strm;
-
-	/* user id and group id we want this job run as */
-	cred_t cred;
-
-	/* beef data for the task in question */
-	const char *cmd;
-	char **env;
+	echs_task_t t;
 };
 
 struct _echsd_s {

@@ -1,6 +1,6 @@
-/*** event.h -- some echs_event_t functionality
+/*** task.c -- gathering task properties
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,71 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_event_h_
-#define INCLUDED_event_h_
-
-#include <stddef.h>
-#include <stdbool.h>
-#include "instant.h"
-#include "state.h"
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include "task.h"
 
-typedef struct echs_event_s echs_event_t;
-
-struct echs_event_s {
-	echs_instant_t from;
-	echs_instant_t till;
-	echs_task_t task;
-	echs_stset_t sts;
-};
-
-
-/* externals */
-/**
- * Sort an array EV of NEV elements stable and in-place. */
-extern void echs_event_sort(echs_event_t *restrict ev, size_t nev);
-
-
-/* convenience */
-static inline __attribute__((const, pure)) bool
-echs_event_0_p(echs_event_t e)
-{
-	return echs_instant_0_p(e.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_lt_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_eq_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_task_eq_p(e1.task, e2.task) &&
-		echs_instant_eq_p(e1.from, e2.from);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_event_le_p(echs_event_t e1, echs_event_t e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from) || echs_event_eq_p(e1, e2);
-}
-
-static inline __attribute__((const, pure)) echs_event_t
-echs_nul_event(void)
-{
-	static const echs_event_t nul = {
-		.from = {.u = 0UL},
-		.till = {.u = 0UL}
-	};
-	return nul;
-}
-
-static inline __attribute__((const, pure)) bool
-echs_nul_event_p(echs_event_t e)
-{
-	return echs_nul_instant_p(e.from);
-}
-
-#endif	/* INCLUDED_event_h_ */
+/* task.c ends here */
