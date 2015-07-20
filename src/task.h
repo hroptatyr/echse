@@ -54,9 +54,9 @@ struct echs_task_s {
 	echs_evuid_t uid;
 
 	/* command, environment, working dir */
-	echs_evuid_t cmd;
-	echs_evuid_t *env;
-	echs_evuid_t cwd;
+	const char *cmd;
+	const char **env;
+	const char *cwd;
 
 	/* credentials we want this job run as */
 	cred_t run_as;
