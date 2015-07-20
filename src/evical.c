@@ -762,17 +762,12 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_UID:
-	case FLD_SUMM:
 		with (obint_t ob = intern(vp, ep - vp)) {
-			switch (c->fld) {
-			case FLD_UID:
-				ve->t.uid = ob;
-				break;
-			case FLD_SUMM:
-				ve->t.cmd = ob;
-				break;
-			}
+			ve->t.uid = ob;
 		}
+		break;
+	case FLD_SUMM:
+		ve->t.cmd = strndup(vp, ep - vp);
 		break;
 
 	case FLD_DESC:
@@ -1257,7 +1252,7 @@ prnt_ev(echs_event_t e)
 	}
 	if (e.task->cmd) {
 		fputs("SUMMARY:", stdout);
-		puts(obint_name(e.task->cmd));
+		puts(e.task->cmd);
 	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
