@@ -772,8 +772,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	case FLD_RRULE:
 	case FLD_XRULE:
 		/* otherwise snarf him */
-		for (struct rrulsp_s r;
-		     (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE;) {
+		if_with (struct rrulsp_s r,
+			 (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE) {
 			goptr_t x;
 
 			switch (c->fld) {
@@ -794,14 +794,12 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 				}
 				break;
 			}
-			/* this isn't supposed to be a for-loop */
-			break;
 		}
 		break;
 	case FLD_MRULE:
 		/* otherwise snarf him */
-		for (struct mrulsp_s r;
-		     (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE;) {
+		if_with (struct mrulsp_s r,
+			 (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE) {
 			goptr_t x;
 
 			/* bang to global array */
@@ -810,8 +808,6 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			if (!ve->mr.nr++) {
 				ve->mr.r = x;
 			}
-			/* this isn't supposed to be a for-loop */
-			break;
 		}
 		break;
 	case FLD_STATE:
