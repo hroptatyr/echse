@@ -106,19 +106,20 @@ struct atlst_s {
 struct ical_vevent_s {
 	echs_event_t e;
 
+	/* proto typical task */
 	struct echs_task_s t;
 
-	/* pointers into the global attendees array */
+	/* pointers into the attendees array */
 	struct atlst_s att;
-	/* pointers into the global rrul/xrul array */
+	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
 	struct rrlst_s xr;
-	/* points into the global xdat/rdat array */
+	/* points into the xdat/rdat array */
 	struct dtlst_s rd;
 	struct dtlst_s xd;
-	/* points into the global mrul array */
+	/* points into the mrul array */
 	struct mrlst_s mr;
-	/* points into the global mfil array */
+	/* points into the mfil array */
 	struct urlst_s mf;
 };
 
@@ -265,13 +266,20 @@ clon_atlst(struct atlst_s al)
 	return res;
 }
 
-static struct echs_task_s
-make_proto_task(struct ical_vevent_s *ve)
+static echs_task_t
+make_proto_task(struct ical_vevent_s *restrict ve)
 {
-	struct echs_task_s res = ve->t;
+	struct echs_task_s *res = malloc(sizeof(*res));
 
+	if (UNLIKELY(res == NULL)) {
+		return NULL;
+	}
+	/* copy the proto task over */
+	memcpy(res, &ve->t, sizeof(ve->t));
+
+	/* slots we wouldn't set in the proto task */
 	if (ve->att.nap) {
-		res.att = ve->att.ap;
+		res->att = ve->att.ap;
 	}
 	return res;
 }
@@ -774,12 +782,12 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_UID:
-		with (obint_t ob = intern(vp, ep - vp)) {
-			ve->t.uid = ob;
-		}
+		ve->t.uid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
-		ve->t.cmd = strndup(vp, ep - vp);
+		if (vp < ep) {
+			ve->t.cmd = strndup(vp, ep - vp);
+		}
 		break;
 
 	case FLD_DESC:
@@ -934,7 +942,7 @@ read_ical(const char *fn)
 				(void)add1_to_atlst(&ve.att, cal_0_addr);
 			}
 			/* assign */
-			ve.t = make_proto_task(&ve);
+			ve.e.task = make_proto_task(&ve);
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
 			st = ST_BODY;
@@ -1278,16 +1286,29 @@ prnt_ev(echs_event_t e)
 static void
 free_evical_task(struct echs_task_s *t)
 {
+	if (--t->nref) {
+		return;
+	}
+	if (t->cmd) {
+		free(deconst(t->cmd));
+	}
 	if (t->org) {
 		free(deconst(t->org));
 	}
 	if (t->att) {
-		for (char **ap = deconst(t->att); ap; ap++) {
+		for (char **ap = deconst(t->att); ap && *ap; ap++) {
 			free(*ap);
 		}
 		free(deconst(t->att));
 	}
 	free(t);
+	return;
+}
+
+static void
+inc_task_nref(struct echs_task_s *restrict t)
+{
+	t->nref++;
 	return;
 }
 
@@ -1327,6 +1348,10 @@ make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 	res->i = 0U;
 	res->nev = nev;
 	memcpy(res->ev, ev, zev);
+	for (size_t i = 0U; i < nev; i++) {
+		/* increment task ref-counter */
+		inc_task_nref(deconst(res->ev[i].task));
+	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1414,6 +1439,7 @@ __make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
+	inc_task_nref(deconst(res->ve.e.task));
 	res->dur = echs_instant_diff(ve->e.till, ve->e.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
@@ -1460,11 +1486,8 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	if (this->ve.att.nap) {
-		for (size_t i = 0U; i < this->ve.att.nap; i++) {
-			free(this->ve.att.ap[i]);
-		}
-		free(this->ve.att.ap);
+	if (this->ve.e.task) {
+		free_evical_task(deconst(this->ve.e.task));
 	}
 	free(this);
 	return;
@@ -1487,6 +1510,7 @@ clone_evrrul(echs_const_evstrm_t s)
 	if (this->ve.att.nap) {
 		clon->ve.att = clon_atlst(this->ve.att);
 	}
+	inc_task_nref(deconst(clon->ve.e.task));
 	return (echs_evstrm_t)clon;
 }
 
