@@ -55,7 +55,7 @@ struct echs_task_s {
 
 	/* command, environment, working dir */
 	const char *cmd;
-	const char **env;
+	const char *const *env;
 	const char *cwd;
 
 	/* credentials we want this job run as */
@@ -63,7 +63,7 @@ struct echs_task_s {
 
 	/* the organiser and attendees of the whole shebang */
 	const char *org;
-	const char **att;
+	const char *const *att;
 };
 
 

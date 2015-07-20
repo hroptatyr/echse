@@ -690,7 +690,7 @@ run_task(_task_t t, bool dtchp)
 		}
 		snprintf(uid, sizeof(uid), "--uid=%u", t->task->run_as.u);
 		snprintf(gid, sizeof(gid), "--gid=%u", t->task->run_as.g);
-		rc = execve(echsx, args, t->task->env);
+		rc = execve(echsx, args, deconst(t->task->env));
 		_exit(rc);
 		/* not reached */
 
