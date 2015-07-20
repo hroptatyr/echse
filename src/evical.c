@@ -46,6 +46,7 @@
 #include <stdio.h>
 #include <time.h>
 #include "evical.h"
+#include "task.h"
 #include "intern.h"
 #include "state.h"
 #include "bufpool.h"
@@ -63,41 +64,6 @@
 #endif	/* !assert */
 
 typedef struct vearr_s *vearr_t;
-typedef uintptr_t goptr_t;
-
-struct dtlst_s {
-	size_t ndt;
-	goptr_t dt;
-};
-
-struct rrlst_s {
-	size_t nr;
-	goptr_t r;
-};
-
-struct urlst_s {
-	size_t nu;
-	goptr_t u;
-};
-
-struct ical_vevent_s {
-	echs_event_t ev;
-	/* pointers into the global rrul/xrul array */
-	struct rrlst_s rr;
-	struct rrlst_s xr;
-	/* points into the global xdat/rdat array */
-	struct dtlst_s rd;
-	struct dtlst_s xd;
-	/* points into the global mrul array */
-	struct rrlst_s mr;
-	/* points into the global mfil array */
-	struct urlst_s mf;
-};
-
-struct vearr_s {
-	size_t nev;
-	struct ical_vevent_s ev[];
-};
 
 struct uri_s {
 	enum {
@@ -107,203 +73,153 @@ struct uri_s {
 	obint_t canon;
 };
 
+struct dtlst_s {
+	echs_instant_t *dt;
+	size_t ndt;
+	size_t zdt;
+};
+
+struct rrlst_s {
+	struct rrulsp_s *r;
+	size_t nr;
+	size_t zr;
+};
+
+struct mrlst_s {
+	struct mrulsp_s *r;
+	size_t nr;
+	size_t zr;
+};
+
+struct urlst_s {
+	struct uri_s *u;
+	size_t nu;
+	size_t zu;
+};
+
+struct atlst_s {
+	char **ap;
+	size_t nap;
+	size_t zap;
+};
+
+struct ical_vevent_s {
+	echs_event_t e;
+
+	struct echs_task_s t;
+
+	/* pointers into the global attendees array */
+	struct atlst_s att;
+	/* pointers into the global rrul/xrul array */
+	struct rrlst_s rr;
+	struct rrlst_s xr;
+	/* points into the global xdat/rdat array */
+	struct dtlst_s rd;
+	struct dtlst_s xd;
+	/* points into the global mrul array */
+	struct mrlst_s mr;
+	/* points into the global mfil array */
+	struct urlst_s mf;
+};
+
+struct vearr_s {
+	size_t nev;
+	struct ical_vevent_s ev[];
+};
+
 /* mapping from uri to stream */
 struct mus_s {
 	struct uri_s u;
 	echs_evstrm_t s;
 };
 
+struct muslst_s {
+	struct mus_s *us;
+	size_t nus;
+	size_t zus;
+};
+
+/* generic string, here to denote a cal-address */
+struct cal_addr_s {
+	const char *s;
+	size_t z;
+};
+
+static struct cal_addr_s cal_0_addr;
+static struct muslst_s gms;
+
 
-/* global rrule array */
-static size_t zgrr;
-static goptr_t ngrr;
-static struct rrulsp_s *grr;
-
-/* global exrule array */
-static size_t zgxr;
-static goptr_t ngxr;
-static struct rrulsp_s *gxr;
-
-/* global exdate array */
-static size_t zgxd;
-static goptr_t ngxd;
-static echs_instant_t *gxd;
-
-/* global rdate array */
-static size_t zgrd;
-static goptr_t ngrd;
-static echs_instant_t *grd;
-
-/* global mrule array */
-static size_t zgmr;
-static goptr_t ngmr;
-static struct mrulsp_s *gmr;
-
-/* global mfile array */
-static size_t zgmf;
-static goptr_t ngmf;
-static struct uri_s *gmf;
-/* global mfile streams */
-static size_t zgms;
-static size_t ngms;
-static struct mus_s *gms;
-
-#define CHECK_RESIZE(id, iniz, nitems)					\
-	if (UNLIKELY(!z##id)) {						\
+#define CHECK_RESIZE(o, id, iniz, nitems)				\
+	if (UNLIKELY(!(o)->z##id)) {					\
 		/* leave the first one out */				\
-		id = malloc((z##id = iniz) * sizeof(*id));		\
-		memset(id, 0, sizeof(*id));				\
+		(o)->id = malloc(((o)->z##id = iniz) * sizeof(*(o)->id)); \
+		memset((o)->id, 0, sizeof(*(o)->id));			\
 	}								\
-	if (UNLIKELY(n##id + nitems > z##id)) {				\
+	if (UNLIKELY((o)->n##id + nitems > (o)->z##id)) {		\
 		do {							\
-			id = realloc(id, (z##id *= 2U) * sizeof(*id));	\
-		} while (n##id + nitems > z##id);			\
+			(o)->id = realloc(				\
+				(o)->id,				\
+				((o)->z##id *= 2U) * sizeof(*(o)->id)); \
+		} while ((o)->n##id + nitems > (o)->z##id);		\
 	}
 
-static goptr_t
-add1_to_grr(struct rrulsp_s rr)
+static void
+add1_to_rrlst(struct rrlst_s *rl, struct rrulsp_s rr)
 {
-	goptr_t res;
+	CHECK_RESIZE(rl, r, 16U, 1U);
+	rl->r[rl->nr++] = rr;
+	return;
+}
 
-	CHECK_RESIZE(grr, 16U, 1U);
-	grr[res = ngrr++] = rr;
+static struct rrlst_s
+clon_rrlst(struct rrlst_s rl)
+{
+	struct rrlst_s res = rl;
+
+	res.r = malloc(rl.zr * sizeof(*rl.r));
+	memcpy(res.r, rl.r, rl.nr * sizeof(*rl.r));
 	return res;
 }
 
-static goptr_t
-clon_grr(struct rrlst_s rl)
+static void
+add1_to_mrlst(struct mrlst_s *rl, struct mrulsp_s mr)
 {
-	const size_t nrr = rl.nr;
-	goptr_t res;
-
-	CHECK_RESIZE(grr, 16U, nrr);
-	memcpy(grr + (res = ngrr), grr + rl.r, nrr * sizeof(*grr));
-	ngrr += nrr;
-	return res;
+	CHECK_RESIZE(rl, r, 16U, 1U);
+	rl->r[rl->nr++] = mr;
+	return;
 }
 
-static struct rrulsp_s*
-get_grr(goptr_t d)
+static void
+add1_to_dtlst(struct dtlst_s *dl, echs_instant_t dt)
 {
-	if (UNLIKELY(grr == NULL)) {
-		return NULL;
-	}
-	return grr + d;
+	CHECK_RESIZE(dl, dt, 64U, 1);
+	dl->dt[dl->ndt++] = dt;
+	return;
 }
 
-static goptr_t
-add1_to_gxr(struct rrulsp_s xr)
+static void
+add1_to_urlst(struct urlst_s *ul, struct uri_s u)
 {
-	goptr_t res;
-
-	CHECK_RESIZE(gxr, 16U, 1U);
-	gxr[res = ngxr++] = xr;
-	return res;
+	CHECK_RESIZE(ul, u, 16U, 1U);
+	ul->u[ul->nu++] = u;
+	return;
 }
 
-static goptr_t
-clon_gxr(struct rrlst_s rl)
+static void
+add_to_urlst(struct urlst_s *ul, const struct uri_s *mf, size_t nmf)
 {
-	const size_t nxr = rl.nr;
-	goptr_t res;
-
-	CHECK_RESIZE(gxr, 16U, nxr);
-	memcpy(gxr + (res = ngxr), gxr + rl.r, nxr * sizeof(*gxr));
-	ngxr += nxr;
-	return res;
+	CHECK_RESIZE(ul, u, 16U, nmf);
+	memcpy(ul->u + ul->nu, mf, nmf * sizeof(*mf));
+	ul->nu += nmf;
+	return;
 }
 
-static goptr_t
-add_to_gxd(struct dtlst_s xdlst)
-{
-	const echs_instant_t *dp = (const echs_instant_t*)xdlst.dt;
-	const size_t nd = xdlst.ndt;
-	goptr_t res;
-
-	CHECK_RESIZE(gxd, 64U, nd);
-	memcpy(gxd + ngxd, dp, nd * sizeof(*dp));
-	res = ngxd, ngxd += nd;
-	return res;
-}
-
-static echs_instant_t*
-get_gxd(goptr_t d)
-{
-	if (UNLIKELY(gxd == NULL)) {
-		return NULL;
-	}
-	return gxd + d;
-}
-
-static goptr_t
-add_to_grd(struct dtlst_s rdlst)
-{
-	const echs_instant_t *dp = (const echs_instant_t*)rdlst.dt;
-	const size_t nd = rdlst.ndt;
-	goptr_t res;
-
-	CHECK_RESIZE(grd, 64U, nd);
-	memcpy(grd + ngrd, dp, nd * sizeof(*dp));
-	res = ngrd, ngrd += nd;
-	return res;
-}
-
-static goptr_t
-add1_to_gmr(struct mrulsp_s mr)
-{
-	goptr_t res;
-
-	CHECK_RESIZE(gmr, 16U, 1U);
-	gmr[res = ngmr++] = mr;
-	return res;
-}
-
-static struct mrulsp_s*
-get_gmr(goptr_t d)
-{
-	if (UNLIKELY(gmr == NULL)) {
-		return NULL;
-	}
-	return gmr + d;
-}
-
-static goptr_t
-add1_to_gmf(struct uri_s u)
-{
-	goptr_t res;
-
-	CHECK_RESIZE(gmf, 16U, 1U);
-	gmf[res = ngmf++] = u;
-	return res;
-}
-
-static goptr_t
-add_to_gmf(const struct uri_s *mf, size_t nmf)
-{
-	goptr_t res;
-
-	CHECK_RESIZE(gmf, 16U, nmf);
-	memcpy(gmf + (res = ngmf), mf, nmf * sizeof(*mf));
-	ngmf += nmf;
-	return res;
-}
-
-static struct uri_s*
-get_gmf(goptr_t d)
-{
-	if (UNLIKELY(gmf == NULL)) {
-		return NULL;
-	}
-	return gmf + d;
-}
 
 static void
 add1_to_gms(struct uri_s u, echs_evstrm_t s)
 {
-	CHECK_RESIZE(gms, 16U, 1U);
-	gms[ngms].u = u;
-	gms[ngms].s = s;
-	ngms++;
+	CHECK_RESIZE(&gms, us, 16U, 1U);
+	gms.us[gms.nus++] = (struct mus_s){u, s};
 	return;
 }
 
@@ -311,13 +227,38 @@ static echs_evstrm_t
 get_gms(struct uri_s u)
 {
 	/* try and find the mfile in the global list */
-	for (size_t j = 0U; j < ngms; j++) {
-		struct uri_s cu = gms[j].u;
+	for (size_t j = 0U; j < gms.nus; j++) {
+		struct uri_s cu = gms.us[j].u;
 		if (u.typ == cu.typ && u.canon == cu.canon) {
-			return gms[j].s;
+			return gms.us[j].s;
 		}
 	}
 	return NULL;
+}
+
+static void
+add1_to_atlst(struct atlst_s *al, struct cal_addr_s attendee)
+{
+	CHECK_RESIZE(al, ap, 64U, 1U);
+	if (LIKELY(attendee.s != NULL)) {
+		al->ap[al->nap++] = strndup(attendee.s, attendee.z);
+	} else {
+		al->ap[al->nap++] = NULL;
+	}
+	return;
+}
+
+static struct atlst_s
+clon_atlst(struct atlst_s al)
+{
+	struct atlst_s res = al;
+
+	res.ap = malloc(al.zap * sizeof(*al.ap));
+	for (size_t i = 0U; i < al.nap; i++) {
+		res.ap[i] = strdup(al.ap[i]);
+	}
+	res.ap[al.nap] = NULL;
+	return res;
 }
 
 
@@ -682,9 +623,7 @@ snarf_mrule(const char *s, size_t z)
 static struct dtlst_s
 snarf_dtlst(const char *line, size_t llen)
 {
-	static size_t zdt;
-	static echs_instant_t *dt;
-	size_t ndt = 0UL;
+	struct dtlst_s dl = {NULL};
 
 	for (const char *sp = line, *const ep = line + llen, *eod;
 	     sp < ep; sp = eod + 1U) {
@@ -696,10 +635,25 @@ snarf_dtlst(const char *line, size_t llen)
 		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
 			continue;
 		}
-		CHECK_RESIZE(dt, 64U, 1U);
-		dt[ndt++] = in;
+		add1_to_dtlst(&dl, in);
 	}
-	return (struct dtlst_s){ndt, (goptr_t)dt};
+	return dl;
+}
+
+static struct cal_addr_s
+snarf_mailto(const char *line, size_t llen)
+{
+	static const char prfx[] = "mailto:";
+
+	if (llen < strlenof(prfx) || memchr(line, ':', llen) == NULL) {
+		return (struct cal_addr_s){line, llen};
+	} else if (LIKELY(!strncmp(line, prfx, strlenof(prfx)))) {
+		/* brill */
+		return (struct cal_addr_s){
+			line + strlenof(prfx), llen - strlenof(prfx)
+		};
+	}
+	return (struct cal_addr_s){NULL};
 }
 
 static void
@@ -731,14 +685,14 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		with (echs_instant_t i = snarf_value(lp)) {
 			switch (c->fld) {
 			case FLD_DTSTART:
-				ve->ev.from = i;
-				if (!echs_nul_instant_p(ve->ev.till)) {
+				ve->e.from = i;
+				if (!echs_nul_instant_p(ve->e.till)) {
 					break;
 				}
 				/* otherwise also set the TILL slot to I,
 				 * as kind of a sane default value */
 			case FLD_DTEND:
-				ve->ev.till = i;
+				ve->e.till = i;
 				break;
 			}
 		}
@@ -751,20 +705,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 				break;
 			}
 			switch (c->fld) {
-				goptr_t go;
 			case FLD_XDATE:
-				go = add_to_gxd(l);
-				if (!ve->xd.ndt) {
-					ve->xd.dt = go;
-				}
-				ve->xd.ndt += l.ndt;
+				ve->xd = l;
 				break;
 			case FLD_RDATE:
-				go = add_to_grd(l);
-				if (!ve->rd.ndt) {
-					ve->rd.dt = go;
-				}
-				ve->xd.ndt += l.ndt;
+				ve->rd = l;
 				break;
 			}
 		}
@@ -774,24 +719,14 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* otherwise snarf him */
 		if_with (struct rrulsp_s r,
 			 (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE) {
-			goptr_t x;
-
 			switch (c->fld) {
 			case FLD_RRULE:
 				/* bang to global array */
-				x = add1_to_grr(r);
-
-				if (!ve->rr.nr++) {
-					ve->rr.r = x;
-				}
+				add1_to_rrlst(&ve->rr, r);
 				break;
 			case FLD_XRULE:
 				/* bang to global array */
-				x = add1_to_gxr(r);
-
-				if (!ve->xr.nr++) {
-					ve->xr.r = x;
-				}
+				add1_to_rrlst(&ve->xr, r);
 				break;
 			}
 		}
@@ -800,14 +735,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* otherwise snarf him */
 		if_with (struct mrulsp_s r,
 			 (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE) {
-			goptr_t x;
-
 			/* bang to global array */
-			x = add1_to_gmr(r);
-
-			if (!ve->mr.nr++) {
-				ve->mr.r = x;
-			}
+			add1_to_mrlst(&ve->mr, r);
 		}
 		break;
 	case FLD_STATE:
@@ -816,21 +745,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 
 			eos = strchr(vp, ',') ?: ep;
 			st = add_state(vp, eos - vp);
-			ve->ev.sts = stset_add_state(ve->ev.sts, st);
+			ve->e.sts = stset_add_state(ve->e.sts, st);
 		}
 		break;
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive */
 		if (LIKELY(!strncmp(vp, "file://", 7U))) {
 			struct uri_s u = canon_fn(vp += 7U, ep - vp);
-			goptr_t x;
 
 			/* bang to global array */
-			x = add1_to_gmf(u);
-
-			if (!ve->mf.nu++) {
-				ve->mf.u = x;
-			}
+			add1_to_urlst(&ve->mf, u);
 		}
 		break;
 	case FLD_UID:
@@ -838,19 +762,32 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		with (obint_t ob = intern(vp, ep - vp)) {
 			switch (c->fld) {
 			case FLD_UID:
-				ve->ev.uid = ob;
+				ve->t.uid = ob;
 				break;
 			case FLD_SUMM:
-				ve->ev.sum = ob;
+				ve->t.cmd = ob;
 				break;
 			}
 		}
 		break;
+
 	case FLD_DESC:
-#if 0
-/* we used to have a desc slot, but that went in favour of a uid slot */
-		ve->ev.desc = bufpool(vp, ep - vp).str;
-#endif	/* 0 */
+		break;
+
+	case FLD_ATT:
+		/* snarf mail address */
+		if_with (struct cal_addr_s a,
+			 (a = snarf_mailto(vp, ep - vp)).s) {
+			/* bang to global array */
+			add1_to_atlst(&ve->att, a);
+		}
+		break;
+
+	case FLD_ORG:
+		if_with (struct cal_addr_s a,
+			 (a = snarf_mailto(vp, ep - vp)).s) {
+			ve->t.org = strndup(a.s, a.z);
+		}
 		break;
 	}
 	return;
@@ -875,14 +812,9 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
 			const char *const ep = line + llen;
 			struct uri_s u = canon_fn(lp += 7U, ep -lp);
-			goptr_t x;
 
 			/* bang to global array */
-			x = add1_to_gmf(u);
-
-			if (!ve->mf.nu++) {
-				ve->mf.u = x;
-			}
+			add1_to_urlst(&ve->mf, u);
 		}
 		break;
 	default:
@@ -982,14 +914,12 @@ read_ical(const char *fn)
 			/* bang global properties */
 			if (globve.mf.nu) {
 				const size_t nmf = globve.mf.nu;
-				goptr_t mf = globve.mf.u;
+				const struct uri_s *mf = globve.mf.u;
 
-				mf = add_to_gmf(get_gmf(mf), nmf);
-				if (!ve.mf.nu) {
-					ve.mf.u = mf;
-				}
-				ve.mf.nu += nmf;
+				add_to_urlst(&ve.mf, mf, nmf);
 			}
+			/* also finalise attendee list */
+			(void)add1_to_atlst(&ve.att, cal_0_addr);
 			/* assign */
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
@@ -1030,8 +960,7 @@ get_aux_strm(struct urlst_s ul)
 	echs_evstrm_t aux[ul.nu];
 	size_t naux = 0U;
 
-	for (struct uri_s *u = get_gmf(ul.u), *const eou = u + ul.nu;
-	     u < eou; u++) {
+	for (struct uri_s *u = ul.u, *const eou = u + ul.nu; u < eou; u++) {
 		/* try global cache, then mfile reader */
 		echs_evstrm_t s;
 
@@ -1285,50 +1214,66 @@ prnt_mrul(mrulsp_t mr)
 }
 
 static void
-prnt_ev(echs_event_t ev)
+prnt_ev(echs_event_t e)
 {
 	static unsigned int auto_uid;
 	char stmp[32U] = {':'};
 
-	if (UNLIKELY(echs_nul_instant_p(ev.from))) {
+	if (UNLIKELY(echs_nul_instant_p(e.from))) {
 		return;
 	}
-	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.from);
+	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
 	fputs("DTSTART", stdout);
-	if (echs_instant_all_day_p(ev.from)) {
+	if (echs_instant_all_day_p(e.from)) {
 		fputs(";VALUE=DATE", stdout);
 	}
 	puts(stmp);
 
-	if (LIKELY(!echs_nul_instant_p(ev.till))) {
-		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, ev.till);
+	if (LIKELY(!echs_nul_instant_p(e.till))) {
+		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
 	} else {
-		ev.till = ev.from;
+		e.till = e.from;
 	}
 	fputs("DTEND", stdout);
-	if (echs_instant_all_day_p(ev.till)) {
+	if (echs_instant_all_day_p(e.till)) {
 		fputs(";VALUE=DATE", stdout);
 	}
 	puts(stmp);
 
 	/* fill in a missing uid? */
 	auto_uid++;
-	if (ev.uid) {
+	if (e.task->uid) {
 		fputs("UID:", stdout);
-		puts(obint_name(ev.uid));
+		puts(obint_name(e.task->uid));
 	} else {
 		/* it's mandatory, so generate one */
 		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
 	}
-	if (ev.sum) {
+	if (e.task->cmd) {
 		fputs("SUMMARY:", stdout);
-		puts(obint_name(ev.sum));
+		puts(obint_name(e.task->cmd));
 	}
-	if (ev.sts) {
+	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
-		prnt_stset(ev.sts);
+		prnt_stset(e.sts);
 		fputc('\n', stdout);
 	}
+	return;
+}
+
+static void
+free_evical_task(struct echs_task_s *t)
+{
+	if (t->org) {
+		free(deconst(t->org));
+	}
+	if (t->att) {
+		for (char **ap = deconst(t->att); ap; ap++) {
+			free(*ap);
+		}
+		free(deconst(t->att));
+	}
+	free(t);
 	return;
 }
 
@@ -1336,6 +1281,7 @@ prnt_ev(echs_event_t ev)
 /* our event class */
 struct evical_s {
 	echs_evstrm_class_t class;
+
 	/* our iterator state */
 	size_t i;
 	/* array size and data */
@@ -1358,7 +1304,7 @@ static const struct echs_evstrm_class_s evical_cls = {
 static const echs_event_t nul;
 
 static echs_evstrm_t
-make_evical_vevent(const echs_event_t *ev, size_t nev)
+make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 {
 	const size_t zev = nev * sizeof(*ev);
 	struct evical_s *res = malloc(sizeof(*res) + zev);
@@ -1375,6 +1321,11 @@ free_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
 
+	for (size_t i = 0U; i < this->nev; i++) {
+		if (this->ev[i].task) {
+			free_evical_task(deconst(this->ev[i].task));
+		}
+	}
 	free(this);
 	return;
 }
@@ -1383,8 +1334,15 @@ static echs_evstrm_t
 clone_evical_vevent(echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
+	struct evical_s *res;
 
-	return make_evical_vevent(this->ev + this->i, this->nev - this->i);
+	res = (struct evical_s*)make_evical_vevent(
+		this->ev + this->i, this->nev - this->i);
+	for (size_t i = 0U; i < res->nev; i++) {
+		/* clone the task */
+		;
+	}
+	return (echs_evstrm_t)res;
 }
 
 static echs_event_t
@@ -1446,11 +1404,11 @@ __make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
-	res->dur = echs_instant_diff(ve->ev.till, ve->ev.from);
+	res->dur = echs_instant_diff(ve->e.till, ve->e.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
 	if (ve->mr.nr && ve->mf.nu) {
-		mrulsp_t mr = get_gmr(ve->mr.r);
+		mrulsp_t mr = ve->mr.r;
 		echs_evstrm_t aux;
 
 		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
@@ -1492,6 +1450,12 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
+	if (this->ve.att.nap) {
+		for (size_t i = 0U; i < this->ve.att.nap; i++) {
+			free(this->ve.att.ap[i]);
+		}
+		free(this->ve.att.ap);
+	}
 	free(this);
 	return;
 }
@@ -1505,10 +1469,13 @@ clone_evrrul(echs_const_evstrm_t s)
 	*clon = *this;
 	/* we have to clone rrules and exrules though */
 	if (this->ve.rr.nr) {
-		clon->ve.rr.r = clon_grr(this->ve.rr);
+		clon->ve.rr = clon_rrlst(this->ve.rr);
 	}
 	if (this->ve.xr.nr) {
-		clon->ve.xr.r = clon_gxr(this->ve.xr);
+		clon->ve.xr = clon_rrlst(this->ve.xr);
+	}
+	if (this->ve.att.nap) {
+		clon->ve.att = clon_atlst(this->ve.att);
 	}
 	return (echs_evstrm_t)clon;
 }
@@ -1523,7 +1490,7 @@ refill(struct evrrul_s *restrict strm)
 	struct rrulsp_s *restrict rr;
 
 	assert(strm->vr.rr.nr > 0UL);
-	if (UNLIKELY((rr = get_grr(strm->ve.rr.r)) == NULL)) {
+	if (UNLIKELY((rr = strm->ve.rr.r) == NULL)) {
 		return 0UL;
 	} else if (UNLIKELY(!rr->count)) {
 		return 0UL;
@@ -1531,7 +1498,7 @@ refill(struct evrrul_s *restrict strm)
 
 	/* fill up with the proto instant */
 	for (size_t j = 0U; j < countof(strm->cch); j++) {
-		strm->cch[j] = strm->ve.ev.from;
+		strm->cch[j] = strm->ve.e.from;
 	}
 
 	/* now go and see who can help us */
@@ -1570,7 +1537,7 @@ refill(struct evrrul_s *restrict strm)
 	} else {
 		/* update the rrule to the partial set we've got */
 		rr->count -= --strm->ncch;
-		strm->ve.ev.from = strm->cch[strm->ncch];
+		strm->ve.e.from = strm->cch[strm->ncch];
 	}
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
@@ -1580,7 +1547,7 @@ refill(struct evrrul_s *restrict strm)
 
 	/* also check if we need to rid some dates due to xdates */
 	if (UNLIKELY(strm->ve.xd.ndt > 0UL)) {
-		const echs_instant_t *xd = get_gxd(strm->ve.xd.dt);
+		const echs_instant_t *xd = strm->ve.xd.dt;
 		echs_instant_t *restrict rd = strm->cch;
 		const echs_instant_t *const exd = xd + strm->ve.xd.ndt;
 		const echs_instant_t *const erd = rd + strm->ncch;
@@ -1624,7 +1591,7 @@ next_evrrul(echs_evstrm_t s)
 		}
 	}
 	/* construct the result */
-	res = this->ve.ev;
+	res = this->ve.e;
 	res.from = in;
 	res.till = echs_instant_add(in, this->dur);
 	return res;
@@ -1638,16 +1605,16 @@ prnt_evrrul1(echs_const_evstrm_t s)
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
 	prnt_ical_hdr();
-	prnt_ev(this->ve.ev);
+	prnt_ev(this->ve.e);
 
 	for (size_t i = 0UL; i < this->ve.rr.nr; i++) {
-		rrulsp_t rr = get_grr(this->ve.rr.r + i);
+		rrulsp_t rr = this->ve.rr.r + i;
 
 		fputs("RRULE:", stdout);
 		prnt_rrul(rr);
 	}
 	for (size_t i = 0UL; i < this->ve.mr.nr; i++) {
-		mrulsp_t mr = get_gmr(this->ve.mr.r + i);
+		mrulsp_t mr = this->ve.mr.r + i;
 
 		fputs("X-GA-MRULE:", stdout);
 		prnt_mrul(mr);
@@ -1673,7 +1640,7 @@ prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
 	/* make sure we talk about a split up VEVENT with multiple rules */
 	for (size_t i = 1U; i < n; i++) {
 		const struct evrrul_tmp_s *that = (const void*)s[i];
-		if (!echs_event_eq_p(this.ve.ev, that->ve.ev)) {
+		if (!echs_event_eq_p(this.ve.e, that->ve.e)) {
 			goto one_by_one;
 		}
 	}
@@ -1714,7 +1681,7 @@ make_echs_evical(const char *fn)
 			if (!ve->rr.nr && !ve->rd.ndt) {
 				/* not an rrule but a normal vevent
 				 * just him to the list */
-				ev[nev++] = a->ev[i].ev;
+				ev[nev++] = a->ev[i].e;
 				continue;
 			}
 			/* it's an rrule, we won't check for
@@ -1722,7 +1689,7 @@ make_echs_evical(const char *fn)
 			 * no sense without an rrule to go with */
 			/* check for exdates here, and sort them */
 			if (UNLIKELY(ve->xd.ndt > 1UL &&
-				     (xd = get_gxd(ve->xd.dt)) != NULL)) {
+				     (xd = ve->xd.dt) != NULL)) {
 				echs_instant_sort(xd, ve->xd.ndt);
 			}
 

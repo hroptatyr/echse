@@ -42,7 +42,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct echs_task_s *echs_task_t;
+typedef const struct echs_task_s *echs_task_t;
 typedef uintptr_t echs_evuid_t;
 
 typedef struct {
@@ -62,8 +62,8 @@ struct echs_task_s {
 	cred_t run_as;
 
 	/* the organiser and attendees of the whole shebang */
-	echs_evuid_t org;
-	echs_evuid_t *att;
+	const char *org;
+	const char **att;
 };
 
 

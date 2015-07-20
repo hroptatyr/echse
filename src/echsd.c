@@ -72,6 +72,7 @@
 #include <pwd.h>
 #include <ev.h>
 #include "echse.h"
+#include "evical.h"
 #include "logger.h"
 #include "nifty.h"
 
