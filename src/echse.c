@@ -151,10 +151,10 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
-				x = e.sum;
+				x = e.task->cmd;
 				goto cpy_obint;
 			case 'u':
-				x = e.uid;
+				x = e.task->uid;
 				goto cpy_obint;
 			case '%':
 				*bp++ = '%';

@@ -85,11 +85,6 @@
 
 #define STRERR	(strerror(errno))
 
-typedef struct {
-	uid_t u;
-	gid_t g;
-} cred_t;
-
 typedef struct _task_s *_task_t;
 
 /* linked list of ev_periodic objects */
@@ -99,7 +94,8 @@ struct _task_s {
 	_task_t next;
 	ev_child c;
 
-	echs_task_t t;
+	echs_task_t task;
+	echs_evstrm_t strm;
 };
 
 struct _echsd_s {
@@ -572,13 +568,13 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
-static echs_task_t free_pers;
+static _task_t free_pers;
 static size_t nfree_pers;
 static size_t zfree_pers;
 
 /* pool list */
 struct plst_s {
-	echs_task_t _1st;
+	_task_t _1st;
 	size_t size;
 };
 
@@ -586,11 +582,11 @@ static struct plst_s *pools;
 static size_t npools;
 static size_t zpools;
 
-static echs_task_t
+static _task_t
 make_task_pool(size_t n)
 {
 /* generate a pile of ev_periodics and chain them up */
-	echs_task_t res;
+	_task_t res;
 
 	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
 		return NULL;
@@ -622,11 +618,11 @@ free_task_pool(void)
 	return;
 }
 
-static echs_task_t
+static _task_t
 make_task(void)
 {
 /* create one task */
-	echs_task_t res;
+	_task_t res;
 
 	if (UNLIKELY(!nfree_pers)) {
 		/* put some more task objects in the task pool */
@@ -647,7 +643,7 @@ make_task(void)
 }
 
 static void
-free_task(echs_task_t t)
+free_task(_task_t t)
 {
 /* hand task T over to free list */
 	t->next = free_pers;
@@ -657,7 +653,7 @@ free_task(echs_task_t t)
 }
 
 static pid_t
-run_task(echs_task_t t, bool dtchp)
+run_task(_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
 	pid_t r;
@@ -688,13 +684,13 @@ run_task(echs_task_t t, bool dtchp)
 			uid, gid, "-n",
 			NULL
 		};
-		args[2U] = deconst(t->cmd);
+		args[2U] = deconst(t->task->cmd);
 		if (dtchp) {
 			args[9U] = NULL;
 		}
-		snprintf(uid, sizeof(uid), "--uid=%u", t->cred.u);
-		snprintf(gid, sizeof(gid), "--gid=%u", t->cred.g);
-		rc = execve(echsx, args, t->env);
+		snprintf(uid, sizeof(uid), "--uid=%u", t->task->run_as.u);
+		snprintf(gid, sizeof(gid), "--gid=%u", t->task->run_as.g);
+		rc = execve(echsx, args, t->task->env);
 		_exit(rc);
 		/* not reached */
 
@@ -959,7 +955,7 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
 /* A tasks always run asynchronously, echsx decouples itself from echsd
  * and manages the job with no further interaction */
-	echs_task_t t = (void*)w;
+	_task_t t = (void*)w;
 
 	/* indicate that we might want to reuse the loop */
 	ev_loop_fork(EV_A);
@@ -982,7 +978,7 @@ taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 /* B tasks always run under supervision of our event loop, should the task
  * be scheduled again while it's still running, cancel the execution and
  * reschedule for the next time. */
-	echs_task_t t = (void*)w;
+	_task_t t = (void*)w;
 
 	/* the global context holds the currently running child
 	 * if there is one running, defer the execution of this task */
@@ -1013,7 +1009,7 @@ resched(ev_periodic *w, ev_tstamp now)
 {
 /* the A queue doesn't wait for the jobs to finish, it is asynchronous
  * however jobs will only be timed AFTER NOW. */
-	echs_task_t t = (void*)w;
+	_task_t t = (void*)w;
 	echs_evstrm_t s = t->strm;
 	echs_event_t e;
 	ev_tstamp soon;
@@ -1024,8 +1020,7 @@ resched(ev_periodic *w, ev_tstamp now)
 	}
 
 	soon = instant_to_tstamp(e.from);
-	t->cmd = obint_name(e.sum);
-	t->env = NULL;
+	t->task = e.task;
 
 	ECHS_NOTI_LOG("next run %f", soon);
 	return soon;
@@ -1198,9 +1193,9 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
+_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
-	echs_task_t t;
+	_task_t t;
 	EV_P = ctx->loop;
 
 	if (UNLIKELY((t = make_task()) == NULL)) {
@@ -1210,14 +1205,13 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 
 	/* store the stream */
 	t->strm = clone_echs_evstrm(s);
-	t->cred = c;
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
+_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
 
@@ -1227,11 +1221,11 @@ _inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, cred_t c, void(*cb)())
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			_inject_evstrm1(ctx, s, c, cb);
+			_inject_evstrm1(ctx, s, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			_inject_evstrm1(ctx, strm[i], c, cb);
+			_inject_evstrm1(ctx, strm[i], cb);
 		}
 	}
 	return;
@@ -1308,7 +1302,7 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				continue;
 			}
 			/* wow, this really must be it */
-			_inject_evstrm(ctx, s, (cred_t){xu, 100}, cb);
+			_inject_evstrm(ctx, s, cb);
 			free_echs_evstrm(s);
 		}
 		closedir(d);
