@@ -1352,10 +1352,6 @@ clone_evical_vevent(echs_const_evstrm_t s)
 
 	res = (struct evical_s*)make_evical_vevent(
 		this->ev + this->i, this->nev - this->i);
-	for (size_t i = 0U; i < res->nev; i++) {
-		/* clone the task */
-		;
-	}
 	return (echs_evstrm_t)res;
 }
 
