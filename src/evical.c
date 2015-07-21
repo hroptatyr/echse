@@ -284,6 +284,37 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	return res;
 }
 
+static void
+free_ical_vevent(struct ical_vevent_s ve)
+{
+	if (ve.e.task) {
+		free_echs_task(ve.e.task);
+	}
+
+	if (ve.att.nap) {
+		free(ve.att.ap);
+	}
+	if (ve.rr.nr) {
+		free(ve.rr.r);
+	}
+	if (ve.xr.nr) {
+		free(ve.xr.r);
+	}
+	if (ve.rd.ndt) {
+		free(ve.rd.dt);
+	}
+	if (ve.xd.ndt) {
+		free(ve.xd.dt);
+	}
+	if (ve.mr.nr) {
+		free(ve.mr.r);
+	}
+	if (ve.mf.nu) {
+		free(ve.mf.u);
+	}
+	return;
+}
+
 
 /* file name stack (and include depth control) */
 static const char *gfn[4U];
@@ -1457,18 +1488,7 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	if (this->ve.e.task) {
-		free_echs_task(this->ve.e.task);
-	}
-	if (this->ve.rr.nr) {
-		free(this->ve.rr.r);
-	}
-	if (this->ve.xr.nr) {
-		free(this->ve.xr.r);
-	}
-	if (this->ve.att.nap) {
-		free(this->ve.att.ap);
-	}
+	free_ical_vevent(this->ve);
 	free(this);
 	return;
 }
@@ -1712,7 +1732,9 @@ make_echs_evical(const char *fn)
 			}
 		}
 
-		/* noone's using A anymore, so free it */
+		/* noone's using A anymore, so free it,
+		 * we're reusing all the vevents in A so make sure
+		 * we don't free them */
 		free(a);
 		a = NULL;
 
