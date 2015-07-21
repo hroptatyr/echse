@@ -238,17 +238,18 @@ get_gms(struct uri_s u)
 	return NULL;
 }
 
-static echs_task_t
+static void
 make_proto_task(struct ical_vevent_s *restrict ve)
 {
 	struct echs_task_s *res = malloc(sizeof(*res));
 
 	if (UNLIKELY(res == NULL)) {
-		return NULL;
+		return;
 	}
 	/* copy the proto task over */
-	memcpy(res, &ve->t, sizeof(ve->t));
-	return res;
+	*res = ve->t;
+	ve->e.task = res;
+	return;
 }
 
 
@@ -914,7 +915,7 @@ read_ical(const char *fn)
 				add_to_urlst(&ve.mf, mf, nmf);
 			}
 			/* assign */
-			ve.e.task = make_proto_task(&ve);
+			make_proto_task(&ve);
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
 			st = ST_BODY;
