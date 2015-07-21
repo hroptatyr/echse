@@ -1740,10 +1740,10 @@ make_echs_evical(const char *fn)
 			if (!ve->rr.nr && !ve->rd.ndt) {
 				/* not an rrule but a normal vevent
 				 * just him to the list */
-				ev[nev++] = a->ev[i].e;
+				ev[nev++] = echs_event_clone(a->ev[i].e);
 				/* free all the bits and bobs that
 				 * might have been added */
-				free_ical_vevent(*ve);
+				free_ical_vevent(a->ev[i]);
 				continue;
 			}
 			/* it's an rrule, we won't check for
