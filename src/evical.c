@@ -97,20 +97,12 @@ struct urlst_s {
 	size_t zu;
 };
 
-struct atlst_s {
-	char **ap;
-	size_t nap;
-	size_t zap;
-};
-
 struct ical_vevent_s {
 	echs_event_t e;
 
 	/* proto typical task */
 	struct echs_task_s t;
 
-	/* pointers into the attendees array */
-	struct atlst_s att;
 	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
 	struct rrlst_s xr;
@@ -146,7 +138,6 @@ struct cal_addr_s {
 	size_t z;
 };
 
-static struct cal_addr_s cal_0_addr;
 static struct muslst_s gms;
 
 
@@ -247,18 +238,6 @@ get_gms(struct uri_s u)
 	return NULL;
 }
 
-static void
-add1_to_atlst(struct atlst_s *al, struct cal_addr_s attendee)
-{
-	CHECK_RESIZE(al, ap, 64U, 1U);
-	if (LIKELY(attendee.s != NULL)) {
-		al->ap[al->nap++] = strndup(attendee.s, attendee.z);
-	} else {
-		al->ap[al->nap] = NULL;
-	}
-	return;
-}
-
 static echs_task_t
 make_proto_task(struct ical_vevent_s *restrict ve)
 {
@@ -269,11 +248,6 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	}
 	/* copy the proto task over */
 	memcpy(res, &ve->t, sizeof(ve->t));
-
-	/* slots we wouldn't set in the proto task */
-	if (ve->att.nap) {
-		res->att = ve->att.ap;
-	}
 	return res;
 }
 
@@ -284,9 +258,6 @@ free_ical_vevent(struct ical_vevent_s ve)
 		free_echs_task(ve.e.task);
 	}
 
-	if (ve.att.nap) {
-		free(ve.att.ap);
-	}
 	if (ve.rr.nr) {
 		free(ve.rr.r);
 	}
@@ -821,14 +792,15 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* snarf mail address */
 		if_with (struct cal_addr_s a,
 			 (a = snarf_mailto(vp, ep - vp)).s) {
-			/* bang to global array */
-			add1_to_atlst(&ve->att, a);
+			/* bang straight into the proto task */
+			strlst_addn(&ve->t.att, a.s, a.z);
 		}
 		break;
 
 	case FLD_ORG:
 		if_with (struct cal_addr_s a,
 			 (a = snarf_mailto(vp, ep - vp)).s) {
+			/* bang straight into the proto task */
 			ve->t.org = strndup(a.s, a.z);
 		}
 		break;
@@ -960,10 +932,6 @@ read_ical(const char *fn)
 				const struct uri_s *mf = globve.mf.u;
 
 				add_to_urlst(&ve.mf, mf, nmf);
-			}
-			/* also finalise attendee list */
-			if (ve.att.nap) {
-				(void)add1_to_atlst(&ve.att, cal_0_addr);
 			}
 			/* assign */
 			ve.e.task = make_proto_task(&ve);
