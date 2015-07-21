@@ -798,6 +798,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_ORG:
+		if (ve->t.org != NULL) {
+			/* only the first organiser wins */
+			break;
+		}
 		if_with (struct cal_addr_s a,
 			 (a = snarf_mailto(vp, ep - vp)).s) {
 			/* bang straight into the proto task */
