@@ -54,7 +54,7 @@ main(int argc, char *argv[])
 
 		for (echs_event_t e;
 		     !echs_event_0_p(e = echs_evstrm_next(s)); n++) {
-			printf("VEVENT %d: %s\n", n, obint_name(e.sum));
+			printf("VEVENT %d: %s\n", n, e.task->cmd);
 		}
 		free_echs_evstrm(s);
 	}
