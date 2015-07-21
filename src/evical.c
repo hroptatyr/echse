@@ -315,6 +315,26 @@ free_ical_vevent(struct ical_vevent_s ve)
 	return;
 }
 
+static struct ical_vevent_s
+clon_ical_vevent(struct ical_vevent_s ve)
+{
+/* this clones exrules and rrules for use with the evrrul class */
+	struct ical_vevent_s nu = {ve.e};
+
+	if (ve.rr.nr) {
+		nu.rr = clon_rrlst(ve.rr);
+	}
+	if (ve.xr.nr) {
+		nu.xr = clon_rrlst(ve.xr);
+	}
+	if (ve.att.nap) {
+		nu.att = clon_atlst(ve.att);
+	}
+	/* task cloning is special */
+	nu.e.task = echs_task_clone(ve.e.task);
+	return nu;
+}
+
 
 /* file name stack (and include depth control) */
 static const char *gfn[4U];
@@ -1500,17 +1520,8 @@ clone_evrrul(echs_const_evstrm_t s)
 	struct evrrul_s *clon = malloc(sizeof(*this));
 
 	*clon = *this;
-	/* we have to clone rrules and exrules though */
-	if (this->ve.rr.nr) {
-		clon->ve.rr = clon_rrlst(this->ve.rr);
-	}
-	if (this->ve.xr.nr) {
-		clon->ve.xr = clon_rrlst(this->ve.xr);
-	}
-	if (this->ve.att.nap) {
-		clon->ve.att = clon_atlst(this->ve.att);
-	}
-	clon->ve.e.task = echs_task_clone(this->ve.e.task);
+	/* ve slot needs a deep clone */
+	clon->ve = clon_ical_vevent(this->ve);
 	return (echs_evstrm_t)clon;
 }
 
