@@ -80,10 +80,7 @@ __refill(struct evmux_s *this, size_t idx)
 {
 	echs_evstrm_t s = this->s[idx];
 
-	if (UNLIKELY(echs_event_0_p(this->ev[idx] = echs_evstrm_next(s)))) {
-		free_echs_evstrm(s);
-		this->s[idx] = NULL;
-	}
+	this->ev[idx] = echs_evstrm_next(s);
 	return;
 }
 
@@ -118,6 +115,9 @@ next_evmux(echs_evstrm_t strm)
 		/* yep, bugger off, we assume the streams have been
 		 * freed upon __refill() previously, so just free the
 		 * stream array here */
+		for (size_t j = 0U; j < this->ns; j++) {
+			free_echs_evstrm(this->s[j]);
+		}
 		free(this->s);
 		this->s = NULL;
 		return nul;
