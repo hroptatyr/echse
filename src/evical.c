@@ -251,34 +251,6 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	return res;
 }
 
-static void
-free_ical_vevent(struct ical_vevent_s ve)
-{
-	if (ve.e.task) {
-		free_echs_task(ve.e.task);
-	}
-
-	if (ve.rr.nr) {
-		free(ve.rr.r);
-	}
-	if (ve.xr.nr) {
-		free(ve.xr.r);
-	}
-	if (ve.rd.ndt) {
-		free(ve.rd.dt);
-	}
-	if (ve.xd.ndt) {
-		free(ve.xd.dt);
-	}
-	if (ve.mr.nr) {
-		free(ve.mr.r);
-	}
-	if (ve.mf.nu) {
-		free(ve.mf.u);
-	}
-	return;
-}
-
 
 /* file name stack (and include depth control) */
 static const char *gfn[4U];
@@ -1388,6 +1360,9 @@ struct evrrul_s {
 	/* proto-event */
 	echs_event_t e;
 
+	/* reference counter */
+	size_t nref;
+
 	/* rrul/xrul */
 	struct rrulsp_s rr;
 	struct rrlst_s xr;
@@ -1419,29 +1394,27 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(struct ical_vevent_s ve)
+__make_evrrul(struct ical_vevent_s ve, size_t nref)
 {
 	struct evrrul_s *res = malloc(sizeof(*res));
 
 	res->class = &evrrul_cls;
-	res->e = echs_event_clone(ve.e);
-	if (ve.rr.nr) {
-		res->rr = *ve.rr.r;
-	} else {
-		res->rr = (struct rrulsp_s){FREQ_NONE};
-	}
+	res->e = ve.e;
+	res->rr = *ve.rr.r;
+	res->nref = nref;
+
 	if (ve.xr.nr) {
-		res->xr = clon_rrlst(ve.xr);
+		res->xr = ve.xr;
 	} else {
 		res->xr.nr = 0U;
 	}
 	if (ve.rd.ndt) {
-		res->rd = clon_dtlst(ve.rd);
+		res->rd = ve.rd;
 	} else {
 		res->rd.ndt = 0U;
 	}
 	if (ve.xd.ndt) {
-		res->xd = clon_dtlst(ve.xd);
+		res->xd = ve.xd;
 	} else {
 		res->xd.ndt = 0U;
 	}
@@ -1462,23 +1435,34 @@ __make_evrrul(struct ical_vevent_s ve)
 static echs_evstrm_t
 make_evrrul(struct ical_vevent_s ve)
 {
+/* here's the deal, we check how many rrules there are, and
+ * if it's just one we return a normal evrrul_s object, if
+ * it's more than one we generate one evrrul_s object per
+ * rrule and mux them together, sharing the resources in VE. */
+
 	switch (ve.rr.nr) {
 	case 0:
 		return NULL;
 	case 1:
-		return __make_evrrul(ve);
+		return __make_evrrul(ve, 1U);
 	default:
 		break;
 	}
 	with (echs_evstrm_t s[ve.rr.nr]) {
 		size_t nr = 0UL;
 
-		for (size_t i = 0U; i < ve.rr.nr; i++) {
+		for (size_t i = 0U; i < ve.rr.nr; i++, nr++) {
 			struct ical_vevent_s ve_tmp = ve;
 
 			ve_tmp.rr.r += i;
 			ve_tmp.rr.nr = 1U;
-			s[nr++] = __make_evrrul(ve_tmp);
+			s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
+		}
+		if (ve.mr.nr) {
+			free(ve.mr.r);
+		}
+		if (ve.mf.nu) {
+			free(ve.mf.u);
 		}
 		return make_echs_evmux(s, nr);
 	}
@@ -1489,6 +1473,11 @@ static void
 free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
+
+	/* check reference counter */
+	if (--this->nref) {
+		return;
+	}
 
 	if (this->e.task) {
 		free_echs_task(this->e.task);
@@ -1709,26 +1698,37 @@ make_echs_evical(const char *fn)
 
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
-		for (size_t i = 0U; i < a->nev; free_ical_vevent(a->ev[i]), i++) {
-			const struct ical_vevent_s *ve = a->ev + i;
+		for (size_t i = 0U; i < a->nev; i++) {
 			echs_evstrm_t tmp;
 			echs_instant_t *xd;
 
-			if (!ve->rr.nr && !ve->rd.ndt) {
+			if (!a->ev[i].rr.nr && !a->ev[i].rd.ndt) {
 				/* not an rrule but a normal vevent
 				 * just him to the list */
-				ev[nev++] = echs_event_clone(a->ev[i].e);
+				ev[nev++] = a->ev[i].e;
 				/* free all the bits and bobs that
 				 * might have been added */
+				if (a->ev[i].xr.nr) {
+					free(a->ev[i].xr.r);
+				}
+				if (a->ev[i].xd.ndt) {
+					free(a->ev[i].xd.dt);
+				}
+				if (a->ev[i].mr.nr) {
+					free(a->ev[i].mr.r);
+				}
+				if (a->ev[i].mf.nu) {
+					free(a->ev[i].mf.u);
+				}
 				continue;
 			}
 			/* it's an rrule, we won't check for
 			 * exdates or exrules because they make
 			 * no sense without an rrule to go with */
 			/* check for exdates here, and sort them */
-			if (UNLIKELY(ve->xd.ndt > 1UL &&
-				     (xd = ve->xd.dt) != NULL)) {
-				echs_instant_sort(xd, ve->xd.ndt);
+			if (UNLIKELY(a->ev[i].xd.ndt > 1UL &&
+				     (xd = a->ev[i].xd.dt) != NULL)) {
+				echs_instant_sort(xd, a->ev[i].xd.ndt);
 			}
 
 			if ((tmp = make_evrrul(a->ev[i])) != NULL) {
