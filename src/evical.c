@@ -1469,21 +1469,20 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(const struct ical_vevent_s *ve)
+__make_evrrul(struct ical_vevent_s ve)
 {
 	struct evrrul_s *res = malloc(sizeof(*res));
 
 	res->class = &evrrul_cls;
-	res->ve = *ve;
-	res->ve.e.task = echs_task_clone(ve->e.task);
-	res->dur = echs_instant_diff(ve->e.till, ve->e.from);
+	res->ve = clon_ical_vevent(ve);
+	res->dur = echs_instant_diff(ve.e.till, ve.e.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
-	if (ve->mr.nr && ve->mf.nu) {
-		mrulsp_t mr = ve->mr.r;
+	if (ve.mr.nr && ve.mf.nu) {
+		mrulsp_t mr = ve.mr.r;
 		echs_evstrm_t aux;
 
-		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
+		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
 			return make_evmrul(mr, (echs_evstrm_t)res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
@@ -1492,9 +1491,9 @@ __make_evrrul(const struct ical_vevent_s *ve)
 }
 
 static echs_evstrm_t
-make_evrrul(const struct ical_vevent_s *ve)
+make_evrrul(struct ical_vevent_s ve)
 {
-	switch (ve->rr.nr) {
+	switch (ve.rr.nr) {
 	case 0:
 		return NULL;
 	case 1:
@@ -1502,15 +1501,15 @@ make_evrrul(const struct ical_vevent_s *ve)
 	default:
 		break;
 	}
-	with (echs_evstrm_t s[ve->rr.nr]) {
+	with (echs_evstrm_t s[ve.rr.nr]) {
 		size_t nr = 0UL;
 
-		for (size_t i = 0U; i < ve->rr.nr; i++) {
-			struct ical_vevent_s ve_tmp = *ve;
+		for (size_t i = 0U; i < ve.rr.nr; i++) {
+			struct ical_vevent_s ve_tmp = ve;
 
 			ve_tmp.rr.r += i;
 			ve_tmp.rr.nr = 1U;
-			s[nr++] = __make_evrrul(&ve_tmp);
+			s[nr++] = __make_evrrul(ve_tmp);
 		}
 		return make_echs_evmux(s, nr);
 	}
@@ -1732,7 +1731,7 @@ make_echs_evical(const char *fn)
 
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
-		for (size_t i = 0U; i < a->nev; i++) {
+		for (size_t i = 0U; i < a->nev; free_ical_vevent(a->ev[i]), i++) {
 			const struct ical_vevent_s *ve = a->ev + i;
 			echs_evstrm_t tmp;
 			echs_instant_t *xd;
@@ -1743,7 +1742,6 @@ make_echs_evical(const char *fn)
 				ev[nev++] = echs_event_clone(a->ev[i].e);
 				/* free all the bits and bobs that
 				 * might have been added */
-				free_ical_vevent(a->ev[i]);
 				continue;
 			}
 			/* it's an rrule, we won't check for
@@ -1755,7 +1753,7 @@ make_echs_evical(const char *fn)
 				echs_instant_sort(xd, ve->xd.ndt);
 			}
 
-			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
+			if ((tmp = make_evrrul(a->ev[i])) != NULL) {
 				s[ns++] = tmp;
 			}
 		}
