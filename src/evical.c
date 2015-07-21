@@ -1443,8 +1443,17 @@ prnt_evical_vevent(echs_const_evstrm_t s)
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
-	/* the actual complete vevent (includes proto-event) */
-	struct ical_vevent_s ve;
+
+	/* proto-event */
+	echs_event_t e;
+
+	/* rrul/xrul */
+	struct rrulsp_s rr;
+	struct rrlst_s xr;
+	/* rdat/xdat */
+	struct dtlst_s rd;
+	struct dtlst_s xd;
+
 	/* proto-duration */
 	echs_idiff_t dur;
 	/* iterator state */
@@ -1474,7 +1483,27 @@ __make_evrrul(struct ical_vevent_s ve)
 	struct evrrul_s *res = malloc(sizeof(*res));
 
 	res->class = &evrrul_cls;
-	res->ve = clon_ical_vevent(ve);
+	res->e = echs_event_clone(ve.e);
+	if (ve.rr.nr) {
+		res->rr = *ve.rr.r;
+	} else {
+		res->rr = (struct rrulsp_s){FREQ_NONE};
+	}
+	if (ve.xr.nr) {
+		res->xr = clon_rrlst(ve.xr);
+	} else {
+		res->xr.nr = 0U;
+	}
+	if (ve.rd.ndt) {
+		res->rd = clon_dtlst(ve.rd);
+	} else {
+		res->rd.ndt = 0U;
+	}
+	if (ve.xd.ndt) {
+		res->xd = clon_dtlst(ve.xd);
+	} else {
+		res->xd.ndt = 0U;
+	}
 	res->dur = echs_instant_diff(ve.e.till, ve.e.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
@@ -1520,7 +1549,18 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	free_ical_vevent(this->ve);
+	if (this->e.task) {
+		free_echs_task(this->e.task);
+	}
+	if (this->xr.nr) {
+		free(this->xr.r);
+	}
+	if (this->rd.ndt) {
+		free(this->rd.dt);
+	}
+	if (this->xd.ndt) {
+		free(this->xd.dt);
+	}
 	free(this);
 	return;
 }
@@ -1532,8 +1572,19 @@ clone_evrrul(echs_const_evstrm_t s)
 	struct evrrul_s *clon = malloc(sizeof(*this));
 
 	*clon = *this;
-	/* ve slot needs a deep clone */
-	clon->ve = clon_ical_vevent(this->ve);
+	/* clone lists if applicable */
+	if (this->e.task) {
+		clon->e.task = echs_task_clone(this->e.task);
+	}
+	if (this->xr.nr) {
+		clon->xr = clon_rrlst(this->xr);
+	}
+	if (this->rd.ndt) {
+		clon->rd = clon_dtlst(this->rd);
+	}
+	if (this->xd.ndt) {
+		clon->xd = clon_dtlst(this->xd);
+	}
 	return (echs_evstrm_t)clon;
 }
 
@@ -1544,18 +1595,16 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	struct rrulsp_s *restrict rr;
+	struct rrulsp_s *restrict rr = &strm->rr;
 
-	assert(strm->vr.rr.nr > 0UL);
-	if (UNLIKELY((rr = strm->ve.rr.r) == NULL)) {
-		return 0UL;
-	} else if (UNLIKELY(!rr->count)) {
+	assert(rr->freq > FREQ_NONE);
+	if (UNLIKELY(!rr->count)) {
 		return 0UL;
 	}
 
 	/* fill up with the proto instant */
 	for (size_t j = 0U; j < countof(strm->cch); j++) {
-		strm->cch[j] = strm->ve.e.from;
+		strm->cch[j] = strm->e.from;
 	}
 
 	/* now go and see who can help us */
@@ -1594,7 +1643,7 @@ refill(struct evrrul_s *restrict strm)
 	} else {
 		/* update the rrule to the partial set we've got */
 		rr->count -= --strm->ncch;
-		strm->ve.e.from = strm->cch[strm->ncch];
+		strm->e.from = strm->cch[strm->ncch];
 	}
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
@@ -1603,10 +1652,10 @@ refill(struct evrrul_s *restrict strm)
 	echs_instant_sort(strm->cch, strm->ncch);
 
 	/* also check if we need to rid some dates due to xdates */
-	if (UNLIKELY(strm->ve.xd.ndt > 0UL)) {
-		const echs_instant_t *xd = strm->ve.xd.dt;
+	if (UNLIKELY(strm->xd.ndt > 0UL)) {
+		const echs_instant_t *xd = strm->xd.dt;
 		echs_instant_t *restrict rd = strm->cch;
-		const echs_instant_t *const exd = xd + strm->ve.xd.ndt;
+		const echs_instant_t *const exd = xd + strm->xd.ndt;
 		const echs_instant_t *const erd = rd + strm->ncch;
 
 		assert(xd != NULL);
@@ -1648,7 +1697,7 @@ next_evrrul(echs_evstrm_t s)
 		}
 	}
 	/* construct the result */
-	res = this->ve.e;
+	res = this->e;
 	res.from = in;
 	res.till = echs_instant_add(in, this->dur);
 	return res;
@@ -1662,20 +1711,11 @@ prnt_evrrul1(echs_const_evstrm_t s)
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
 	prnt_ical_hdr();
-	prnt_ev(this->ve.e);
+	prnt_ev(this->e);
 
-	for (size_t i = 0UL; i < this->ve.rr.nr; i++) {
-		rrulsp_t rr = this->ve.rr.r + i;
+	fputs("RRULE:", stdout);
+	prnt_rrul(&this->rr);
 
-		fputs("RRULE:", stdout);
-		prnt_rrul(rr);
-	}
-	for (size_t i = 0UL; i < this->ve.mr.nr; i++) {
-		mrulsp_t mr = this->ve.mr.r[i];
-
-		fputs("X-GA-MRULE:", stdout);
-		prnt_mrul(mr);
-	}
 	prnt_ical_ftr();
 	return;
 }
@@ -1684,30 +1724,28 @@ static void
 prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
 {
 /* we know that they all come from one ical_event_s originally,
- * just merge them temporarily in a evrrul_s object and use prnt1() */
-	struct evrrul_tmp_s {
-		echs_evstrm_class_t class;
-		/* the actual complete vevent (includes proto-event) */
-		struct ical_vevent_s ve;
-		/* proto-duration */
-		echs_idiff_t dur;
-	};
-	struct evrrul_tmp_s this = *(const struct evrrul_tmp_s*)*s;
+ * print the proto event from the first guy, then all rrules in succession */
+	const struct evrrul_s *this = (const void*)*s;
+	size_t i;
 
-	/* make sure we talk about a split up VEVENT with multiple rules */
-	for (size_t i = 1U; i < n; i++) {
-		const struct evrrul_tmp_s *that = (const void*)s[i];
-		if (!echs_event_eq_p(this.ve.e, that->ve.e)) {
+	prnt_ical_hdr();
+	prnt_ev(this->e);
+
+	for (i = 0U; i < n; i++) {
+		const struct evrrul_s *that = (const void*)s[i];
+
+		if (!echs_event_eq_p(this->e, that->e)) {
+			prnt_ical_ftr();
 			goto one_by_one;
 		}
+		fputs("RRULE:", stdout);
+		prnt_rrul(&that->rr);
 	}
-	/* have to fiddle with the nr slot, but we know rules are consecutive */
-	this.ve.rr.nr = n;
-	prnt_evrrul1((echs_evstrm_t)&this);
+	prnt_ical_ftr();
 	return;
 
 one_by_one:
-	for (size_t i = 0U; i < n; i++) {
+	for (; i < n; i++) {
 		prnt_evrrul1(s[i]);
 	}
 	return;
