@@ -62,7 +62,7 @@ struct strlst_s*
 clone_strlst(const struct strlst_s *sl)
 {
 	const size_t z = ilog_ceil_exp(sl->i);
-	const size_t zl = ilog_ceil_exp(sl->nl);
+	const size_t zl = ilog_ceil_exp(sl->nl + 1U);
 	struct strlst_s *res;
 
 	if ((res = malloc(sizeof(*res) + zl * sizeof(*sl->l))) == NULL) {
