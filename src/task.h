@@ -41,6 +41,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "strlst.h"
 
 typedef const struct echs_task_s *echs_task_t;
 typedef uintptr_t echs_evuid_t;
@@ -55,7 +56,7 @@ struct echs_task_s {
 
 	/* command, environment, working dir */
 	const char *cmd;
-	const char *const *env;
+	struct strlst_s *env;
 	const char *cwd;
 
 	/* credentials we want this job run as */
@@ -63,7 +64,7 @@ struct echs_task_s {
 
 	/* the organiser and attendees of the whole shebang */
 	const char *org;
-	const char *const *att;
+	struct strlst_s *att;
 };
 
 
