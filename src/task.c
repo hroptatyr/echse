@@ -38,17 +38,32 @@
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
 #include <stdlib.h>
+#include <string.h>
 #include "task.h"
 #include "nifty.h"
 
-echs_task_t
+struct echs_task_s*
 echs_task_clone(echs_task_t t)
 {
-	if (LIKELY(t != NULL)) {
-		struct echs_task_s *tmpt = deconst(t);
-		tmpt->nref++;
+	struct echs_task_s *res = malloc(sizeof(*res));
+	size_t natt = 0UL;
+
+	*res = *t;
+	if (t->cmd != NULL) {
+		res->cmd = strdup(t->cmd);
 	}
-	return t;
+	if (t->org != NULL) {
+		res->org = strdup(t->org);
+	}
+	for (const char *const *ap = t->att; ap && *ap; ap++, natt++);
+	with (char **att = calloc(natt + 1U, sizeof(*att))) {
+		for (size_t i = 0U; i < natt; i++) {
+			att[i] = strdup(t->att[i]);
+		}
+		att[natt] = NULL;
+		res->att = att;
+	}
+	return res;
 }
 
 void
@@ -56,9 +71,6 @@ free_echs_task(echs_task_t t)
 {
 	struct echs_task_s *tmpt = deconst(t);
 
-	if (--tmpt->nref) {
-		return;
-	}
 	if (tmpt->cmd) {
 		free(deconst(tmpt->cmd));
 	}
