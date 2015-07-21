@@ -69,6 +69,10 @@ struct echs_task_s {
 };
 
 
+extern echs_task_t echs_task_clone(echs_task_t);
+extern void free_echs_task(echs_task_t);
+
+
 /* convenience */
 static inline __attribute__((const, pure)) bool
 echs_task_eq_p(echs_task_t t1, echs_task_t t2)

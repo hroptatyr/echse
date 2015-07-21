@@ -37,6 +37,42 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
+#include <stdlib.h>
 #include "task.h"
+#include "nifty.h"
+
+echs_task_t
+echs_task_clone(echs_task_t t)
+{
+	if (LIKELY(t != NULL)) {
+		struct echs_task_s *tmpt = deconst(t);
+		tmpt->nref++;
+	}
+	return t;
+}
+
+void
+free_echs_task(echs_task_t t)
+{
+	struct echs_task_s *tmpt = deconst(t);
+
+	if (--tmpt->nref) {
+		return;
+	}
+	if (tmpt->cmd) {
+		free(deconst(tmpt->cmd));
+	}
+	if (tmpt->org) {
+		free(deconst(tmpt->org));
+	}
+	if (tmpt->att) {
+		for (char **ap = deconst(tmpt->att); ap && *ap; ap++) {
+			free(*ap);
+		}
+		free(deconst(tmpt->att));
+	}
+	free(tmpt);
+	return;
+}
 
 /* task.c ends here */

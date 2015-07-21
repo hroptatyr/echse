@@ -1283,35 +1283,6 @@ prnt_ev(echs_event_t e)
 	return;
 }
 
-static void
-free_evical_task(struct echs_task_s *t)
-{
-	if (--t->nref) {
-		return;
-	}
-	if (t->cmd) {
-		free(deconst(t->cmd));
-	}
-	if (t->org) {
-		free(deconst(t->org));
-	}
-	if (t->att) {
-		for (char **ap = deconst(t->att); ap && *ap; ap++) {
-			free(*ap);
-		}
-		free(deconst(t->att));
-	}
-	free(t);
-	return;
-}
-
-static void
-inc_task_nref(struct echs_task_s *restrict t)
-{
-	t->nref++;
-	return;
-}
-
 
 /* our event class */
 struct evical_s {
@@ -1350,7 +1321,7 @@ make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 	memcpy(res->ev, ev, zev);
 	for (size_t i = 0U; i < nev; i++) {
 		/* increment task ref-counter */
-		inc_task_nref(deconst(res->ev[i].task));
+		res->ev[i].task = echs_task_clone(res->ev[i].task);
 	}
 	return (echs_evstrm_t)res;
 }
@@ -1362,7 +1333,7 @@ free_evical_vevent(echs_evstrm_t s)
 
 	for (size_t i = 0U; i < this->nev; i++) {
 		if (this->ev[i].task) {
-			free_evical_task(deconst(this->ev[i].task));
+			free_echs_task(this->ev[i].task);
 		}
 	}
 	free(this);
@@ -1439,7 +1410,7 @@ __make_evrrul(const struct ical_vevent_s *ve)
 
 	res->class = &evrrul_cls;
 	res->ve = *ve;
-	inc_task_nref(deconst(res->ve.e.task));
+	res->ve.e.task = echs_task_clone(ve->e.task);
 	res->dur = echs_instant_diff(ve->e.till, ve->e.from);
 	res->rdi = 0UL;
 	res->ncch = 0UL;
@@ -1487,7 +1458,16 @@ free_evrrul(echs_evstrm_t s)
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
 	if (this->ve.e.task) {
-		free_evical_task(deconst(this->ve.e.task));
+		free_echs_task(this->ve.e.task);
+	}
+	if (this->ve.rr.nr) {
+		free(this->ve.rr.r);
+	}
+	if (this->ve.xr.nr) {
+		free(this->ve.xr.r);
+	}
+	if (this->ve.att.nap) {
+		free(this->ve.att.ap);
 	}
 	free(this);
 	return;
@@ -1510,7 +1490,7 @@ clone_evrrul(echs_const_evstrm_t s)
 	if (this->ve.att.nap) {
 		clon->ve.att = clon_atlst(this->ve.att);
 	}
-	inc_task_nref(deconst(clon->ve.e.task));
+	clon->ve.e.task = echs_task_clone(this->ve.e.task);
 	return (echs_evstrm_t)clon;
 }
 
