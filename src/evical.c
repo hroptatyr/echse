@@ -981,17 +981,17 @@ prnt_ical_hdr(void)
 	if (LIKELY(now)) {
 		;
 	} else {
-		struct tm tm[1U];
+		struct tm tm;
 
-		if (LIKELY((now = time(NULL), gmtime_r(&now, tm) != NULL))) {
+		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) != NULL))) {
 			echs_instant_t nowi;
 
-			nowi.y = tm->tm_year + 1900,
-			nowi.m = tm->tm_mon + 1,
-			nowi.d = tm->tm_mday,
-			nowi.H = tm->tm_hour,
-			nowi.M = tm->tm_min,
-			nowi.S = tm->tm_sec,
+			nowi.y = tm.tm_year + 1900,
+			nowi.m = tm.tm_mon + 1,
+			nowi.d = tm.tm_mday,
+			nowi.H = tm.tm_hour,
+			nowi.M = tm.tm_min,
+			nowi.S = tm.tm_sec,
 			nowi.ms = ECHS_ALL_SEC,
 
 			dt_strf_ical(stmp, sizeof(stmp), nowi);
