@@ -752,6 +752,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		ve->t.uid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
+		if (ve->t.cmd != NULL) {
+			/* only the first summary wins */
+			break;
+		}
 		if (vp < ep) {
 			ve->t.cmd = strndup(vp, ep - vp);
 		}
