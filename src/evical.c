@@ -259,23 +259,6 @@ add1_to_atlst(struct atlst_s *al, struct cal_addr_s attendee)
 	return;
 }
 
-static struct atlst_s
-clon_atlst(struct atlst_s al)
-{
-	struct atlst_s res = al;
-
-	if (!al.zap) {
-		return (struct atlst_s){NULL};
-	}
-	/* otherwise clone every single element */
-	res.ap = malloc(al.zap * sizeof(*al.ap));
-	for (size_t i = 0U; i < al.nap; i++) {
-		res.ap[i] = strdup(al.ap[i]);
-	}
-	res.ap[al.nap] = NULL;
-	return res;
-}
-
 static echs_task_t
 make_proto_task(struct ical_vevent_s *restrict ve)
 {
@@ -323,30 +306,6 @@ free_ical_vevent(struct ical_vevent_s ve)
 		free(ve.mf.u);
 	}
 	return;
-}
-
-static struct ical_vevent_s
-clon_ical_vevent(struct ical_vevent_s ve)
-{
-/* this clones exrules and rrules for use with the evrrul class */
-	struct ical_vevent_s nu = {echs_event_clone(ve.e)};
-
-	if (ve.rr.nr) {
-		nu.rr = clon_rrlst(ve.rr);
-	}
-	if (ve.xr.nr) {
-		nu.xr = clon_rrlst(ve.xr);
-	}
-	if (ve.rd.ndt) {
-		nu.rd = clon_dtlst(ve.rd);
-	}
-	if (ve.xd.ndt) {
-		nu.xd = clon_dtlst(ve.xd);
-	}
-	if (ve.att.nap) {
-		nu.att = clon_atlst(ve.att);
-	}
-	return nu;
 }
 
 
