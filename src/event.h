@@ -101,4 +101,11 @@ echs_nul_event_p(echs_event_t e)
 	return echs_nul_instant_p(e.from);
 }
 
+static inline echs_event_t
+echs_event_clone(echs_event_t e)
+{
+	e.task = echs_task_clone(e.task);
+	return e;
+}
+
 #endif	/* INCLUDED_event_h_ */

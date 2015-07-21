@@ -319,7 +319,7 @@ static struct ical_vevent_s
 clon_ical_vevent(struct ical_vevent_s ve)
 {
 /* this clones exrules and rrules for use with the evrrul class */
-	struct ical_vevent_s nu = {ve.e};
+	struct ical_vevent_s nu = {echs_event_clone(ve.e)};
 
 	if (ve.rr.nr) {
 		nu.rr = clon_rrlst(ve.rr);
@@ -330,8 +330,6 @@ clon_ical_vevent(struct ical_vevent_s ve)
 	if (ve.att.nap) {
 		nu.att = clon_atlst(ve.att);
 	}
-	/* task cloning is special */
-	nu.e.task = echs_task_clone(ve.e.task);
 	return nu;
 }
 
