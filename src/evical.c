@@ -1410,6 +1410,11 @@ __make_evrrul(struct ical_vevent_s ve, size_t nref)
 	res->rr = *ve.rr.r;
 	res->nref = nref;
 
+	/* free the rr-list in here after materialisation */
+	if (nref <= 1U) {
+		free(ve.rr.r);
+	}
+
 	if (ve.xr.nr) {
 		res->xr = ve.xr;
 	} else {
@@ -1456,15 +1461,14 @@ make_evrrul(struct ical_vevent_s ve)
 		break;
 	}
 	with (echs_evstrm_t s[ve.rr.nr]) {
+		struct ical_vevent_s ve_tmp = ve;
 		size_t nr = 0UL;
 
-		for (size_t i = 0U; i < ve.rr.nr; i++, nr++) {
-			struct ical_vevent_s ve_tmp = ve;
-
-			ve_tmp.rr.r += i;
-			ve_tmp.rr.nr = 1U;
+		for (size_t i = 0U; i < ve.rr.nr; i++, nr++, ve_tmp.rr.r++) {
 			s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
 		}
+		/* we've materialised these */
+		free(ve.rr.r);
 		if (ve.mr.nr) {
 			free(ve.mr.r);
 		}
@@ -1727,6 +1731,7 @@ make_echs_evical(const char *fn)
 				if (a->ev[i].mf.nu) {
 					free(a->ev[i].mf.u);
 				}
+				assert(a->ev[i].rr.r == NULL);
 				continue;
 			}
 			/* it's an rrule, we won't check for
