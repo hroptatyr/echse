@@ -82,10 +82,11 @@ clone_strlst(const struct strlst_s *sl)
 void
 strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 {
-	const size_t z = ilog_ceil_exp(n);
 	struct strlst_s *res;
+	size_t z;
 
 	if (UNLIKELY((res = *sl) == NULL)) {
+		z = ilog_ceil_exp(n + 1U);
 		res = malloc(sizeof(*res) +  16U * sizeof(*res->l));
 		if (UNLIKELY(res == NULL)) {
 			/* bollocks */
@@ -97,9 +98,7 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 		}
 		res->i = 0U;
 		res->nl = 0U;
-	}
-
-	if (UNLIKELY(res->i + n + 1U > z)) {
+	} else if (z = ilog_ceil_exp(res->i), UNLIKELY(res->i + n + 1U > z)) {
 		/* realloc the string pool */
 		const size_t nu_z = ilog_ceil_exp(res->i + n + 1U);
 		char *nu_s;
@@ -115,6 +114,7 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 				res->l[i] += d;
 			}
 		}
+		res->s = nu_s;
 	}
 
 	const size_t zl = ilog_ceil_exp(res->nl);
