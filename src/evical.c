@@ -198,6 +198,16 @@ add1_to_dtlst(struct dtlst_s *dl, echs_instant_t dt)
 	return;
 }
 
+static struct dtlst_s
+clon_dtlst(struct dtlst_s dl)
+{
+	struct dtlst_s res = dl;
+
+	res.dt = malloc(dl.zdt * sizeof(*dl.dt));
+	memcpy(res.dt, dl.dt, dl.ndt * sizeof(*dl.dt));
+	return res;
+}
+
 static void
 add1_to_urlst(struct urlst_s *ul, struct uri_s u)
 {
@@ -326,6 +336,12 @@ clon_ical_vevent(struct ical_vevent_s ve)
 	}
 	if (ve.xr.nr) {
 		nu.xr = clon_rrlst(ve.xr);
+	}
+	if (ve.rd.ndt) {
+		nu.rd = clon_dtlst(ve.rd);
+	}
+	if (ve.xd.ndt) {
+		nu.xd = clon_dtlst(ve.xd);
 	}
 	if (ve.att.nap) {
 		nu.att = clon_atlst(ve.att);
