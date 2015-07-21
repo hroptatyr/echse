@@ -1267,6 +1267,16 @@ prnt_ev(echs_event_t e)
 		fputs("SUMMARY:", stdout);
 		puts(e.task->cmd);
 	}
+	if (e.task->org) {
+		fputs("ORGANIZER:", stdout);
+		puts(e.task->org);
+	}
+	if (e.task->att) {
+		for (const char *const *ap = e.task->att->l; *ap; ap++) {
+			fputs("ATTENDEE:", stdout);
+			puts(*ap);
+		}
+	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
 		prnt_stset(e.sts);
