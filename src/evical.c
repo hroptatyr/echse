@@ -665,6 +665,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	/* obtain the value pointer */
 	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
 		vp++;
+	} else {
+		return;
 	}
 
 	switch (c->fld) {
