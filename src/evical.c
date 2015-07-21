@@ -1283,17 +1283,17 @@ prnt_mrul(mrulsp_t mr)
 		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
 	};
 
-	if (mr->mdir) {
+	if (mr.mdir) {
 		fputs("DIR=", stdout);
-		fputs(mdirs[mr->mdir], stdout);
+		fputs(mdirs[mr.mdir], stdout);
 	}
-	if (mr->from) {
+	if (mr.from) {
 		fputs(";MOVEFROM=", stdout);
-		prnt_stset(mr->from);
+		prnt_stset(mr.from);
 	}
-	if (mr->into) {
+	if (mr.into) {
 		fputs(";MOVEINTO=", stdout);
-		prnt_stset(mr->into);
+		prnt_stset(mr.into);
 	}
 
 	fputc('\n', stdout);
@@ -1479,11 +1479,10 @@ __make_evrrul(struct ical_vevent_s ve)
 	res->rdi = 0UL;
 	res->ncch = 0UL;
 	if (ve.mr.nr && ve.mf.nu) {
-		mrulsp_t mr = ve.mr.r;
 		echs_evstrm_t aux;
 
 		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
-			return make_evmrul(mr, (echs_evstrm_t)res, aux);
+			return make_evmrul(*ve.mr.r, (echs_evstrm_t)res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
 	}
@@ -1672,7 +1671,7 @@ prnt_evrrul1(echs_const_evstrm_t s)
 		prnt_rrul(rr);
 	}
 	for (size_t i = 0UL; i < this->ve.mr.nr; i++) {
-		mrulsp_t mr = this->ve.mr.r + i;
+		mrulsp_t mr = this->ve.mr.r[i];
 
 		fputs("X-GA-MRULE:", stdout);
 		prnt_mrul(mr);

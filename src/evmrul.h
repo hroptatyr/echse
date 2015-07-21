@@ -42,7 +42,7 @@
 #include "state.h"
 #include "evstrm.h"
 
-typedef const struct mrulsp_s *mrulsp_t;
+typedef struct mrulsp_s mrulsp_t;
 
 typedef enum {
 	MDIR_NONE,

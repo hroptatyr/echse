@@ -81,7 +81,7 @@ pop_event(struct eq_s *restrict q)
 static inline __attribute__((const, pure)) bool
 aux_blocks_p(mrulsp_t mr, echs_event_t aux)
 {
-	return mr->from & aux.sts;
+	return mr.from & aux.sts;
 }
 
 static echs_event_t
@@ -314,12 +314,18 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
  * in later. */
 	struct evmrul_s *res;
 
-	if (UNLIKELY(mr == NULL)) {
+	switch (mr.mdir) {
+	case MDIR_PAST:
+	case MDIR_PASTTHENFUTURE:
+	case MDIR_FUTURE:
+	case MDIR_FUTURETHENPAST:
+		break;
+	default:
 		return NULL;
 	}
 	/* otherwise ... */
 	res = malloc(sizeof(*res));
-	switch (mr->mdir) {
+	switch (mr.mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
 		res->class = &evmrul_past_cls;
