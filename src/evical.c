@@ -1403,12 +1403,13 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 static echs_evstrm_t
 __make_evrrul(struct ical_vevent_s ve, size_t nref)
 {
-	struct evrrul_s *res = malloc(sizeof(*res));
+	struct evrrul_s *this = malloc(sizeof(*this));
+	echs_evstrm_t res;
 
-	res->class = &evrrul_cls;
-	res->e = ve.e;
-	res->rr = *ve.rr.r;
-	res->nref = nref;
+	this->class = &evrrul_cls;
+	this->e = ve.e;
+	this->rr = *ve.rr.r;
+	this->nref = nref;
 
 	/* free the rr-list in here after materialisation */
 	if (nref <= 1U) {
@@ -1416,30 +1417,40 @@ __make_evrrul(struct ical_vevent_s ve, size_t nref)
 	}
 
 	if (ve.xr.nr) {
-		res->xr = ve.xr;
+		this->xr = ve.xr;
 	} else {
-		res->xr.nr = 0U;
+		this->xr.nr = 0U;
 	}
 	if (ve.rd.ndt) {
-		res->rd = ve.rd;
+		this->rd = ve.rd;
 	} else {
-		res->rd.ndt = 0U;
+		this->rd.ndt = 0U;
 	}
 	if (ve.xd.ndt) {
-		res->xd = ve.xd;
+		this->xd = ve.xd;
 	} else {
-		res->xd.ndt = 0U;
+		this->xd.ndt = 0U;
 	}
-	res->dur = echs_instant_diff(ve.e.till, ve.e.from);
-	res->rdi = 0UL;
-	res->ncch = 0UL;
+	this->dur = echs_instant_diff(ve.e.till, ve.e.from);
+	this->rdi = 0UL;
+	this->ncch = 0UL;
+	res = (echs_evstrm_t)this;
 	if (ve.mr.nr && ve.mf.nu) {
 		echs_evstrm_t aux;
 
 		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
-			return make_evmrul(*ve.mr.r, (echs_evstrm_t)res, aux);
+			res = make_evmrul(*ve.mr.r, res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
+	}
+	/* better free this guy */
+	if (nref <= 1U) {
+		if (ve.mf.nu) {
+			free(ve.mf.u);
+		}
+		if (ve.mr.nr) {
+			free(ve.mr.r);
+		}
 	}
 	return (echs_evstrm_t)res;
 }
