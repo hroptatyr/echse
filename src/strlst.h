@@ -1,4 +1,4 @@
-/*** task.h -- gathering task properties
+/*** strlst.h -- list of NULL terminated strings a la env
  *
  * Copyright (C) 2013-2015 Sebastian Freundt
  *
@@ -34,49 +34,35 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_task_h_
-#define INCLUDED_task_h_
+#if !defined INCLUDED_strlst_h_
+#define INCLUDED_strlst_h_
 
-#include <unistd.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include "strlst.h"
-
-typedef const struct echs_task_s *echs_task_t;
-typedef uintptr_t echs_evuid_t;
-
-typedef struct {
-	uid_t u;
-	gid_t g;
-} cred_t;
-
-struct echs_task_s {
-	echs_evuid_t uid;
-
-	/* command, environment, working dir */
-	const char *cmd;
-	struct strlst_s *env;
-	const char *cwd;
-
-	/* credentials we want this job run as */
-	cred_t run_as;
-
-	/* the organiser and attendees of the whole shebang */
-	const char *org;
-	struct strlst_s *att;
+struct strlst_s {
+	/* pool for the strings */
+	char *s;
+	/* index of next string */
+	size_t i;
+	/* index of next pointer to string */
+	size_t nl;
+	/* the actual char**, always NULL-terminated */
+	char *l[];
 };
 
 
-extern struct echs_task_s *echs_task_clone(echs_task_t);
-extern void free_echs_task(echs_task_t);
+/**
+ * Clone SL deeply. */
+extern struct strlst_s *clone_strlst(const struct strlst_s *sl);
 
-
-/* convenience */
-static inline __attribute__((const, pure)) bool
-echs_task_eq_p(echs_task_t t1, echs_task_t t2)
-{
-	return t1 == t2 || t1->uid == t2->uid;
-}
+/**
+ * Add a string S to L. */
+extern void strlst_add(struct strlst_s *l[static 1U], const char *s);
 
-#endif	/* INCLUDED_task_h_ */
+/**
+ * Add a string S of length N to L. */
+extern void strlst_addn(struct strlst_s *l[static 1U], const char *s, size_t n);
+
+/**
+ * String list dtor. */
+extern void free_strlst(struct strlst_s *l);
+
+#endif	/* INCLUDED_strlst_h_ */

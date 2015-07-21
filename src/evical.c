@@ -97,20 +97,12 @@ struct urlst_s {
 	size_t zu;
 };
 
-struct atlst_s {
-	char **ap;
-	size_t nap;
-	size_t zap;
-};
-
 struct ical_vevent_s {
 	echs_event_t e;
 
 	/* proto typical task */
 	struct echs_task_s t;
 
-	/* pointers into the attendees array */
-	struct atlst_s att;
 	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
 	struct rrlst_s xr;
@@ -146,7 +138,6 @@ struct cal_addr_s {
 	size_t z;
 };
 
-static struct cal_addr_s cal_0_addr;
 static struct muslst_s gms;
 
 
@@ -248,105 +239,17 @@ get_gms(struct uri_s u)
 }
 
 static void
-add1_to_atlst(struct atlst_s *al, struct cal_addr_s attendee)
-{
-	CHECK_RESIZE(al, ap, 64U, 1U);
-	if (LIKELY(attendee.s != NULL)) {
-		al->ap[al->nap++] = strndup(attendee.s, attendee.z);
-	} else {
-		al->ap[al->nap] = NULL;
-	}
-	return;
-}
-
-static struct atlst_s
-clon_atlst(struct atlst_s al)
-{
-	struct atlst_s res = al;
-
-	if (!al.zap) {
-		return (struct atlst_s){NULL};
-	}
-	/* otherwise clone every single element */
-	res.ap = malloc(al.zap * sizeof(*al.ap));
-	for (size_t i = 0U; i < al.nap; i++) {
-		res.ap[i] = strdup(al.ap[i]);
-	}
-	res.ap[al.nap] = NULL;
-	return res;
-}
-
-static echs_task_t
 make_proto_task(struct ical_vevent_s *restrict ve)
 {
 	struct echs_task_s *res = malloc(sizeof(*res));
 
 	if (UNLIKELY(res == NULL)) {
-		return NULL;
+		return;
 	}
 	/* copy the proto task over */
-	memcpy(res, &ve->t, sizeof(ve->t));
-
-	/* slots we wouldn't set in the proto task */
-	if (ve->att.nap) {
-		res->att = ve->att.ap;
-	}
-	return res;
-}
-
-static void
-free_ical_vevent(struct ical_vevent_s ve)
-{
-	if (ve.e.task) {
-		free_echs_task(ve.e.task);
-	}
-
-	if (ve.att.nap) {
-		free(ve.att.ap);
-	}
-	if (ve.rr.nr) {
-		free(ve.rr.r);
-	}
-	if (ve.xr.nr) {
-		free(ve.xr.r);
-	}
-	if (ve.rd.ndt) {
-		free(ve.rd.dt);
-	}
-	if (ve.xd.ndt) {
-		free(ve.xd.dt);
-	}
-	if (ve.mr.nr) {
-		free(ve.mr.r);
-	}
-	if (ve.mf.nu) {
-		free(ve.mf.u);
-	}
+	*res = ve->t;
+	ve->e.task = res;
 	return;
-}
-
-static struct ical_vevent_s
-clon_ical_vevent(struct ical_vevent_s ve)
-{
-/* this clones exrules and rrules for use with the evrrul class */
-	struct ical_vevent_s nu = {echs_event_clone(ve.e)};
-
-	if (ve.rr.nr) {
-		nu.rr = clon_rrlst(ve.rr);
-	}
-	if (ve.xr.nr) {
-		nu.xr = clon_rrlst(ve.xr);
-	}
-	if (ve.rd.ndt) {
-		nu.rd = clon_dtlst(ve.rd);
-	}
-	if (ve.xd.ndt) {
-		nu.xd = clon_dtlst(ve.xd);
-	}
-	if (ve.att.nap) {
-		nu.att = clon_atlst(ve.att);
-	}
-	return nu;
 }
 
 
@@ -762,6 +665,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	/* obtain the value pointer */
 	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
 		vp++;
+	} else {
+		return;
 	}
 
 	switch (c->fld) {
@@ -850,6 +755,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		ve->t.uid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
+		if (ve->t.cmd != NULL) {
+			/* only the first summary wins */
+			break;
+		}
 		if (vp < ep) {
 			ve->t.cmd = strndup(vp, ep - vp);
 		}
@@ -862,14 +771,19 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* snarf mail address */
 		if_with (struct cal_addr_s a,
 			 (a = snarf_mailto(vp, ep - vp)).s) {
-			/* bang to global array */
-			add1_to_atlst(&ve->att, a);
+			/* bang straight into the proto task */
+			strlst_addn(&ve->t.att, a.s, a.z);
 		}
 		break;
 
 	case FLD_ORG:
+		if (ve->t.org != NULL) {
+			/* only the first organiser wins */
+			break;
+		}
 		if_with (struct cal_addr_s a,
 			 (a = snarf_mailto(vp, ep - vp)).s) {
+			/* bang straight into the proto task */
 			ve->t.org = strndup(a.s, a.z);
 		}
 		break;
@@ -1002,12 +916,8 @@ read_ical(const char *fn)
 
 				add_to_urlst(&ve.mf, mf, nmf);
 			}
-			/* also finalise attendee list */
-			if (ve.att.nap) {
-				(void)add1_to_atlst(&ve.att, cal_0_addr);
-			}
 			/* assign */
-			ve.e.task = make_proto_task(&ve);
+			make_proto_task(&ve);
 			a->ev[nve++] = ve;
 			/* reset to unknown state */
 			st = ST_BODY;
@@ -1071,17 +981,17 @@ prnt_ical_hdr(void)
 	if (LIKELY(now)) {
 		;
 	} else {
-		struct tm tm[1U];
+		struct tm tm;
 
-		if (LIKELY((now = time(NULL), gmtime_r(&now, tm) != NULL))) {
+		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) != NULL))) {
 			echs_instant_t nowi;
 
-			nowi.y = tm->tm_year + 1900,
-			nowi.m = tm->tm_mon + 1,
-			nowi.d = tm->tm_mday,
-			nowi.H = tm->tm_hour,
-			nowi.M = tm->tm_min,
-			nowi.S = tm->tm_sec,
+			nowi.y = tm.tm_year + 1900,
+			nowi.m = tm.tm_mon + 1,
+			nowi.d = tm.tm_mday,
+			nowi.H = tm.tm_hour,
+			nowi.M = tm.tm_min,
+			nowi.S = tm.tm_sec,
 			nowi.ms = ECHS_ALL_SEC,
 
 			dt_strf_ical(stmp, sizeof(stmp), nowi);
@@ -1340,6 +1250,16 @@ prnt_ev(echs_event_t e)
 		fputs("SUMMARY:", stdout);
 		puts(e.task->cmd);
 	}
+	if (e.task->org) {
+		fputs("ORGANIZER:", stdout);
+		puts(e.task->org);
+	}
+	if (e.task->att) {
+		for (const char *const *ap = e.task->att->l; *ap; ap++) {
+			fputs("ATTENDEE:", stdout);
+			puts(*ap);
+		}
+	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
 		prnt_stset(e.sts);
@@ -1384,10 +1304,6 @@ make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 	res->i = 0U;
 	res->nev = nev;
 	memcpy(res->ev, ev, zev);
-	for (size_t i = 0U; i < nev; i++) {
-		/* increment task ref-counter */
-		res->ev[i].task = echs_task_clone(res->ev[i].task);
-	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1413,6 +1329,10 @@ clone_evical_vevent(echs_const_evstrm_t s)
 
 	res = (struct evical_s*)make_evical_vevent(
 		this->ev + this->i, this->nev - this->i);
+	for (size_t i = 0U; i < this->nev - this->i; i++) {
+		/* increment task ref-counter */
+		res->ev[i].task = echs_task_clone(res->ev[i].task);
+	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1443,8 +1363,20 @@ prnt_evical_vevent(echs_const_evstrm_t s)
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
-	/* the actual complete vevent (includes proto-event) */
-	struct ical_vevent_s ve;
+
+	/* proto-event */
+	echs_event_t e;
+
+	/* reference counter */
+	size_t nref;
+
+	/* rrul/xrul */
+	struct rrulsp_s rr;
+	struct rrlst_s xr;
+	/* rdat/xdat */
+	struct dtlst_s rd;
+	struct dtlst_s xd;
+
 	/* proto-duration */
 	echs_idiff_t dur;
 	/* iterator state */
@@ -1469,22 +1401,56 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(struct ical_vevent_s ve)
+__make_evrrul(struct ical_vevent_s ve, size_t nref)
 {
-	struct evrrul_s *res = malloc(sizeof(*res));
+	struct evrrul_s *this = malloc(sizeof(*this));
+	echs_evstrm_t res;
 
-	res->class = &evrrul_cls;
-	res->ve = clon_ical_vevent(ve);
-	res->dur = echs_instant_diff(ve.e.till, ve.e.from);
-	res->rdi = 0UL;
-	res->ncch = 0UL;
+	this->class = &evrrul_cls;
+	this->e = ve.e;
+	this->rr = *ve.rr.r;
+	this->nref = nref;
+
+	/* free the rr-list in here after materialisation */
+	if (nref <= 1U) {
+		free(ve.rr.r);
+	}
+
+	if (ve.xr.nr) {
+		this->xr = ve.xr;
+	} else {
+		this->xr.nr = 0U;
+	}
+	if (ve.rd.ndt) {
+		this->rd = ve.rd;
+	} else {
+		this->rd.ndt = 0U;
+	}
+	if (ve.xd.ndt) {
+		this->xd = ve.xd;
+	} else {
+		this->xd.ndt = 0U;
+	}
+	this->dur = echs_instant_diff(ve.e.till, ve.e.from);
+	this->rdi = 0UL;
+	this->ncch = 0UL;
+	res = (echs_evstrm_t)this;
 	if (ve.mr.nr && ve.mf.nu) {
 		echs_evstrm_t aux;
 
 		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
-			return make_evmrul(*ve.mr.r, (echs_evstrm_t)res, aux);
+			res = make_evmrul(*ve.mr.r, res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
+	}
+	/* better free this guy */
+	if (nref <= 1U) {
+		if (ve.mf.nu) {
+			free(ve.mf.u);
+		}
+		if (ve.mr.nr) {
+			free(ve.mr.r);
+		}
 	}
 	return (echs_evstrm_t)res;
 }
@@ -1492,23 +1458,33 @@ __make_evrrul(struct ical_vevent_s ve)
 static echs_evstrm_t
 make_evrrul(struct ical_vevent_s ve)
 {
+/* here's the deal, we check how many rrules there are, and
+ * if it's just one we return a normal evrrul_s object, if
+ * it's more than one we generate one evrrul_s object per
+ * rrule and mux them together, sharing the resources in VE. */
+
 	switch (ve.rr.nr) {
 	case 0:
 		return NULL;
 	case 1:
-		return __make_evrrul(ve);
+		return __make_evrrul(ve, 1U);
 	default:
 		break;
 	}
 	with (echs_evstrm_t s[ve.rr.nr]) {
+		struct ical_vevent_s ve_tmp = ve;
 		size_t nr = 0UL;
 
-		for (size_t i = 0U; i < ve.rr.nr; i++) {
-			struct ical_vevent_s ve_tmp = ve;
-
-			ve_tmp.rr.r += i;
-			ve_tmp.rr.nr = 1U;
-			s[nr++] = __make_evrrul(ve_tmp);
+		for (size_t i = 0U; i < ve.rr.nr; i++, nr++, ve_tmp.rr.r++) {
+			s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
+		}
+		/* we've materialised these */
+		free(ve.rr.r);
+		if (ve.mr.nr) {
+			free(ve.mr.r);
+		}
+		if (ve.mf.nu) {
+			free(ve.mf.u);
 		}
 		return make_echs_evmux(s, nr);
 	}
@@ -1520,7 +1496,23 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	free_ical_vevent(this->ve);
+	/* check reference counter */
+	if (--this->nref) {
+		return;
+	}
+
+	if (this->e.task) {
+		free_echs_task(this->e.task);
+	}
+	if (this->xr.nr) {
+		free(this->xr.r);
+	}
+	if (this->rd.ndt) {
+		free(this->rd.dt);
+	}
+	if (this->xd.ndt) {
+		free(this->xd.dt);
+	}
 	free(this);
 	return;
 }
@@ -1532,8 +1524,19 @@ clone_evrrul(echs_const_evstrm_t s)
 	struct evrrul_s *clon = malloc(sizeof(*this));
 
 	*clon = *this;
-	/* ve slot needs a deep clone */
-	clon->ve = clon_ical_vevent(this->ve);
+	/* clone lists if applicable */
+	if (this->e.task) {
+		clon->e.task = echs_task_clone(this->e.task);
+	}
+	if (this->xr.nr) {
+		clon->xr = clon_rrlst(this->xr);
+	}
+	if (this->rd.ndt) {
+		clon->rd = clon_dtlst(this->rd);
+	}
+	if (this->xd.ndt) {
+		clon->xd = clon_dtlst(this->xd);
+	}
 	return (echs_evstrm_t)clon;
 }
 
@@ -1544,18 +1547,16 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	struct rrulsp_s *restrict rr;
+	struct rrulsp_s *restrict rr = &strm->rr;
 
-	assert(strm->vr.rr.nr > 0UL);
-	if (UNLIKELY((rr = strm->ve.rr.r) == NULL)) {
-		return 0UL;
-	} else if (UNLIKELY(!rr->count)) {
+	assert(rr->freq > FREQ_NONE);
+	if (UNLIKELY(!rr->count)) {
 		return 0UL;
 	}
 
 	/* fill up with the proto instant */
 	for (size_t j = 0U; j < countof(strm->cch); j++) {
-		strm->cch[j] = strm->ve.e.from;
+		strm->cch[j] = strm->e.from;
 	}
 
 	/* now go and see who can help us */
@@ -1594,7 +1595,7 @@ refill(struct evrrul_s *restrict strm)
 	} else {
 		/* update the rrule to the partial set we've got */
 		rr->count -= --strm->ncch;
-		strm->ve.e.from = strm->cch[strm->ncch];
+		strm->e.from = strm->cch[strm->ncch];
 	}
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
@@ -1603,10 +1604,10 @@ refill(struct evrrul_s *restrict strm)
 	echs_instant_sort(strm->cch, strm->ncch);
 
 	/* also check if we need to rid some dates due to xdates */
-	if (UNLIKELY(strm->ve.xd.ndt > 0UL)) {
-		const echs_instant_t *xd = strm->ve.xd.dt;
+	if (UNLIKELY(strm->xd.ndt > 0UL)) {
+		const echs_instant_t *xd = strm->xd.dt;
 		echs_instant_t *restrict rd = strm->cch;
-		const echs_instant_t *const exd = xd + strm->ve.xd.ndt;
+		const echs_instant_t *const exd = xd + strm->xd.ndt;
 		const echs_instant_t *const erd = rd + strm->ncch;
 
 		assert(xd != NULL);
@@ -1648,7 +1649,7 @@ next_evrrul(echs_evstrm_t s)
 		}
 	}
 	/* construct the result */
-	res = this->ve.e;
+	res = this->e;
 	res.from = in;
 	res.till = echs_instant_add(in, this->dur);
 	return res;
@@ -1662,20 +1663,11 @@ prnt_evrrul1(echs_const_evstrm_t s)
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
 	prnt_ical_hdr();
-	prnt_ev(this->ve.e);
+	prnt_ev(this->e);
 
-	for (size_t i = 0UL; i < this->ve.rr.nr; i++) {
-		rrulsp_t rr = this->ve.rr.r + i;
+	fputs("RRULE:", stdout);
+	prnt_rrul(&this->rr);
 
-		fputs("RRULE:", stdout);
-		prnt_rrul(rr);
-	}
-	for (size_t i = 0UL; i < this->ve.mr.nr; i++) {
-		mrulsp_t mr = this->ve.mr.r[i];
-
-		fputs("X-GA-MRULE:", stdout);
-		prnt_mrul(mr);
-	}
 	prnt_ical_ftr();
 	return;
 }
@@ -1684,30 +1676,28 @@ static void
 prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
 {
 /* we know that they all come from one ical_event_s originally,
- * just merge them temporarily in a evrrul_s object and use prnt1() */
-	struct evrrul_tmp_s {
-		echs_evstrm_class_t class;
-		/* the actual complete vevent (includes proto-event) */
-		struct ical_vevent_s ve;
-		/* proto-duration */
-		echs_idiff_t dur;
-	};
-	struct evrrul_tmp_s this = *(const struct evrrul_tmp_s*)*s;
+ * print the proto event from the first guy, then all rrules in succession */
+	const struct evrrul_s *this = (const void*)*s;
+	size_t i;
 
-	/* make sure we talk about a split up VEVENT with multiple rules */
-	for (size_t i = 1U; i < n; i++) {
-		const struct evrrul_tmp_s *that = (const void*)s[i];
-		if (!echs_event_eq_p(this.ve.e, that->ve.e)) {
+	prnt_ical_hdr();
+	prnt_ev(this->e);
+
+	for (i = 0U; i < n; i++) {
+		const struct evrrul_s *that = (const void*)s[i];
+
+		if (!echs_event_eq_p(this->e, that->e)) {
+			prnt_ical_ftr();
 			goto one_by_one;
 		}
+		fputs("RRULE:", stdout);
+		prnt_rrul(&that->rr);
 	}
-	/* have to fiddle with the nr slot, but we know rules are consecutive */
-	this.ve.rr.nr = n;
-	prnt_evrrul1((echs_evstrm_t)&this);
+	prnt_ical_ftr();
 	return;
 
 one_by_one:
-	for (size_t i = 0U; i < n; i++) {
+	for (; i < n; i++) {
 		prnt_evrrul1(s[i]);
 	}
 	return;
@@ -1730,26 +1720,38 @@ make_echs_evical(const char *fn)
 
 		/* rearrange so that pure vevents sit in ev,
 		 * and rrules somewhere else */
-		for (size_t i = 0U; i < a->nev; free_ical_vevent(a->ev[i]), i++) {
-			const struct ical_vevent_s *ve = a->ev + i;
+		for (size_t i = 0U; i < a->nev; i++) {
 			echs_evstrm_t tmp;
 			echs_instant_t *xd;
 
-			if (!ve->rr.nr && !ve->rd.ndt) {
+			if (!a->ev[i].rr.nr && !a->ev[i].rd.ndt) {
 				/* not an rrule but a normal vevent
 				 * just him to the list */
-				ev[nev++] = echs_event_clone(a->ev[i].e);
+				ev[nev++] = a->ev[i].e;
 				/* free all the bits and bobs that
 				 * might have been added */
+				if (a->ev[i].xr.nr) {
+					free(a->ev[i].xr.r);
+				}
+				if (a->ev[i].xd.ndt) {
+					free(a->ev[i].xd.dt);
+				}
+				if (a->ev[i].mr.nr) {
+					free(a->ev[i].mr.r);
+				}
+				if (a->ev[i].mf.nu) {
+					free(a->ev[i].mf.u);
+				}
+				assert(a->ev[i].rr.r == NULL);
 				continue;
 			}
 			/* it's an rrule, we won't check for
 			 * exdates or exrules because they make
 			 * no sense without an rrule to go with */
 			/* check for exdates here, and sort them */
-			if (UNLIKELY(ve->xd.ndt > 1UL &&
-				     (xd = ve->xd.dt) != NULL)) {
-				echs_instant_sort(xd, ve->xd.ndt);
+			if (UNLIKELY(a->ev[i].xd.ndt > 1UL &&
+				     (xd = a->ev[i].xd.dt) != NULL)) {
+				echs_instant_sort(xd, a->ev[i].xd.ndt);
 			}
 
 			if ((tmp = make_evrrul(a->ev[i])) != NULL) {
