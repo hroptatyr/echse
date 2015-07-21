@@ -65,7 +65,7 @@ clone_strlst(const struct strlst_s *sl)
 	const size_t zl = ilog_ceil_exp(sl->nl + 1U);
 	struct strlst_s *res;
 
-	if ((res = malloc(sizeof(*res) + zl * sizeof(*sl->l))) == NULL) {
+	if ((res = malloc(sizeof(*sl) + zl * sizeof(*sl->l))) == NULL) {
 		return NULL;
 	} else if (UNLIKELY((res->s = malloc(z)) == NULL)) {
 		free(res);
@@ -76,7 +76,12 @@ clone_strlst(const struct strlst_s *sl)
 	res->nl = sl->nl;
 	/* and finally the pointer-to-string list */
 	memcpy(res->l, sl->l, (sl->nl + 1U) * sizeof(*sl->l));
-	return res;	
+	with (ptrdiff_t d = res->s - sl->s) {
+		for (size_t i = 0U; res->l[i]; i++) {
+			res->l[i] += d;
+		}
+	}
+	return res;
 }
 
 void
