@@ -1712,6 +1712,10 @@ make_echs_evical(const char *fn)
 			}
 		}
 
+		/* noone's using A anymore, so free it */
+		free(a);
+		a = NULL;
+
 		if (nev) {
 			/* sort them */
 			echs_event_sort(ev, nev);
