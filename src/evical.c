@@ -1304,10 +1304,6 @@ make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 	res->i = 0U;
 	res->nev = nev;
 	memcpy(res->ev, ev, zev);
-	for (size_t i = 0U; i < nev; i++) {
-		/* increment task ref-counter */
-		res->ev[i].task = echs_task_clone(res->ev[i].task);
-	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1333,6 +1329,10 @@ clone_evical_vevent(echs_const_evstrm_t s)
 
 	res = (struct evical_s*)make_evical_vevent(
 		this->ev + this->i, this->nev - this->i);
+	for (size_t i = 0U; i < this->nev - this->i; i++) {
+		/* increment task ref-counter */
+		res->ev[i].task = echs_task_clone(res->ev[i].task);
+	}
 	return (echs_evstrm_t)res;
 }
 
