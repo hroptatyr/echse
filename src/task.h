@@ -52,8 +52,6 @@ typedef struct {
 
 struct echs_task_s {
 	echs_evuid_t uid;
-	/* simple reference counter */
-	size_t nref;
 
 	/* command, environment, working dir */
 	const char *cmd;
@@ -67,6 +65,10 @@ struct echs_task_s {
 	const char *org;
 	const char *const *att;
 };
+
+
+extern struct echs_task_s *echs_task_clone(echs_task_t);
+extern void free_echs_task(echs_task_t);
 
 
 /* convenience */
