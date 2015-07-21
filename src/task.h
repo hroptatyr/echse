@@ -1,6 +1,6 @@
-/*** evical_prnt.c -- simple icalendar parser for echse
+/*** task.h -- gathering task properties
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,33 +34,46 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if defined HAVE_CONFIG_H
-# include "config.h"
-#endif	/* HAVE_CONFIG_H */
+#if !defined INCLUDED_task_h_
+#define INCLUDED_task_h_
+
 #include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include "echse.h"
-/* specifically testing the evical routines */
-#include "evical.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef const struct echs_task_s *echs_task_t;
+typedef uintptr_t echs_evuid_t;
+
+typedef struct {
+	uid_t u;
+	gid_t g;
+} cred_t;
+
+struct echs_task_s {
+	echs_evuid_t uid;
+	/* simple reference counter */
+	size_t nref;
+
+	/* command, environment, working dir */
+	const char *cmd;
+	const char *const *env;
+	const char *cwd;
+
+	/* credentials we want this job run as */
+	cred_t run_as;
+
+	/* the organiser and attendees of the whole shebang */
+	const char *org;
+	const char *const *att;
+};
 
 
-int
-main(int argc, char *argv[])
+/* convenience */
+static inline __attribute__((const, pure)) bool
+echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 {
-	for (int i = 1, n = 0; i < argc; i++, n = 0) {
-		echs_evstrm_t s = make_echs_evical(argv[i]);
-
-		for (echs_event_t e;
-		     !echs_event_0_p(e = echs_evstrm_next(s)); n++) {
-			printf("VEVENT %d: %s\n", n, e.task->cmd);
-		}
-		free_echs_evstrm(s);
-	}
-	clear_interns();
-	clear_bufpool();
-	return 0;
+	return t1 == t2 || t1->uid == t2->uid;
 }
 
-/* evical_prnt.c ends here */
+#endif	/* INCLUDED_task_h_ */

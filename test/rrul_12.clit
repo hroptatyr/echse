@@ -2,25 +2,36 @@
 
 $ echse unroll --format "%b\t%s" --till 2005-12-31 "${srcdir}/sample_08.ics" "${srcdir}/sample_07.ics"
 2000-04-17	YWD example
+2000-04-17	YWD example
 2000-04-23	YWD example
+2000-04-24	YWD example
 2000-04-24	YWD example
 2000-04-30	YWD example
 2001-04-16	YWD example
+2001-04-16	YWD example
 2001-04-22	YWD example
+2001-04-23	YWD example
 2001-04-23	YWD example
 2001-04-29	YWD example
 2002-04-15	YWD example
+2002-04-15	YWD example
 2002-04-21	YWD example
+2002-04-22	YWD example
 2002-04-22	YWD example
 2002-04-28	YWD example
 2003-04-14	YWD example
+2003-04-14	YWD example
 2003-04-20	YWD example
+2003-04-21	YWD example
 2003-04-21	YWD example
 2003-04-27	YWD example
 2004-04-19	YWD example
+2004-04-19	YWD example
 2004-04-25	YWD example
 2005-04-18	YWD example
+2005-04-18	YWD example
 2005-04-24	YWD example
+2005-04-25	YWD example
 2005-04-25	YWD example
 2005-05-01	YWD example
 $

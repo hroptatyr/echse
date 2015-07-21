@@ -1,6 +1,6 @@
-/*** evical_prnt.c -- simple icalendar parser for echse
+/*** task.c -- gathering task properties
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -37,30 +37,6 @@
 #if defined HAVE_CONFIG_H
 # include "config.h"
 #endif	/* HAVE_CONFIG_H */
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include "echse.h"
-/* specifically testing the evical routines */
-#include "evical.h"
+#include "task.h"
 
-
-int
-main(int argc, char *argv[])
-{
-	for (int i = 1, n = 0; i < argc; i++, n = 0) {
-		echs_evstrm_t s = make_echs_evical(argv[i]);
-
-		for (echs_event_t e;
-		     !echs_event_0_p(e = echs_evstrm_next(s)); n++) {
-			printf("VEVENT %d: %s\n", n, e.task->cmd);
-		}
-		free_echs_evstrm(s);
-	}
-	clear_interns();
-	clear_bufpool();
-	return 0;
-}
-
-/* evical_prnt.c ends here */
+/* task.c ends here */

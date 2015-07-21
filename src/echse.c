@@ -86,6 +86,12 @@ xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 	return ssz;
 }
 
+static size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	return xstrlncpy(dst, dsz, src, strlen(src));
+}
+
 static void
 chck_filt(struct rrulsp_s *restrict f)
 {
@@ -151,11 +157,17 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
-				x = e.sum;
-				goto cpy_obint;
+				if (e.task && e.task->cmd) {
+					const char *cmd = e.task->cmd;
+					bp += xstrlcpy(bp, cmd, ebp - bp);
+				}
+				continue;
 			case 'u':
-				x = e.uid;
-				goto cpy_obint;
+				if (e.task) {
+					x = e.task->uid;
+					goto cpy_obint;
+				}
+				continue;
 			case '%':
 				*bp++ = '%';
 			default:
