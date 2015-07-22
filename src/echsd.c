@@ -742,6 +742,8 @@ run_task(_task_t t, bool dtchp)
 		if (!dtchp) {
 			args[i++] = "-n";
 		}
+		/* finalise args array */
+		args[i++] = NULL;
 	}
 
 	switch ((r = vfork())) {
