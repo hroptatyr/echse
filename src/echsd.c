@@ -70,6 +70,7 @@
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
 #include <pwd.h>
+#include <grp.h>
 #include <ev.h>
 #include "echse.h"
 #include "evical.h"
@@ -87,6 +88,11 @@
 
 typedef struct _task_s *_task_t;
 
+typedef struct {
+	uid_t u;
+	gid_t g;
+} ncred_t;
+
 /* linked list of ev_periodic objects */
 struct _task_s {
 	/* beef data for libev and book-keeping */
@@ -97,7 +103,7 @@ struct _task_s {
 	echs_task_t task;
 	echs_evstrm_t strm;
 
-	cred_t dflt_cred;
+	ncred_t dflt_cred;
 };
 
 struct _echsd_s {
@@ -567,6 +573,41 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 #endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
+static ncred_t
+cred_to_ncred(cred_t c)
+{
+/* turn string creds into numeric creds */
+	ncred_t res = {0, 0};
+
+	if (c.u != NULL) {
+		char *on;
+		long unsigned int u = strtoul(c.u, &on, 10);
+		struct passwd *p;
+
+		if (*on == '\0') {
+			/* oooh, we've got a numeric value already */
+			res.u = (uid_t)u;
+		} else if ((p = getpwnam(c.u)) != NULL) {
+			res.u = p->pw_uid;
+			/* just to provide a nice default */
+			res.g = p->pw_uid;
+		}
+	}
+	if (c.g != NULL) {
+		char *on;
+		long unsigned int g = strtoul(c.g, &on, 10);
+		struct group *p;
+
+		if (*on == '\0') {
+			/* oooh, we've got a numeric value already */
+			res.g = (gid_t)g;
+		} else if ((p = getgrnam(c.g)) != NULL) {
+			res.g = p->gr_gid;
+		}
+	}
+	return res;
+}
+
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
@@ -675,7 +716,7 @@ run_task(_task_t t, bool dtchp)
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	with (cred_t run_as = t->task->run_as) {
+	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
 		}
@@ -1234,6 +1275,12 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 
 	/* store the stream */
 	t->strm = clone_echs_evstrm(s);
+	if (meself.uid) {
+		/* run all tasks as effective user/group */
+		t->dflt_cred = (ncred_t){meself.uid, meself.gid};
+	} else {
+		t->dflt_cred = (ncred_t){0, 0};
+	}
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
