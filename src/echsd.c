@@ -96,6 +96,8 @@ struct _task_s {
 
 	echs_task_t task;
 	echs_evstrm_t strm;
+
+	cred_t dflt_cred;
 };
 
 struct _echsd_s {
@@ -673,8 +675,16 @@ run_task(_task_t t, bool dtchp)
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	snprintf(uid, sizeof(uid), "%u", t->task->run_as.u);
-	snprintf(gid, sizeof(gid), "%u", t->task->run_as.g);
+	with (cred_t run_as = t->task->run_as) {
+		if (!run_as.u) {
+			run_as.u = t->dflt_cred.u;
+		}
+		if (!run_as.g) {
+			run_as.g = t->dflt_cred.g;
+		}
+		snprintf(uid, sizeof(uid), "%u", (uid_t)run_as.u);
+		snprintf(gid, sizeof(gid), "%u", (gid_t)run_as.g);
+	}
 	args[2U] = deconst(t->task->cmd);
 	if (t->task->org) {
 		args[12U] = deconst(t->task->org);
