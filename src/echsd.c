@@ -656,7 +656,42 @@ static pid_t
 run_task(_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
+	static char fileX[] = "/tmp/foo";
+	static char uid[16U], gid[16U];
+	static char *args_proto[] = {
+		"echsx",
+		"-c", NULL,
+		"--stdout", fileX, "--stderr", fileX,
+		"--uid", uid, "--gid", gid,
+		"--mailfrom", NULL,
+		"-n", NULL
+	};
+	/* use a VLA for the real args */
+	const size_t natt = t->task->att ? t->task->att->nl : 0U;
+	char *args[countof(args_proto) + 2U * natt];
 	pid_t r;
+
+	/* set up the real args */
+	memcpy(args, args_proto, sizeof(args_proto));
+	snprintf(uid, sizeof(uid), "%u", t->task->run_as.u);
+	snprintf(gid, sizeof(gid), "%u", t->task->run_as.g);
+	args[2U] = deconst(t->task->cmd);
+	if (t->task->org) {
+		args[12U] = deconst(t->task->org);
+	} else if (natt) {
+		args[12U] = t->task->att->l[0U];
+	} else {
+		args[12U] = "echse";
+	}
+	with (size_t i = 13U) {
+		for (size_t j = 0U; j < natt; j++) {
+			args[i++] = "--mailto";
+			args[i++] = t->task->att->l[j];
+		}
+		if (!dtchp) {
+			args[i++] = "-n";
+		}
+	}
 
 	switch ((r = vfork())) {
 		int rc;
@@ -674,22 +709,6 @@ run_task(_task_t t, bool dtchp)
 			close(STDOUT_FILENO);
 			close(STDERR_FILENO);
 		}
-
-		static char uid[32U], gid[32U];
-		static char *args[] = {
-			"echsx",
-			"-c", NULL,
-			"--stdout=/tmp/foo", "--stderr=/tmp/foo",
-			"--mailto=freundt", "--mailfrom=freundt",
-			uid, gid, "-n",
-			NULL
-		};
-		args[2U] = deconst(t->task->cmd);
-		if (dtchp) {
-			args[9U] = NULL;
-		}
-		snprintf(uid, sizeof(uid), "--uid=%u", t->task->run_as.u);
-		snprintf(gid, sizeof(gid), "--gid=%u", t->task->run_as.g);
 		rc = execve(echsx, args, deconst(t->task->env));
 		_exit(rc);
 		/* not reached */
