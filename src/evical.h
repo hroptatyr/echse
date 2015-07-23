@@ -41,6 +41,8 @@
 #include "evstrm.h"
 #include "evrrul.h"
 
+typedef void *ical_parser_t;
+
 
 /**
  * Stream ctor, from .ics file FN. */
@@ -61,5 +63,23 @@ extern void echs_prnt_ical_event(echs_event_t);
 /**
  * For filters and command-line stuff. */
 extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
+
+/* The pull parser */
+/**
+ * Feed the pull parser P a buffer BUF of size BSZ.
+ * Initially, the value of P shall be set to NULL to instantiate a new
+ * parser state. */
+extern int
+echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz);
+
+/**
+ * Parse buffer pushed into the pull parser P, return an echs_evstrm_t
+ * object every time one becomes available, or NULL otherwise,
+ * indicating that more data needs to be pushed. */
+extern echs_evstrm_t echs_evical_pull(ical_parser_t p[static 1U]);
+
+/**
+ * Indicate that this will be the last pull. */
+extern echs_evstrm_t echs_evical_last_pull(ical_parser_t p[static 1U]);
 
 #endif	/* INCLUDED_evical_h_ */
