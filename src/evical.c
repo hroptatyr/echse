@@ -918,44 +918,49 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 }
 
 static size_t
-esccpy(char *restrict tp, const char *sp, size_t sz)
+esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
 {
-	const char *const tgt = tp;
+	size_t ti = 0U;
 
-	for (const char *const ep = sp + sz; sp < ep; sp++) {
-		switch ((*tp = *sp)) {
+	for (size_t si = 0U; si < sz; si++) {
+		switch ((tgt[ti] = src[si])) {
 		case '\r':
 			break;
 		case '\n':
 			/* overread along with the next space */
-			sp++;
+			si++;
 			break;
 		case '\\':
 			/* ah, one of them escape sequences */
-			switch (*sp) {
+			switch (src[si]) {
 			case 'n':
 			case 'N':
-				*tp++ = '\n';
-				sp++;
+				tgt[ti++] = '\n';
+				si++;
 				break;
 			case '"':
 			case ';':
 			case ',':
 			case '\\':
 			default:
-				*tp++ = *sp++;
+				tgt[ti++] = src[si++];
 				break;
 			}
 			break;
 		case '"':
 			/* grrr, these need escaping too innit? */
 		default:
-			tp++;
+			ti++;
 			break;
 		}
+		/* not sure what to do with long lines */
+		if (UNLIKELY(ti >= tz)) {
+			/* ignore them */
+			return 0U;
+		}
 	}
-	*tp = '\0';
-	return tp - tgt;
+	tgt[ti] = '\0';
+	return ti;
 }
 
 static struct ical_vevent_s*
@@ -996,7 +1001,7 @@ chop_more:
 		BI += llen;
 
 		/* copy to stash and unescape */
-		slen = esccpy(_p->stash, bp, llen);
+		slen = esccpy(_p->stash, sizeof(_p->stash), bp, llen);
 
 		if (slen && (res = _ical_proc(_p, slen)) == NULL) {
 			goto chop_more;
