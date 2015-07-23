@@ -1310,25 +1310,43 @@ _inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 }
 
 static void
-echsd_inject_sock(struct _echsd_s *ctx, int s)
+_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 {
-	EV_P = ctx->loop;
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	int fd;
 
-	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
-	ev_io_start(EV_A_ &ctx->ctlsock);
+	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+		return;
+	}
+
+	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
+		echs_evstrm_t s;
+
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+		while ((s = echs_evical_pull(&pp)) != NULL) {
+			printf("got stream %p\n", s);
+			_inject_evstrm(ctx, s, cb);
+			free_echs_evstrm(s);
+		}
+	}
+	if_with (echs_evstrm_t s, (s = echs_evical_last_pull(&pp))) {
+		printf("got last stream %p\n", s);
+		_inject_evstrm(ctx, s, cb);
+		free_echs_evstrm(s);
+	}
+
+	close(fd);
 	return;
 }
 
 static void
 echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 {
-	static char qfn[PATH_MAX];
-	size_t qz;
 	uid_t u = meself.uid;
-
-	/* prepare our filename */
-	qz = xstrlcpy(qfn, qd, sizeof(qfn));
-	qfn[qz++] = '/';
 
 	/* we are a super-echsd, load all .ics files we can find */
 	if_with (DIR *d, d = opendir(qd)) {
@@ -1336,20 +1354,19 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 		static const char sufx[] = ".ics";
 
 		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
-			const char *dn = dp->d_name;
+			const char *fn = dp->d_name;
 			long unsigned int xu;
 			char *on;
 			unsigned char qi;
-			echs_evstrm_t s;
 			void(*cb)();
 
 			/* check if it's the right prefix */
-			if (strncmp(dn, prfx, strlenof(prfx))) {
+			if (strncmp(fn, prfx, strlenof(prfx))) {
 				/* not our thing */
 				continue;
 			}
 			/* snarf the uid */
-			xu = strtoul(dn + strlenof(prfx), &on, 10);
+			xu = strtoul(fn + strlenof(prfx), &on, 10);
 			/* looking good? */
 			if (UNLIKELY(xu >= (uid_t)~0UL)) {
 				continue;
@@ -1373,18 +1390,21 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				/* nope */
 				continue;
 			}
-			/* looking good ... */
-			xstrlcpy(qfn + qz, dn, sizeof(qfn) - qz);
 			/* otherwise, try and load it */
-			if ((s = make_echs_evstrm_from_file(qfn)) == NULL) {
-				continue;
-			}
-			/* wow, this really must be it */
-			_inject_evstrm(ctx, s, cb);
-			free_echs_evstrm(s);
+			_inject_file(ctx, fn, xu, cb);
 		}
 		closedir(d);
 	}
+}
+
+static void
+echsd_inject_sock(struct _echsd_s *ctx, int s)
+{
+	EV_P = ctx->loop;
+
+	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ctx->ctlsock);
+	return;
 }
 
 
