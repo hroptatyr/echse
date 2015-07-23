@@ -47,8 +47,8 @@ typedef const struct echs_task_s *echs_task_t;
 typedef uintptr_t echs_evuid_t;
 
 typedef struct {
-	uid_t u;
-	gid_t g;
+	const char *u;
+	const char *g;
 } cred_t;
 
 struct echs_task_s {

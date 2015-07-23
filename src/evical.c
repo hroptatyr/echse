@@ -648,7 +648,7 @@ snarf_mailto(const char *line, size_t llen)
 	return (struct cal_addr_s){NULL};
 }
 
-static void
+static int
 snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 	const char *lp;
@@ -657,23 +657,23 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	const struct ical_fld_cell_s *c;
 
 	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return;
+		return -1;
 	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
-		return;
+		return -1;
 	}
 
 	/* obtain the value pointer */
 	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
 		vp++;
 	} else {
-		return;
+		return -1;
 	}
 
 	switch (c->fld) {
 	default:
 	case FLD_UNK:
 		/* how did we get here */
-		return;
+		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
 		with (echs_instant_t i = snarf_value(lp)) {
@@ -788,7 +788,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	}
-	return;
+	return 0;
 }
 
 static void
@@ -819,6 +819,147 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 	}
 	return;
+}
+
+
+/* ical parsers, push and pull */
+struct ical_parser_s {
+	enum {
+		ST_UNK,
+		ST_BODY,
+		ST_VEVENT,
+		ST_FINISH,
+	} st;
+	struct ical_vevent_s ve;
+	struct ical_vevent_s globve;
+
+	/* the input buffer we're currently working on */
+	const char *buf;
+	size_t bsz;
+	size_t bix;
+
+	char stash[1024U];
+};
+
+static struct ical_vevent_s*
+_ical_proc(struct ical_parser_s p[static 1U], size_t sz)
+{
+/* parse stuff in P->stash up to a size of SZ
+ * the stash will contain a whole line which is assumed to be consumed */
+	const char *sp = p->stash;
+	struct ical_vevent_s *res = NULL;
+
+	switch (p->st) {
+		static const char beg[] = "BEGIN:VEVENT";
+		static const char end[] = "END:VEVENT";
+		static const char ftr[] = "END:VCALENDAR";
+
+	default:
+	case ST_UNK:
+		/* check if it's a X-GA-* line, we like those */
+		snarf_pro(&p->globve, sp, sz);
+		/*@fallthrough@*/
+	case ST_BODY:
+		/* check if line is a new vevent */
+		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
+			/* yep, rinse our bucket */
+			memset(&p->ve, 0, sizeof(p->ve));
+			/* and set state to vevent */
+			p->st = ST_VEVENT;
+		} else if (sz >= strlenof(ftr) &&
+			   !strncmp(sp, ftr, strlenof(ftr))) {
+			/* oooh it's the end of the whole shebang */
+			memset(&p->ve, 0, sizeof(p->ve));
+			/* free the globve */
+			if (p->globve.mf.nu) {
+				free(p->globve.mf.u);
+			}
+			if (p->globve.mr.nr) {
+				free(p->globve.mr.r);
+			}
+			p->st = ST_FINISH;
+		}
+		break;
+
+	case ST_VEVENT:
+		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
+			/* yep, prepare to report success */
+			if (p->globve.mf.nu) {
+				const size_t nmf = p->globve.mf.nu;
+				const struct uri_s *mf = p->globve.mf.u;
+
+				add_to_urlst(&p->ve.mf, mf, nmf);
+			}
+			/* assign */
+			make_proto_task(&p->ve);
+			/* reset to unknown state */
+			p->st = ST_BODY;
+			res = &p->ve;
+			/* success */
+			break;
+		}
+		/* no state change, interpret the line */
+		if (snarf_fld(&p->ve, sp, sz) < 0) {
+			;
+		}
+		break;
+
+	case ST_FINISH:
+		break;
+	}
+	return res;
+}
+
+static struct ical_vevent_s*
+_ical_pull(ical_parser_t p[static 1U])
+{
+/* pull-version of read_ical */
+	struct ical_parser_s *restrict _p = *p;
+	struct ical_vevent_s *res = NULL;
+	size_t si = 0U;
+
+#define BP	(_p->buf + _p->bix)
+#define BZ	(_p->bsz - _p->bix)
+#define BI	(_p->bix)
+	/* chop _p->buf into lines (possibly multilines) */
+	for (const char *eol, *const ep = BP + BZ;
+	     res == NULL && _p->st < ST_FINISH &&
+		     (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
+	     BI += eol - BP) {
+		/* clamp to stash size, ignore long lines */
+		;
+
+		/* copy to stash */
+		memcpy(_p->stash + si, BP, eol - BP);
+		si += eol - BP;
+
+		if (*eol == ' ') {
+			/* that's allowed per RFC 5545 */
+			eol++;
+			continue;
+		}
+
+		/* \nul terminate the line */
+		_p->stash[--si] = '\0';
+		res = _ical_proc(_p, si);
+		si = 0U;
+	}
+	/* rewind by SI, so we can start a new with the line we've tried
+	 * building up */
+	_p->bix -= si;
+#undef BP
+#undef BZ
+#undef BI
+
+	if (UNLIKELY(_p->st == ST_FINISH)) {
+		/* free it right here */
+		free(_p);
+		_p = NULL;
+	}
+
+	/* hand out our internal state for the next iteration */
+	*p = _p;
+	return res;
 }
 
 static vearr_t
@@ -1813,6 +1954,105 @@ struct rrulsp_s
 echs_read_rrul(const char *s, size_t z)
 {
 	return snarf_rrule(s, z);
+}
+
+
+/* the push parser,
+ * one day the file parser will be implemented in terms of this */
+int
+echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
+{
+	struct ical_parser_s *_p;
+
+	if (UNLIKELY((_p = *p) == NULL)) {
+		/* oh they're here for the first time, check
+		 * the first 16 bytes */
+		static const char hdr[] = "BEGIN:VCALENDAR";
+
+		if (UNLIKELY(buf == NULL)) {
+			/* huh? no buffer AND no context? */
+			return -1;
+		}
+
+		/* little probe first
+		 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
+		if (bsz < sizeof(hdr) ||
+		    memcmp(buf, hdr, strlenof(hdr)) ||
+		    !(buf[strlenof(hdr)] == '\n' ||
+		      buf[strlenof(hdr)] == '\r')) {
+			/* that's just rubbish, refuse to do anything */
+			return -1;
+		}
+		/* otherwise we're on the right track,
+		 * start a context now */
+		if ((_p = calloc(1U, sizeof(*_p))) == NULL) {
+			return -1;
+		}
+	}
+	_p->buf = buf;
+	_p->bsz = bsz;
+	_p->bix = 0U;
+	*p = _p;
+	return 0;
+}
+
+echs_evstrm_t
+echs_evical_pull(ical_parser_t p[static 1U])
+{
+	struct ical_vevent_s *ve;
+	echs_evstrm_t res = NULL;
+
+	/* just let _ical_pull do the yakka and we split everything
+	 * into evical vevents and evrruls */
+	if (UNLIKELY(*p == NULL)) {
+		/* how brave */
+		;
+	} else if ((ve = _ical_pull(p)) == NULL) {
+		/* we need more data, or we've reached the state finished */
+		;
+	} else if (!ve->rr.nr && !ve->rd.ndt) {
+		/* not an rrule but a normal vevent */
+
+		/* free all the bits and bobs that
+		 * might have been added */
+		if (ve->xr.nr) {
+			free(ve->xr.r);
+		}
+		if (ve->xd.ndt) {
+			free(ve->xd.dt);
+		}
+		if (ve->mr.nr) {
+			free(ve->mr.r);
+		}
+		if (ve->mf.nu) {
+			free(ve->mf.u);
+		}
+		assert(ve->rr.r == NULL);
+		res = make_evical_vevent(&ve->e, 1U);
+	} else {
+		/* it's an rrule */
+		echs_instant_t *xd;
+
+		/* check for exdates here, and sort them */
+		if (UNLIKELY(ve->xd.ndt > 1UL &&
+			     (xd = ve->xd.dt) != NULL)) {
+			echs_instant_sort(xd, ve->xd.ndt);
+		}
+
+		res = make_evrrul(*ve);
+	}
+	return res;
+}
+
+echs_evstrm_t
+echs_evical_last_pull(ical_parser_t p[static 1U])
+{
+	echs_evstrm_t res = echs_evical_pull(p);
+
+	if (LIKELY(*p != NULL)) {
+		free(*p);
+	}
+	return res;
 }
 
 /* evical.c ends here */

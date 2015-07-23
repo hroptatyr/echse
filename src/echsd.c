@@ -70,6 +70,7 @@
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
 #include <pwd.h>
+#include <grp.h>
 #include <ev.h>
 #include "echse.h"
 #include "evical.h"
@@ -87,6 +88,11 @@
 
 typedef struct _task_s *_task_t;
 
+typedef struct {
+	uid_t u;
+	gid_t g;
+} ncred_t;
+
 /* linked list of ev_periodic objects */
 struct _task_s {
 	/* beef data for libev and book-keeping */
@@ -96,6 +102,8 @@ struct _task_s {
 
 	echs_task_t task;
 	echs_evstrm_t strm;
+
+	ncred_t dflt_cred;
 };
 
 struct _echsd_s {
@@ -565,6 +573,41 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 #endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
+static ncred_t
+cred_to_ncred(cred_t c)
+{
+/* turn string creds into numeric creds */
+	ncred_t res = {0, 0};
+
+	if (c.u != NULL) {
+		char *on;
+		long unsigned int u = strtoul(c.u, &on, 10);
+		struct passwd *p;
+
+		if (*on == '\0') {
+			/* oooh, we've got a numeric value already */
+			res.u = (uid_t)u;
+		} else if ((p = getpwnam(c.u)) != NULL) {
+			res.u = p->pw_uid;
+			/* just to provide a nice default */
+			res.g = p->pw_uid;
+		}
+	}
+	if (c.g != NULL) {
+		char *on;
+		long unsigned int g = strtoul(c.g, &on, 10);
+		struct group *p;
+
+		if (*on == '\0') {
+			/* oooh, we've got a numeric value already */
+			res.g = (gid_t)g;
+		} else if ((p = getgrnam(c.g)) != NULL) {
+			res.g = p->gr_gid;
+		}
+	}
+	return res;
+}
+
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
@@ -656,7 +699,52 @@ static pid_t
 run_task(_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
+	static char fileX[] = "/tmp/foo";
+	static char uid[16U], gid[16U];
+	static char *args_proto[] = {
+		"echsx",
+		"-c", NULL,
+		"--stdout", fileX, "--stderr", fileX,
+		"--uid", uid, "--gid", gid,
+		"--mailfrom", NULL,
+		"-n", NULL
+	};
+	/* use a VLA for the real args */
+	const size_t natt = t->task->att ? t->task->att->nl : 0U;
+	char *args[countof(args_proto) + 2U * natt];
 	pid_t r;
+
+	/* set up the real args */
+	memcpy(args, args_proto, sizeof(args_proto));
+	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
+		if (!run_as.u) {
+			run_as.u = t->dflt_cred.u;
+		}
+		if (!run_as.g) {
+			run_as.g = t->dflt_cred.g;
+		}
+		snprintf(uid, sizeof(uid), "%u", (uid_t)run_as.u);
+		snprintf(gid, sizeof(gid), "%u", (gid_t)run_as.g);
+	}
+	args[2U] = deconst(t->task->cmd);
+	if (t->task->org) {
+		args[12U] = deconst(t->task->org);
+	} else if (natt) {
+		args[12U] = t->task->att->l[0U];
+	} else {
+		args[12U] = "echse";
+	}
+	with (size_t i = 13U) {
+		for (size_t j = 0U; j < natt; j++) {
+			args[i++] = "--mailto";
+			args[i++] = t->task->att->l[j];
+		}
+		if (!dtchp) {
+			args[i++] = "-n";
+		}
+		/* finalise args array */
+		args[i++] = NULL;
+	}
 
 	switch ((r = vfork())) {
 		int rc;
@@ -674,22 +762,6 @@ run_task(_task_t t, bool dtchp)
 			close(STDOUT_FILENO);
 			close(STDERR_FILENO);
 		}
-
-		static char uid[32U], gid[32U];
-		static char *args[] = {
-			"echsx",
-			"-c", NULL,
-			"--stdout=/tmp/foo", "--stderr=/tmp/foo",
-			"--mailto=freundt", "--mailfrom=freundt",
-			uid, gid, "-n",
-			NULL
-		};
-		args[2U] = deconst(t->task->cmd);
-		if (dtchp) {
-			args[9U] = NULL;
-		}
-		snprintf(uid, sizeof(uid), "--uid=%u", t->task->run_as.u);
-		snprintf(gid, sizeof(gid), "--gid=%u", t->task->run_as.g);
 		rc = execve(echsx, args, deconst(t->task->env));
 		_exit(rc);
 		/* not reached */
@@ -1205,6 +1277,12 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 
 	/* store the stream */
 	t->strm = clone_echs_evstrm(s);
+	if (meself.uid) {
+		/* run all tasks as effective user/group */
+		t->dflt_cred = (ncred_t){meself.uid, meself.gid};
+	} else {
+		t->dflt_cred = (ncred_t){0, 0};
+	}
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
@@ -1232,25 +1310,43 @@ _inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 }
 
 static void
-echsd_inject_sock(struct _echsd_s *ctx, int s)
+_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 {
-	EV_P = ctx->loop;
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	int fd;
 
-	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
-	ev_io_start(EV_A_ &ctx->ctlsock);
+	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+		return;
+	}
+
+	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
+		echs_evstrm_t s;
+
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+		while ((s = echs_evical_pull(&pp)) != NULL) {
+			printf("got stream %p\n", s);
+			_inject_evstrm(ctx, s, cb);
+			free_echs_evstrm(s);
+		}
+	}
+	if_with (echs_evstrm_t s, (s = echs_evical_last_pull(&pp))) {
+		printf("got last stream %p\n", s);
+		_inject_evstrm(ctx, s, cb);
+		free_echs_evstrm(s);
+	}
+
+	close(fd);
 	return;
 }
 
 static void
 echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 {
-	static char qfn[PATH_MAX];
-	size_t qz;
 	uid_t u = meself.uid;
-
-	/* prepare our filename */
-	qz = xstrlcpy(qfn, qd, sizeof(qfn));
-	qfn[qz++] = '/';
 
 	/* we are a super-echsd, load all .ics files we can find */
 	if_with (DIR *d, d = opendir(qd)) {
@@ -1258,20 +1354,19 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 		static const char sufx[] = ".ics";
 
 		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
-			const char *dn = dp->d_name;
+			const char *fn = dp->d_name;
 			long unsigned int xu;
 			char *on;
 			unsigned char qi;
-			echs_evstrm_t s;
 			void(*cb)();
 
 			/* check if it's the right prefix */
-			if (strncmp(dn, prfx, strlenof(prfx))) {
+			if (strncmp(fn, prfx, strlenof(prfx))) {
 				/* not our thing */
 				continue;
 			}
 			/* snarf the uid */
-			xu = strtoul(dn + strlenof(prfx), &on, 10);
+			xu = strtoul(fn + strlenof(prfx), &on, 10);
 			/* looking good? */
 			if (UNLIKELY(xu >= (uid_t)~0UL)) {
 				continue;
@@ -1295,18 +1390,21 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				/* nope */
 				continue;
 			}
-			/* looking good ... */
-			xstrlcpy(qfn + qz, dn, sizeof(qfn) - qz);
 			/* otherwise, try and load it */
-			if ((s = make_echs_evstrm_from_file(qfn)) == NULL) {
-				continue;
-			}
-			/* wow, this really must be it */
-			_inject_evstrm(ctx, s, cb);
-			free_echs_evstrm(s);
+			_inject_file(ctx, fn, xu, cb);
 		}
 		closedir(d);
 	}
+}
+
+static void
+echsd_inject_sock(struct _echsd_s *ctx, int s)
+{
+	EV_P = ctx->loop;
+
+	ev_io_init(&ctx->ctlsock, sock_conn_cb, s, EV_READ);
+	ev_io_start(EV_A_ &ctx->ctlsock);
+	return;
 }
 
 
