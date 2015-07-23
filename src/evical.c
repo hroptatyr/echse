@@ -252,6 +252,30 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	return;
 }
 
+static void
+free_ical_vevent(struct ical_vevent_s *restrict ve)
+{
+	if (ve->rr.nr) {
+		free(ve->rr.r);
+	}
+	if (ve->rd.ndt) {
+		free(ve->rd.dt);
+	}
+	if (ve->xr.nr) {
+		free(ve->xr.r);
+	}
+	if (ve->xd.ndt) {
+		free(ve->xd.dt);
+	}
+	if (ve->mf.nu) {
+		free(ve->mf.u);
+	}
+	if (ve->mr.nr) {
+		free(ve->mr.r);
+	}
+	return;
+}
+
 
 /* file name stack (and include depth control) */
 static const char *gfn[4U];
@@ -828,7 +852,6 @@ struct ical_parser_s {
 		ST_UNK,
 		ST_BODY,
 		ST_VEVENT,
-		ST_FINISH,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -852,7 +875,6 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 	switch (p->st) {
 		static const char beg[] = "BEGIN:VEVENT";
 		static const char end[] = "END:VEVENT";
-		static const char ftr[] = "END:VCALENDAR";
 
 	default:
 	case ST_UNK:
@@ -866,18 +888,6 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 			memset(&p->ve, 0, sizeof(p->ve));
 			/* and set state to vevent */
 			p->st = ST_VEVENT;
-		} else if (sz >= strlenof(ftr) &&
-			   !strncmp(sp, ftr, strlenof(ftr))) {
-			/* oooh it's the end of the whole shebang */
-			memset(&p->ve, 0, sizeof(p->ve));
-			/* free the globve */
-			if (p->globve.mf.nu) {
-				free(p->globve.mf.u);
-			}
-			if (p->globve.mr.nr) {
-				free(p->globve.mr.r);
-			}
-			p->st = ST_FINISH;
 		}
 		break;
 
@@ -903,9 +913,6 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 			;
 		}
 		break;
-
-	case ST_FINISH:
-		break;
 	}
 	return res;
 }
@@ -914,6 +921,7 @@ static struct ical_vevent_s*
 _ical_pull(ical_parser_t p[static 1U])
 {
 /* pull-version of read_ical */
+	static const char ftr[] = "END:VCALENDAR";
 	struct ical_parser_s *restrict _p = *p;
 	struct ical_vevent_s *res = NULL;
 	size_t si = 0U;
@@ -923,8 +931,7 @@ _ical_pull(ical_parser_t p[static 1U])
 #define BI	(_p->bix)
 	/* chop _p->buf into lines (possibly multilines) */
 	for (const char *eol, *const ep = BP + BZ;
-	     res == NULL && _p->st < ST_FINISH &&
-		     (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
+	     res == NULL && (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
 	     BI += eol - BP) {
 		/* clamp to stash size, ignore long lines */
 		;
@@ -944,18 +951,24 @@ _ical_pull(ical_parser_t p[static 1U])
 		res = _ical_proc(_p, si);
 		si = 0U;
 	}
-	/* rewind by SI, so we can start a new with the line we've tried
-	 * building up */
-	_p->bix -= si;
 #undef BP
 #undef BZ
 #undef BI
 
-	if (UNLIKELY(_p->st == ST_FINISH)) {
-		/* free it right here */
+	/* finally check if we're at the end of the VCAL brace */
+	if (si >= strlenof(ftr) && !strncmp(_p->stash, ftr, strlenof(ftr))) {
+		/* oooh it's the end of the whole shebang */
+		memset(&_p->ve, 0, sizeof(_p->ve));
+		/* free the globve */
+		free_ical_vevent(&_p->globve);
+		/* free _P right here */
 		free(_p);
 		_p = NULL;
 	}
+
+	/* rewind by SI, so we can start a new with the line we've tried
+	 * building up */
+	_p->bix -= si;
 
 	/* hand out our internal state for the next iteration */
 	*p = _p;
