@@ -1989,14 +1989,13 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 		}
 		/* otherwise we're on the right track,
 		 * start a context now */
-		if ((_p = calloc(1U, sizeof(*_p))) == NULL) {
+		if ((_p = *p = calloc(1U, sizeof(*_p))) == NULL) {
 			return -1;
 		}
 	}
 	_p->buf = buf;
 	_p->bsz = bsz;
 	_p->bix = 0U;
-	*p = _p;
 	return 0;
 }
 
