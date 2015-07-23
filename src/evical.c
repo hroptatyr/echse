@@ -45,6 +45,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <fcntl.h>
 #include "evical.h"
 #include "task.h"
 #include "intern.h"
@@ -1019,83 +1020,30 @@ chop_more:
 static vearr_t
 read_ical(const char *fn)
 {
-	FILE *fp;
-	char *line = NULL;
-	size_t llen = 0U;
-	enum {
-		ST_UNK,
-		ST_BODY,
-		ST_VEVENT,
-	} st = ST_UNK;
-	struct ical_vevent_s ve;
-	struct ical_vevent_s globve = {0U};
+	char buf[65536U];
 	size_t nve = 0UL;
 	vearr_t a = NULL;
+	ical_parser_t pp = NULL;
+	int fd;
 
 	if (fn == NULL/*stdio*/) {
-		fp = stdin;
-	} else if ((fp = fopen(fn, "r")) == NULL) {
+		fd = STDIN_FILENO;
+	} else if ((fd = open(fn, O_RDONLY)) < 0) {
 		return NULL;
 	}
 
 	/* let everyone know about our fn */
 	push_fn(fn);
 
-	/* little probe first
-	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-	with (ssize_t nrd) {
-		static const char hdr[] = "BEGIN:VCALENDAR";
+	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
+		struct ical_vevent_s *ve;
 
-		if (UNLIKELY((nrd = getline(&line, &llen, fp)) <= 0)) {
-			/* must be bollocks then */
-			goto clo;
-		} else if ((size_t)nrd < sizeof(hdr)) {
-			/* still looks like bollocks */
-			goto clo;
-		} else if (memcmp(line, hdr, sizeof(hdr) - 1)) {
-			/* also bollocks */
-			goto clo;
-		}
-		/* otherwise, this looks legit
-		 * oh, but keep your fingers crossed anyway */
-	}
-
-	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
-		/* massage line */
-		if (LIKELY(line[nrd - 1U] == '\n')) {
-			nrd--;
-		}
-		if (UNLIKELY(line[nrd - 1U] == '\r')) {
-			nrd--;
-		}
-		line[nrd] = '\0';
-
-		switch (st) {
-			static const char beg[] = "BEGIN:VEVENT";
-			static const char end[] = "END:VEVENT";
-
-		default:
-		case ST_UNK:
-			/* check if it's a X-GA-* line, we like those */
-			snarf_pro(&globve, line, nrd);
-		case ST_BODY:
-			/* check if line is a new vevent */
-			if (strncmp(line, beg, sizeof(beg) - 1)) {
-				/* nope, no state change */
-				break;
-			}
-			/* yep, rinse our bucket */
-			memset(&ve, 0, sizeof(ve));
-			/* and set state to vevent */
-			st = ST_VEVENT;
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
 			break;
-		case ST_VEVENT:
-			if (strncmp(line, end, sizeof(end) - 1)) {
-				/* no state change, interpret the line */
-				snarf_fld(&ve, line, nrd);
-				break;
-			}
-			/* otherwise stop parsing and reset the state machine */
+		}
+		while ((ve = _ical_pull(&pp)) != NULL) {
+			/* just add to vearray */
 			if (a == NULL || nve >= a->nev) {
 				/* resize */
 				const size_t nu = 2 * nve ?: 64U;
@@ -1104,29 +1052,31 @@ read_ical(const char *fn)
 				a = realloc(a, nz + sizeof(a));
 				a->nev = nu;
 			}
-			/* bang global properties */
-			if (globve.mf.nu) {
-				const size_t nmf = globve.mf.nu;
-				const struct uri_s *mf = globve.mf.u;
-
-				add_to_urlst(&ve.mf, mf, nmf);
-			}
 			/* assign */
-			make_proto_task(&ve);
-			a->ev[nve++] = ve;
-			/* reset to unknown state */
-			st = ST_BODY;
-			break;
+			a->ev[nve++] = *ve;
 		}
+	}
+	if (UNLIKELY(pp == NULL)) {
+		;
+	} else if_with (struct ical_vevent_s *ve, (ve = _ical_pull(&pp))) {
+		/* just add to vearray */
+		if (a == NULL || nve >= a->nev) {
+			/* resize */
+			const size_t nu = 2 * nve ?: 64U;
+			size_t nz = nu * sizeof(*a->ev);
+
+			a = realloc(a, nz + sizeof(a));
+			a->nev = nu;
+		}
+		/* assign */
+		a->ev[nve++] = *ve;
 	}
 	/* massage result array */
 	if (LIKELY(a != NULL)) {
 		a->nev = nve;
 	}
-	/* clean up reader resources */
-	free(line);
-clo:
-	fclose(fp);
+
+	close(fd);
 	pop_fn();
 	return a;
 }
