@@ -45,6 +45,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <fcntl.h>
 #include "evical.h"
 #include "task.h"
 #include "intern.h"
@@ -249,6 +250,30 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	/* copy the proto task over */
 	*res = ve->t;
 	ve->e.task = res;
+	return;
+}
+
+static void
+free_ical_vevent(struct ical_vevent_s *restrict ve)
+{
+	if (ve->rr.nr) {
+		free(ve->rr.r);
+	}
+	if (ve->rd.ndt) {
+		free(ve->rd.dt);
+	}
+	if (ve->xr.nr) {
+		free(ve->xr.r);
+	}
+	if (ve->xd.ndt) {
+		free(ve->xd.dt);
+	}
+	if (ve->mf.nu) {
+		free(ve->mf.u);
+	}
+	if (ve->mr.nr) {
+		free(ve->mr.r);
+	}
 	return;
 }
 
@@ -828,7 +853,6 @@ struct ical_parser_s {
 		ST_UNK,
 		ST_BODY,
 		ST_VEVENT,
-		ST_FINISH,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -852,7 +876,6 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 	switch (p->st) {
 		static const char beg[] = "BEGIN:VEVENT";
 		static const char end[] = "END:VEVENT";
-		static const char ftr[] = "END:VCALENDAR";
 
 	default:
 	case ST_UNK:
@@ -866,18 +889,6 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 			memset(&p->ve, 0, sizeof(p->ve));
 			/* and set state to vevent */
 			p->st = ST_VEVENT;
-		} else if (sz >= strlenof(ftr) &&
-			   !strncmp(sp, ftr, strlenof(ftr))) {
-			/* oooh it's the end of the whole shebang */
-			memset(&p->ve, 0, sizeof(p->ve));
-			/* free the globve */
-			if (p->globve.mf.nu) {
-				free(p->globve.mf.u);
-			}
-			if (p->globve.mr.nr) {
-				free(p->globve.mr.r);
-			}
-			p->st = ST_FINISH;
 		}
 		break;
 
@@ -903,59 +914,103 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 			;
 		}
 		break;
-
-	case ST_FINISH:
-		break;
 	}
 	return res;
+}
+
+static size_t
+esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
+{
+	size_t ti = 0U;
+
+	for (size_t si = 0U; si < sz; si++) {
+		switch ((tgt[ti] = src[si])) {
+		case '\r':
+			break;
+		case '\n':
+			/* overread along with the next space */
+			si++;
+			break;
+		case '\\':
+			/* ah, one of them escape sequences */
+			switch (src[si]) {
+			case 'n':
+			case 'N':
+				tgt[ti++] = '\n';
+				si++;
+				break;
+			case '"':
+			case ';':
+			case ',':
+			case '\\':
+			default:
+				tgt[ti++] = src[si++];
+				break;
+			}
+			break;
+		case '"':
+			/* grrr, these need escaping too innit? */
+		default:
+			ti++;
+			break;
+		}
+		/* not sure what to do with long lines */
+		if (UNLIKELY(ti >= tz)) {
+			/* ignore them */
+			return 0U;
+		}
+	}
+	tgt[ti] = '\0';
+	return ti;
 }
 
 static struct ical_vevent_s*
 _ical_pull(ical_parser_t p[static 1U])
 {
 /* pull-version of read_ical */
+	static const char ftr[] = "END:VCALENDAR";
 	struct ical_parser_s *restrict _p = *p;
 	struct ical_vevent_s *res = NULL;
-	size_t si = 0U;
+	const char *eol;
 
 #define BP	(_p->buf + _p->bix)
 #define BZ	(_p->bsz - _p->bix)
 #define BI	(_p->bix)
+chop_more:
 	/* chop _p->buf into lines (possibly multilines) */
-	for (const char *eol, *const ep = BP + BZ;
-	     res == NULL && _p->st < ST_FINISH &&
-		     (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
-	     BI += eol - BP) {
-		/* clamp to stash size, ignore long lines */
+	for (const char *tmp = BP, *const ep = BP + BZ;
+	     (eol = memchr(tmp, '\n', ep - tmp)) != NULL &&
+		     ++eol < ep && (*eol == ' ' || *eol == '\t'); tmp = eol);
+	if (UNLIKELY(eol == NULL)) {
+		/* we must have stopped mid-stream at the end of the buffer */
 		;
+	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
+			    !strncmp(BP, ftr, strlenof(ftr)))) {
+		/* oooh it's the end of the whole shebang */
+		memset(&_p->ve, 0, sizeof(_p->ve));
+		/* free the globve */
+		free_ical_vevent(&_p->globve);
+		/* free _P right here */
+		free(_p);
+		_p = NULL;
+	} else {
+		const char *bp = BP;
+		const size_t llen = eol - bp;
+		size_t slen;
 
-		/* copy to stash */
-		memcpy(_p->stash + si, BP, eol - BP);
-		si += eol - BP;
+		/* ... pretend we've consumed it all */
+		BI += llen;
 
-		if (*eol == ' ') {
-			/* that's allowed per RFC 5545 */
-			eol++;
-			continue;
+		/* copy to stash and unescape */
+		slen = esccpy(_p->stash, sizeof(_p->stash), bp, llen);
+
+		if (slen && (res = _ical_proc(_p, slen)) == NULL) {
+			goto chop_more;
 		}
-
-		/* \nul terminate the line */
-		_p->stash[--si] = '\0';
-		res = _ical_proc(_p, si);
-		si = 0U;
 	}
-	/* rewind by SI, so we can start a new with the line we've tried
-	 * building up */
-	_p->bix -= si;
 #undef BP
 #undef BZ
 #undef BI
-
-	if (UNLIKELY(_p->st == ST_FINISH)) {
-		/* free it right here */
-		free(_p);
-		_p = NULL;
-	}
 
 	/* hand out our internal state for the next iteration */
 	*p = _p;
@@ -965,83 +1020,30 @@ _ical_pull(ical_parser_t p[static 1U])
 static vearr_t
 read_ical(const char *fn)
 {
-	FILE *fp;
-	char *line = NULL;
-	size_t llen = 0U;
-	enum {
-		ST_UNK,
-		ST_BODY,
-		ST_VEVENT,
-	} st = ST_UNK;
-	struct ical_vevent_s ve;
-	struct ical_vevent_s globve = {0U};
+	char buf[65536U];
 	size_t nve = 0UL;
 	vearr_t a = NULL;
+	ical_parser_t pp = NULL;
+	int fd;
 
 	if (fn == NULL/*stdio*/) {
-		fp = stdin;
-	} else if ((fp = fopen(fn, "r")) == NULL) {
+		fd = STDIN_FILENO;
+	} else if ((fd = open(fn, O_RDONLY)) < 0) {
 		return NULL;
 	}
 
 	/* let everyone know about our fn */
 	push_fn(fn);
 
-	/* little probe first
-	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-	with (ssize_t nrd) {
-		static const char hdr[] = "BEGIN:VCALENDAR";
+	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
+		struct ical_vevent_s *ve;
 
-		if (UNLIKELY((nrd = getline(&line, &llen, fp)) <= 0)) {
-			/* must be bollocks then */
-			goto clo;
-		} else if ((size_t)nrd < sizeof(hdr)) {
-			/* still looks like bollocks */
-			goto clo;
-		} else if (memcmp(line, hdr, sizeof(hdr) - 1)) {
-			/* also bollocks */
-			goto clo;
-		}
-		/* otherwise, this looks legit
-		 * oh, but keep your fingers crossed anyway */
-	}
-
-	for (ssize_t nrd; (nrd = getline(&line, &llen, fp)) > 0;) {
-		/* massage line */
-		if (LIKELY(line[nrd - 1U] == '\n')) {
-			nrd--;
-		}
-		if (UNLIKELY(line[nrd - 1U] == '\r')) {
-			nrd--;
-		}
-		line[nrd] = '\0';
-
-		switch (st) {
-			static const char beg[] = "BEGIN:VEVENT";
-			static const char end[] = "END:VEVENT";
-
-		default:
-		case ST_UNK:
-			/* check if it's a X-GA-* line, we like those */
-			snarf_pro(&globve, line, nrd);
-		case ST_BODY:
-			/* check if line is a new vevent */
-			if (strncmp(line, beg, sizeof(beg) - 1)) {
-				/* nope, no state change */
-				break;
-			}
-			/* yep, rinse our bucket */
-			memset(&ve, 0, sizeof(ve));
-			/* and set state to vevent */
-			st = ST_VEVENT;
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
 			break;
-		case ST_VEVENT:
-			if (strncmp(line, end, sizeof(end) - 1)) {
-				/* no state change, interpret the line */
-				snarf_fld(&ve, line, nrd);
-				break;
-			}
-			/* otherwise stop parsing and reset the state machine */
+		}
+		while ((ve = _ical_pull(&pp)) != NULL) {
+			/* just add to vearray */
 			if (a == NULL || nve >= a->nev) {
 				/* resize */
 				const size_t nu = 2 * nve ?: 64U;
@@ -1050,29 +1052,31 @@ read_ical(const char *fn)
 				a = realloc(a, nz + sizeof(a));
 				a->nev = nu;
 			}
-			/* bang global properties */
-			if (globve.mf.nu) {
-				const size_t nmf = globve.mf.nu;
-				const struct uri_s *mf = globve.mf.u;
-
-				add_to_urlst(&ve.mf, mf, nmf);
-			}
 			/* assign */
-			make_proto_task(&ve);
-			a->ev[nve++] = ve;
-			/* reset to unknown state */
-			st = ST_BODY;
-			break;
+			a->ev[nve++] = *ve;
 		}
+	}
+	if (UNLIKELY(pp == NULL)) {
+		;
+	} else if_with (struct ical_vevent_s *ve, (ve = _ical_pull(&pp))) {
+		/* just add to vearray */
+		if (a == NULL || nve >= a->nev) {
+			/* resize */
+			const size_t nu = 2 * nve ?: 64U;
+			size_t nz = nu * sizeof(*a->ev);
+
+			a = realloc(a, nz + sizeof(a));
+			a->nev = nu;
+		}
+		/* assign */
+		a->ev[nve++] = *ve;
 	}
 	/* massage result array */
 	if (LIKELY(a != NULL)) {
 		a->nev = nve;
 	}
-	/* clean up reader resources */
-	free(line);
-clo:
-	fclose(fp);
+
+	close(fd);
 	pop_fn();
 	return a;
 }
@@ -1985,14 +1989,13 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 		}
 		/* otherwise we're on the right track,
 		 * start a context now */
-		if ((_p = calloc(1U, sizeof(*_p))) == NULL) {
+		if ((_p = *p = calloc(1U, sizeof(*_p))) == NULL) {
 			return -1;
 		}
 	}
 	_p->buf = buf;
 	_p->bsz = bsz;
 	_p->bix = 0U;
-	*p = _p;
 	return 0;
 }
 
