@@ -1276,7 +1276,7 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 	}
 
 	/* store the stream */
-	t->strm = clone_echs_evstrm(s);
+	t->strm = s;
 	if (meself.uid) {
 		/* run all tasks as effective user/group */
 		t->dflt_cred = (ncred_t){meself.uid, meself.gid};
@@ -1328,15 +1328,11 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 			break;
 		}
 		while ((s = echs_evical_pull(&pp)) != NULL) {
-			printf("got stream %p\n", s);
 			_inject_evstrm(ctx, s, cb);
-			free_echs_evstrm(s);
 		}
 	}
 	if_with (echs_evstrm_t s, (s = echs_evical_last_pull(&pp))) {
-		printf("got last stream %p\n", s);
 		_inject_evstrm(ctx, s, cb);
-		free_echs_evstrm(s);
 	}
 
 	close(fd);
