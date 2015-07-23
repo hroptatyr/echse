@@ -917,6 +917,47 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 	return res;
 }
 
+static size_t
+esccpy(char *restrict tp, const char *sp, size_t sz)
+{
+	const char *const tgt = tp;
+
+	for (const char *const ep = sp + sz; sp < ep; sp++) {
+		switch ((*tp = *sp)) {
+		case '\r':
+			break;
+		case '\n':
+			/* overread along with the next space */
+			sp++;
+			break;
+		case '\\':
+			/* ah, one of them escape sequences */
+			switch (*sp) {
+			case 'n':
+			case 'N':
+				*tp++ = '\n';
+				sp++;
+				break;
+			case '"':
+			case ';':
+			case ',':
+			case '\\':
+			default:
+				*tp++ = *sp++;
+				break;
+			}
+			break;
+		case '"':
+			/* grrr, these need escaping too innit? */
+		default:
+			tp++;
+			break;
+		}
+	}
+	*tp = '\0';
+	return tp - tgt;
+}
+
 static struct ical_vevent_s*
 _ical_pull(ical_parser_t p[static 1U])
 {
@@ -924,13 +965,21 @@ _ical_pull(ical_parser_t p[static 1U])
 	static const char ftr[] = "END:VCALENDAR";
 	struct ical_parser_s *restrict _p = *p;
 	struct ical_vevent_s *res = NULL;
-	size_t si = 0U;
+	const char *eol;
 
 #define BP	(_p->buf + _p->bix)
 #define BZ	(_p->bsz - _p->bix)
 #define BI	(_p->bix)
-	/* firstly check if we're at the end of the VCAL brace */
-	if (BZ >= strlenof(ftr) && !strncmp(BP, ftr, strlenof(ftr))) {
+chop_more:
+	/* chop _p->buf into lines (possibly multilines) */
+	for (const char *tmp = BP, *const ep = BP + BZ;
+	     (eol = memchr(tmp, '\n', ep - tmp)) != NULL &&
+		     ++eol < ep && (*eol == ' ' || *eol == '\t'); tmp = eol);
+	if (UNLIKELY(eol == NULL)) {
+		/* we must have stopped mid-stream at the end of the buffer */
+		;
+	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
+			    !strncmp(BP, ftr, strlenof(ftr)))) {
 		/* oooh it's the end of the whole shebang */
 		memset(&_p->ve, 0, sizeof(_p->ve));
 		/* free the globve */
@@ -938,40 +987,25 @@ _ical_pull(ical_parser_t p[static 1U])
 		/* free _P right here */
 		free(_p);
 		_p = NULL;
-		goto out;
-	}
+	} else {
+		const char *bp = BP;
+		const size_t llen = eol - bp;
+		size_t slen;
 
-	/* chop _p->buf into lines (possibly multilines) */
-	for (const char *eol, *const ep = BP + BZ;
-	     res == NULL && (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
-	     BI += eol - BP) {
-		/* clamp to stash size, ignore long lines */
-		;
+		/* ... pretend we've consumed it all */
+		BI += llen;
 
-		/* copy to stash */
-		memcpy(_p->stash + si, BP, eol - BP);
-		si += eol - BP;
+		/* copy to stash and unescape */
+		slen = esccpy(_p->stash, bp, llen);
 
-		if (*eol == ' ') {
-			/* that's allowed per RFC 5545 */
-			eol++;
-			continue;
+		if (slen && (res = _ical_proc(_p, slen)) == NULL) {
+			goto chop_more;
 		}
-
-		/* \nul terminate the line */
-		_p->stash[--si] = '\0';
-		res = _ical_proc(_p, si);
-		si = 0U;
 	}
 #undef BP
 #undef BZ
 #undef BI
 
-	/* rewind by SI, so we can start anew with the line we've tried
-	 * building up */
-	_p->bix -= si;
-
-out:
 	/* hand out our internal state for the next iteration */
 	*p = _p;
 	return res;
