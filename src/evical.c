@@ -929,6 +929,18 @@ _ical_pull(ical_parser_t p[static 1U])
 #define BP	(_p->buf + _p->bix)
 #define BZ	(_p->bsz - _p->bix)
 #define BI	(_p->bix)
+	/* firstly check if we're at the end of the VCAL brace */
+	if (BZ >= strlenof(ftr) && !strncmp(BP, ftr, strlenof(ftr))) {
+		/* oooh it's the end of the whole shebang */
+		memset(&_p->ve, 0, sizeof(_p->ve));
+		/* free the globve */
+		free_ical_vevent(&_p->globve);
+		/* free _P right here */
+		free(_p);
+		_p = NULL;
+		goto out;
+	}
+
 	/* chop _p->buf into lines (possibly multilines) */
 	for (const char *eol, *const ep = BP + BZ;
 	     res == NULL && (eol = memchr(BP, '\n', BZ)) != NULL && ++eol < ep;
@@ -955,21 +967,11 @@ _ical_pull(ical_parser_t p[static 1U])
 #undef BZ
 #undef BI
 
-	/* finally check if we're at the end of the VCAL brace */
-	if (si >= strlenof(ftr) && !strncmp(_p->stash, ftr, strlenof(ftr))) {
-		/* oooh it's the end of the whole shebang */
-		memset(&_p->ve, 0, sizeof(_p->ve));
-		/* free the globve */
-		free_ical_vevent(&_p->globve);
-		/* free _P right here */
-		free(_p);
-		_p = NULL;
-	}
-
-	/* rewind by SI, so we can start a new with the line we've tried
+	/* rewind by SI, so we can start anew with the line we've tried
 	 * building up */
 	_p->bix -= si;
 
+out:
 	/* hand out our internal state for the next iteration */
 	*p = _p;
 	return res;
