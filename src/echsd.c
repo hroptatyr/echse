@@ -726,7 +726,8 @@ run_task(_task_t t, bool dtchp)
 		"--stdout", fileX, "--stderr", fileX,
 		"--uid", uid, "--gid", gid,
 		"--mailfrom", NULL,
-		"-n", NULL
+		"-n", "--cwd", NULL,
+		NULL
 	};
 	/* use a VLA for the real args */
 	const size_t natt = t->task->att ? t->task->att->nl : 0U;
@@ -760,6 +761,10 @@ run_task(_task_t t, bool dtchp)
 		}
 		if (!dtchp) {
 			args[i++] = "-n";
+		}
+		if (t->task->cwd) {
+			args[i++] = "--cwd";
+			args[i++] = t->task->cwd;
 		}
 		/* finalise args array */
 		args[i++] = NULL;
