@@ -51,6 +51,9 @@ echs_task_clone(echs_task_t t)
 	if (t->cmd != NULL) {
 		res->cmd = strdup(t->cmd);
 	}
+	if (t->cwd != NULL) {
+		res->cwd = strdup(t->cwd);
+	}
 	if (t->env != NULL) {
 		res->env = clone_strlst(t->env);
 	}
@@ -70,6 +73,9 @@ free_echs_task(echs_task_t t)
 
 	if (tmpt->cmd) {
 		free(deconst(tmpt->cmd));
+	}
+	if (tmpt->cwd) {
+		free(deconst(tmpt->cwd));
 	}
 	if (tmpt->env) {
 		free_strlst(tmpt->env);

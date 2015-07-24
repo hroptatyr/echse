@@ -792,6 +792,15 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	case FLD_DESC:
 		break;
 
+	case FLD_LOC:
+		if (ve->t.cwd != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.cwd = strndup(vp, ep - vp);
+		break;
+
 	case FLD_ATT:
 		/* snarf mail address */
 		if_with (struct cal_addr_s a,
