@@ -1070,7 +1070,6 @@ read_ical(const char *fn)
 	size_t nve = 0UL;
 	vearr_t a = NULL;
 	struct ical_parser_s pp = {.buf = NULL};
-	struct ical_vevent_s *ve;
 	ssize_t nrd;
 	int fd;
 
@@ -1085,6 +1084,8 @@ read_ical(const char *fn)
 
 redo:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		struct ical_vevent_s *ve;
+
 	default:
 		if (UNLIKELY(pp.buf == NULL && _ical_init_push(buf, nrd) < 0)) {
 			/* buffer completely unsuitable for pushing */
