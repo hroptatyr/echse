@@ -13,3 +13,4 @@ Execute job.
   --uid=UID             Run as user UID.
   --gid=GID             Run as user GID.
   --cwd=PATH            Run in PATH.
+  --shell=SH            Run using shell SH.
