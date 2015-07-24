@@ -1314,25 +1314,36 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
+	size_t nrd;
 	int fd;
 
 	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
 		return;
 	}
 
-	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
 		echs_evstrm_t s;
 
+	default:
 		if (echs_evical_push(&pp, buf, nrd) < 0) {
 			/* pushing more brings nothing */
 			break;
 		}
+	case 0:
 		while ((s = echs_evical_pull(&pp)) != NULL) {
 			_inject_evstrm(ctx, s, cb);
 		}
-	}
-	if_with (echs_evstrm_t s, (s = echs_evical_last_pull(&pp))) {
-		_inject_evstrm(ctx, s, cb);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+		break;
+	case -1:
+		if (UNLIKELY((s = echs_evical_last_pull(&pp)) != NULL)) {
+			/* close right away */
+			free_echs_evstrm(s);
+		}
+		break;
 	}
 
 	close(fd);
