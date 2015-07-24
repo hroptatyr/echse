@@ -574,6 +574,28 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 }
 
 static ncred_t
+compl_uid(uid_t u)
+{
+	struct passwd *p;
+
+	if ((p = getpwuid(u)) == NULL) {
+		return (ncred_t){0, 0};
+	}
+	return (ncred_t){p->pw_uid, p->pw_gid};
+}
+
+static ncred_t
+compl_user(const char *u)
+{
+	struct passwd *p;
+
+	if ((p = getpwnam(u)) == NULL) {
+		return (ncred_t){0, 0};
+	}
+	return (ncred_t){p->pw_uid, p->pw_gid};
+}
+
+static ncred_t
 cred_to_ncred(cred_t c)
 {
 /* turn string creds into numeric creds */
@@ -582,15 +604,12 @@ cred_to_ncred(cred_t c)
 	if (c.u != NULL) {
 		char *on;
 		long unsigned int u = strtoul(c.u, &on, 10);
-		struct passwd *p;
 
 		if (*on == '\0') {
 			/* oooh, we've got a numeric value already */
 			res.u = (uid_t)u;
-		} else if ((p = getpwnam(c.u)) != NULL) {
-			res.u = p->pw_uid;
-			/* just to provide a nice default */
-			res.g = p->pw_uid;
+		} else {
+			res = compl_user(c.u);
 		}
 	}
 	if (c.g != NULL) {
@@ -1265,7 +1284,7 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 {
 	_task_t t;
 	EV_P = ctx->loop;
@@ -1277,19 +1296,15 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 
 	/* store the stream */
 	t->strm = s;
-	if (meself.uid) {
-		/* run all tasks as effective user/group */
-		t->dflt_cred = (ncred_t){meself.uid, meself.gid};
-	} else {
-		t->dflt_cred = (ncred_t){0, 0};
-	}
+	/* run all tasks as U and the default group of U */
+	t->dflt_cred = compl_uid(u);
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
 	return;
 }
 
 static void
-_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
+_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 {
 	echs_evstrm_t strm[64U];
 
@@ -1299,11 +1314,11 @@ _inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, void(*cb)())
 		/* we've either got some streams or our stream S isn't muxed */
 		if (nstrm == 0) {
 			/* put original stream as task */
-			_inject_evstrm1(ctx, s, cb);
+			_inject_evstrm1(ctx, s, u, cb);
 			break;
 		}
 		for (size_t i = 0U; i < nstrm; i++) {
-			_inject_evstrm1(ctx, strm[i], cb);
+			_inject_evstrm1(ctx, strm[i], u, cb);
 		}
 	}
 	return;
@@ -1316,6 +1331,12 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 	ical_parser_t pp = NULL;
 	size_t nrd;
 	int fd;
+
+	if (UNLIKELY(run_as >= (uid_t)~0UL)) {
+		return;
+	} else if (meself.uid && meself.uid != run_as) {
+		return;
+	}
 
 	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
 		return;
@@ -1332,7 +1353,7 @@ more:
 		}
 	case 0:
 		while ((s = echs_evical_pull(&pp)) != NULL) {
-			_inject_evstrm(ctx, s, cb);
+			_inject_evstrm(ctx, s, run_as, cb);
 		}
 		if (LIKELY(nrd > 0)) {
 			goto more;
