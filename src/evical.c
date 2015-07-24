@@ -793,12 +793,12 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_LOC:
-		if (ve->t.cwd != NULL) {
+		if (ve->t.run_as.wd != NULL) {
 			/* only the first location wins */
 			break;
 		}
 		/* bang straight into the proto task */
-		ve->t.cwd = strndup(vp, ep - vp);
+		ve->t.run_as.wd = strndup(vp, ep - vp);
 		break;
 
 	case FLD_ATT:
