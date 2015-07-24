@@ -1,6 +1,6 @@
 /*** evical.c -- simple icalendar parser for echse
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -865,6 +865,87 @@ struct ical_parser_s {
 	char stash[1024U];
 };
 
+#define ICAL_EOP	((struct ical_vevent_s*)0x1U)
+
+static size_t
+esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
+{
+	size_t ti = 0U;
+
+	for (size_t si = 0U; si < sz; si++) {
+		switch ((tgt[ti] = src[si])) {
+		case '\r':
+			break;
+		case '\n':
+			/* overread along with the next space */
+			si++;
+			break;
+		case '\\':
+			/* ah, one of them escape sequences */
+			switch (src[si]) {
+			case 'n':
+			case 'N':
+				tgt[ti++] = '\n';
+				si++;
+				break;
+			case '"':
+			case ';':
+			case ',':
+			case '\\':
+			default:
+				tgt[ti++] = src[si++];
+				break;
+			}
+			break;
+		case '"':
+			/* grrr, these need escaping too innit? */
+		default:
+			ti++;
+			break;
+		}
+		/* not sure what to do with long lines */
+		if (UNLIKELY(ti >= tz)) {
+			/* ignore them */
+			return 0U;
+		}
+	}
+	tgt[ti] = '\0';
+	return ti;
+}
+
+static int
+_ical_init_push(const char *buf, size_t bsz)
+{
+	/* oh they're here for the first time, check
+	 * the first 16 bytes */
+	static const char hdr[] = "BEGIN:VCALENDAR";
+
+	if (UNLIKELY(buf == NULL)) {
+		/* huh? no buffer AND no context? */
+		return -1;
+	}
+
+	/* little probe first
+	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
+	if (bsz < sizeof(hdr) ||
+	    memcmp(buf, hdr, strlenof(hdr)) ||
+	    !(buf[strlenof(hdr)] == '\n' ||
+	      buf[strlenof(hdr)] == '\r')) {
+		/* that's just rubbish, refuse to do anything */
+		return -1;
+	}
+	return 0;
+}
+
+static void
+_ical_push(struct ical_parser_s p[static 1U], const char *buf, size_t bsz)
+{
+	p->buf = buf;
+	p->bsz = bsz;
+	p->bix = 0U;
+	return;
+}
+
 static struct ical_vevent_s*
 _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 {
@@ -918,64 +999,17 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 	return res;
 }
 
-static size_t
-esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
-{
-	size_t ti = 0U;
-
-	for (size_t si = 0U; si < sz; si++) {
-		switch ((tgt[ti] = src[si])) {
-		case '\r':
-			break;
-		case '\n':
-			/* overread along with the next space */
-			si++;
-			break;
-		case '\\':
-			/* ah, one of them escape sequences */
-			switch (src[si]) {
-			case 'n':
-			case 'N':
-				tgt[ti++] = '\n';
-				si++;
-				break;
-			case '"':
-			case ';':
-			case ',':
-			case '\\':
-			default:
-				tgt[ti++] = src[si++];
-				break;
-			}
-			break;
-		case '"':
-			/* grrr, these need escaping too innit? */
-		default:
-			ti++;
-			break;
-		}
-		/* not sure what to do with long lines */
-		if (UNLIKELY(ti >= tz)) {
-			/* ignore them */
-			return 0U;
-		}
-	}
-	tgt[ti] = '\0';
-	return ti;
-}
-
 static struct ical_vevent_s*
-_ical_pull(ical_parser_t p[static 1U])
+_ical_pull(struct ical_parser_s p[static 1U])
 {
 /* pull-version of read_ical */
 	static const char ftr[] = "END:VCALENDAR";
-	struct ical_parser_s *restrict _p = *p;
 	struct ical_vevent_s *res = NULL;
 	const char *eol;
 
-#define BP	(_p->buf + _p->bix)
-#define BZ	(_p->bsz - _p->bix)
-#define BI	(_p->bix)
+#define BP	(p->buf + p->bix)
+#define BZ	(p->bsz - p->bix)
+#define BI	(p->bix)
 chop_more:
 	/* chop _p->buf into lines (possibly multilines) */
 	for (const char *tmp = BP, *const ep = BP + BZ;
@@ -986,13 +1020,9 @@ chop_more:
 		;
 	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
 			    !strncmp(BP, ftr, strlenof(ftr)))) {
-		/* oooh it's the end of the whole shebang */
-		memset(&_p->ve, 0, sizeof(_p->ve));
-		/* free the globve */
-		free_ical_vevent(&_p->globve);
-		/* free _P right here */
-		free(_p);
-		_p = NULL;
+		/* oooh it's the end of the whole shebang,
+		 * indicate end-of-parsing */
+		res = ICAL_EOP;
 	} else {
 		const char *bp = BP;
 		const size_t llen = eol - bp;
@@ -1002,19 +1032,35 @@ chop_more:
 		BI += llen;
 
 		/* copy to stash and unescape */
-		slen = esccpy(_p->stash, sizeof(_p->stash), bp, llen);
+		slen = esccpy(p->stash, sizeof(p->stash), bp, llen);
 
-		if (slen && (res = _ical_proc(_p, slen)) == NULL) {
+		if (slen && (res = _ical_proc(p, slen)) == NULL) {
 			goto chop_more;
 		}
 	}
 #undef BP
 #undef BZ
 #undef BI
-
-	/* hand out our internal state for the next iteration */
-	*p = _p;
 	return res;
+}
+
+static void
+_ical_fini(struct ical_parser_s p[static 1U])
+{
+/* parser dtor
+ * when we're still in state VEVENT then something
+ * must have terribly go wrong and the ve resources
+ * need cleaning up as well, otherwise assume our
+ * ctors (make_evrrul(), etc.) free unneeded resources */
+
+	if (UNLIKELY(p->st == ST_VEVENT)) {
+		free_ical_vevent(&p->ve);
+	}
+	/* free the globve */
+	free_ical_vevent(&p->globve);
+	/* dissolve all of it */
+	memset(p, 0, sizeof(*p));
+	return;
 }
 
 static vearr_t
@@ -1023,7 +1069,9 @@ read_ical(const char *fn)
 	char buf[65536U];
 	size_t nve = 0UL;
 	vearr_t a = NULL;
-	ical_parser_t pp = NULL;
+	struct ical_parser_s pp = {.buf = NULL};
+	struct ical_vevent_s *ve;
+	ssize_t nrd;
 	int fd;
 
 	if (fn == NULL/*stdio*/) {
@@ -1035,14 +1083,21 @@ read_ical(const char *fn)
 	/* let everyone know about our fn */
 	push_fn(fn);
 
-	for (ssize_t nrd; (nrd = read(fd, buf, sizeof(buf))) > 0;) {
-		struct ical_vevent_s *ve;
-
-		if (echs_evical_push(&pp, buf, nrd) < 0) {
-			/* pushing more brings nothing */
+redo:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+	default:
+		if (UNLIKELY(pp.buf == NULL && _ical_init_push(buf, nrd) < 0)) {
+			/* buffer completely unsuitable for pushing */
 			break;
 		}
+
+		_ical_push(&pp, buf, nrd);
+	case 0:
 		while ((ve = _ical_pull(&pp)) != NULL) {
+			if (UNLIKELY(ve == ICAL_EOP)) {
+				/* oh jolly good */
+				goto undo;
+			}
 			/* just add to vearray */
 			if (a == NULL || nve >= a->nev) {
 				/* resize */
@@ -1055,22 +1110,16 @@ read_ical(const char *fn)
 			/* assign */
 			a->ev[nve++] = *ve;
 		}
-	}
-	if (UNLIKELY(pp == NULL)) {
-		;
-	} else if_with (struct ical_vevent_s *ve, (ve = _ical_pull(&pp))) {
-		/* just add to vearray */
-		if (a == NULL || nve >= a->nev) {
-			/* resize */
-			const size_t nu = 2 * nve ?: 64U;
-			size_t nz = nu * sizeof(*a->ev);
-
-			a = realloc(a, nz + sizeof(a));
-			a->nev = nu;
+		if (LIKELY(nrd > 0)) {
+			goto redo;
 		}
-		/* assign */
-		a->ev[nve++] = *ve;
+		/*@fallthrough@*/
+	undo:
+	case -1:
+		_ical_fini(&pp);
+		break;
 	}
+
 	/* massage result array */
 	if (LIKELY(a != NULL)) {
 		a->nev = nve;
@@ -1968,34 +2017,18 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 {
 	struct ical_parser_s *_p;
 
-	if (UNLIKELY((_p = *p) == NULL)) {
-		/* oh they're here for the first time, check
-		 * the first 16 bytes */
-		static const char hdr[] = "BEGIN:VCALENDAR";
-
-		if (UNLIKELY(buf == NULL)) {
-			/* huh? no buffer AND no context? */
+	if (UNLIKELY(*p == NULL)) {
+		if (_ical_init_push(buf, bsz) < 0) {
 			return -1;
 		}
 
-		/* little probe first
-		 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-		if (bsz < sizeof(hdr) ||
-		    memcmp(buf, hdr, strlenof(hdr)) ||
-		    !(buf[strlenof(hdr)] == '\n' ||
-		      buf[strlenof(hdr)] == '\r')) {
-			/* that's just rubbish, refuse to do anything */
-			return -1;
-		}
 		/* otherwise we're on the right track,
 		 * start a context now */
 		if ((_p = *p = calloc(1U, sizeof(*_p))) == NULL) {
 			return -1;
 		}
 	}
-	_p->buf = buf;
-	_p->bsz = bsz;
-	_p->bix = 0U;
+	_ical_push(_p, buf, bsz);
 	return 0;
 }
 
@@ -2010,9 +2043,14 @@ echs_evical_pull(ical_parser_t p[static 1U])
 	if (UNLIKELY(*p == NULL)) {
 		/* how brave */
 		;
-	} else if ((ve = _ical_pull(p)) == NULL) {
+	} else if ((ve = _ical_pull(*p)) == NULL) {
 		/* we need more data, or we've reached the state finished */
 		;
+	} else if (UNLIKELY(ve == ICAL_EOP)) {
+		/* oh, do the big cleaning up */
+		_ical_fini(*p);
+		free(*p);
+		*p = NULL;
 	} else if (!ve->rr.nr && !ve->rd.ndt) {
 		/* not an rrule but a normal vevent */
 
@@ -2053,6 +2091,7 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 	echs_evstrm_t res = echs_evical_pull(p);
 
 	if (LIKELY(*p != NULL)) {
+		_ical_fini(*p);
 		free(*p);
 	}
 	return res;
