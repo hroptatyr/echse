@@ -862,6 +862,7 @@ struct ical_parser_s {
 	size_t bsz;
 	size_t bix;
 
+	size_t six;
 	char stash[1024U];
 };
 
@@ -947,11 +948,12 @@ _ical_push(struct ical_parser_s p[static 1U], const char *buf, size_t bsz)
 }
 
 static struct ical_vevent_s*
-_ical_proc(struct ical_parser_s p[static 1U], size_t sz)
+_ical_proc(struct ical_parser_s p[static 1U])
 {
 /* parse stuff in P->stash up to a size of SZ
  * the stash will contain a whole line which is assumed to be consumed */
 	const char *sp = p->stash;
+	const size_t sz = p->six;
 	struct ical_vevent_s *res = NULL;
 
 	switch (p->st) {
@@ -996,6 +998,8 @@ _ical_proc(struct ical_parser_s p[static 1U], size_t sz)
 		}
 		break;
 	}
+	/* we've consumed him */
+	p->six = 0U;
 	return res;
 }
 
@@ -1015,9 +1019,18 @@ chop_more:
 	for (const char *tmp = BP, *const ep = BP + BZ;
 	     (eol = memchr(tmp, '\n', ep - tmp)) != NULL &&
 		     ++eol < ep && (*eol == ' ' || *eol == '\t'); tmp = eol);
-	if (UNLIKELY(eol == NULL)) {
-		/* we must have stopped mid-stream at the end of the buffer */
-		;
+	if (UNLIKELY((eol == NULL || eol >= BP + BZ) &&
+		     BZ >= sizeof(p->stash) - p->six)) {
+		/* we must have stopped mid-stream at the end of the buffer
+		 * however, our stash space is too small to hold the contents
+		 * we'll just fuck off and hope nobody will notice */
+		p->six = 0U;
+	} else if (UNLIKELY(eol == NULL || eol >= BP + BZ)) {
+		/* copy what we've got to the stash for small buffers */
+		char *restrict sp = p->stash + p->six;
+		size_t sz = sizeof(p->stash) - p->six;
+
+		p->six += esccpy(sp, sz, BP, BZ);
 	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
 			    !strncmp(BP, ftr, strlenof(ftr)))) {
 		/* oooh it's the end of the whole shebang,
@@ -1026,15 +1039,18 @@ chop_more:
 	} else {
 		const char *bp = BP;
 		const size_t llen = eol - bp;
-		size_t slen;
+		char *restrict sp = p->stash + p->six;
+		size_t slen = sizeof(p->stash) - p->six;
 
 		/* ... pretend we've consumed it all */
 		BI += llen;
 
 		/* copy to stash and unescape */
-		slen = esccpy(p->stash, sizeof(p->stash), bp, llen);
+		slen = esccpy(sp, slen, bp, llen);
+		/* store new stash pointer */
+		p->six += slen;
 
-		if (slen && (res = _ical_proc(p, slen)) == NULL) {
+		if (p->six && (res = _ical_proc(p)) == NULL) {
 			goto chop_more;
 		}
 	}
