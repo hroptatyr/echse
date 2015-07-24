@@ -770,7 +770,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive */
 		if (LIKELY(!strncmp(vp, "file://", 7U))) {
-			struct uri_s u = canon_fn(vp += 7U, ep - vp);
+			struct uri_s u = (vp += 7U, canon_fn(vp, ep - vp));
 
 			/* bang to global array */
 			add1_to_urlst(&ve->mf, u);
@@ -834,7 +834,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* aah, a file-wide MFILE directive */
 		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
 			const char *const ep = line + llen;
-			struct uri_s u = canon_fn(lp += 7U, ep -lp);
+			struct uri_s u = (lp += 7U, canon_fn(lp, ep - lp));
 
 			/* bang to global array */
 			add1_to_urlst(&ve->mf, u);
