@@ -51,6 +51,12 @@ echs_task_clone(echs_task_t t)
 	if (t->cmd != NULL) {
 		res->cmd = strdup(t->cmd);
 	}
+	if (t->run_as.wd != NULL) {
+		res->run_as.wd = strdup(t->run_as.wd);
+	}
+	if (t->run_as.sh != NULL) {
+		res->run_as.sh = strdup(t->run_as.sh);
+	}
 	if (t->env != NULL) {
 		res->env = clone_strlst(t->env);
 	}
@@ -70,6 +76,12 @@ free_echs_task(echs_task_t t)
 
 	if (tmpt->cmd) {
 		free(deconst(tmpt->cmd));
+	}
+	if (tmpt->run_as.wd) {
+		free(deconst(tmpt->run_as.wd));
+	}
+	if (tmpt->run_as.sh) {
+		free(deconst(tmpt->run_as.sh));
 	}
 	if (tmpt->env) {
 		free_strlst(tmpt->env);

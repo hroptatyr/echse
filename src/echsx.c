@@ -476,13 +476,12 @@ run_task(echs_task_t t)
 	int rc = 0;
 
 	/* go to the pwd as specified */
-	if_with (const char *pwd, (pwd = get_env("PWD", t->env)) != NULL) {
-		(void)chdir(pwd);
+	if (argi->cwd_arg && chdir(argi->cwd_arg) < 0) {
+		return -1;
 	}
-
-	/* find out about what shell to start */
-	if_with (const char *sh, (sh = get_env("SHELL", t->env)) != NULL) {
-		*args = sh;
+	/* use the specified shell */
+	if (argi->shell_arg) {
+		*args = argi->shell_arg;
 	}
 
 	/* fork off the actual beef process */

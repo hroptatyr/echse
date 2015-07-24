@@ -12,3 +12,5 @@ Execute job.
   --timeout=VALUE       Terminate job after VALUE seconds.
   --uid=UID             Run as user UID.
   --gid=GID             Run as user GID.
+  --cwd=PATH            Run in PATH.
+  --shell=SH            Run using shell SH.

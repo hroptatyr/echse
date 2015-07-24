@@ -49,15 +49,16 @@ typedef uintptr_t echs_evuid_t;
 typedef struct {
 	const char *u;
 	const char *g;
+	const char *wd;
+	const char *sh;
 } cred_t;
 
 struct echs_task_s {
 	echs_evuid_t uid;
 
-	/* command, environment, working dir */
+	/* command, environment */
 	const char *cmd;
 	struct strlst_s *env;
-	const char *cwd;
 
 	/* credentials we want this job run as */
 	cred_t run_as;
