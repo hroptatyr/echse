@@ -2032,9 +2032,9 @@ echs_read_rrul(const char *s, size_t z)
 int
 echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 {
-	struct ical_parser_s *_p;
+	struct ical_parser_s *_p = *p;
 
-	if (UNLIKELY(*p == NULL)) {
+	if (UNLIKELY(_p == NULL)) {
 		if (_ical_init_push(buf, bsz) < 0) {
 			return -1;
 		}
