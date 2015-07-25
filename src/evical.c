@@ -801,6 +801,15 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		ve->t.run_as.wd = strndup(vp, ep - vp);
 		break;
 
+	case FLD_SHELL:
+		if (ve->t.run_as.sh != NULL) {
+			/* only the first shell wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.run_as.sh = strndup(vp, ep - vp);
+		break;
+
 	case FLD_ATT:
 		/* snarf mail address */
 		if_with (struct cal_addr_s a,
