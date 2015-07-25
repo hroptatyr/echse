@@ -848,7 +848,7 @@ instant_to_tstamp(echs_instant_t i)
 		t = (time_t)nd * 86400UL;
 	}
 	/* calc number of seconds since unix epoch */
-	t += 11323/*days from unix epoch to our epoch*/ * 86400UL;
+	t += 11322/*days from unix epoch to our epoch*/ * 86400UL;
 	return (double)t;
 }
 
