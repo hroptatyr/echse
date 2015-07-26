@@ -102,8 +102,12 @@ struct _task_s {
 	_task_t next;
 	ev_child c;
 
+	/* this is the task as understood by libechse */
 	echs_task_t task;
 	echs_evstrm_t strm;
+
+	/* number of runs */
+	size_t nrun;
 
 	ncred_t dflt_cred;
 };
@@ -1059,11 +1063,29 @@ sigpipe_cb(EV_P_ ev_signal *UNUSED(w), int UNUSED(revents))
 }
 
 static void
+unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
+{
+	_task_t t = (void*)w;
+
+	ECHS_NOTI_LOG("taking event off of schedule");
+	ev_periodic_stop(EV_A_ w);
+	free_task(t);
+	return;
+}
+
+static void
 chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
 {
+	_task_t t = (void*)((char*)w - offsetof(struct _task_s, c));
+
 	ECHS_NOTI_LOG("chld %d coughed: %d", w->rpid, w->rstatus);
 	ev_child_stop(EV_A_ w);
 	w->rpid = w->pid = 0;
+
+	if (UNLIKELY(t->w.reschedule_cb == NULL)) {
+		/* we promised taskB_cb to kill this guy */
+		unsched(EV_A_ &t->w, 0);
+	}
 	return;
 }
 
@@ -1081,11 +1103,11 @@ taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	 * so fire and forget */
 	(void)run_task(t, true);
 
-	if (w->reschedule_cb) {
-		/* ah, we're going to be used again */
-		return;
+	/* prepare for rescheduling */
+	if (UNLIKELY(w->reschedule_cb == NULL)) {
+		/* that's the end of our streak */
+		unsched(EV_A_ w, 0);
 	}
-	free_task(t);
 	return;
 }
 
@@ -1113,11 +1135,11 @@ taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 		}
 	}
 
-	if (w->reschedule_cb) {
-		/* ah, we're going to be used again */
-		return;
+	/* prepare for rescheduling */
+	if (UNLIKELY(w->reschedule_cb == NULL)) {
+		/* the child watcher will reap this task */
+		;
 	}
-	free_task(t);
 	return;
 }
 
@@ -1125,19 +1147,30 @@ static ev_tstamp
 resched(ev_periodic *w, ev_tstamp now)
 {
 /* the A queue doesn't wait for the jobs to finish, it is asynchronous
- * however jobs will only be timed AFTER NOW. */
+ * however jobs will only be timed AFTER NOW.
+ * This will be called BEFORE the actual callback is called so we have
+ * to defer unschedule operations by one. */
 	_task_t t = (void*)w;
 	echs_evstrm_t s = t->strm;
-	echs_event_t e;
+	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
 
-	if (UNLIKELY(echs_event_0_p(e = unwind_till(s, now)))) {
-		ECHS_NOTI_LOG("event in the past, will not schedule");
-		return 0.;
+	if (UNLIKELY(echs_event_0_p(e) && !t->nrun)) {
+		/* this has never been run in the first place */
+		ECHS_NOTI_LOG("event in the past, not scheduling");
+		w->reschedule_cb = NULL;
+		w->cb = unsched;
+		return now;
+	} else if (UNLIKELY(echs_event_0_p(e))) {
+		/* we need to unschedule AFTER the next run */
+		ECHS_NOTI_LOG("event completed, will not reschedule");
+		w->reschedule_cb = NULL;
+		return now + 1.e+30;
 	}
 
 	soon = instant_to_tstamp(e.from);
 	t->task = e.task;
+	t->nrun++;
 
 	ECHS_NOTI_LOG("next run %f", soon);
 	return soon;
