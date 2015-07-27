@@ -236,27 +236,6 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static const char*
-get_env(const char *key, char *const *env)
-{
-	const size_t nkey = strlen(key);
-
-	if (UNLIKELY(env == NULL)) {
-		return NULL;
-	}
-	for (char *const *e = env; *e; e++) {
-		const size_t ez = strlen(*e);
-
-		if (ez < nkey + 1U) {
-			continue;
-		} else if (!memcmp(*e, key, nkey) && (*e)[nkey] == '=') {
-			/* found him */
-			return *e + nkey + 1U;
-		}
-	}
-	return NULL;
-}
-
 static int
 init_iredir(const char *fn)
 {
