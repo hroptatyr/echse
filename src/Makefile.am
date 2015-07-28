@@ -89,17 +89,20 @@ echsq_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echsq_CPPFLAGS += -DHAVE_VERSION_H
 BUILT_SOURCES += echsq.yucc
 
+if HAVE_LIBEV
 if HAVE_RT_FUNS
 bin_PROGRAMS += echsx
 echsx_SOURCES = echsx.c echsx.yuck
 echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
+echsx_CPPFLAGS = $(AM_CPPFLAGS)
 echsx_LDFLAGS = $(AM_LDFLAGS)
 echsx_LDFLAGS += $(rt_LIBS)
+echsx_CPPFLAGS += $(ev_CFLAGS)
+echsx_LDFLAGS += $(ev_LIBS)
 BUILT_SOURCES += echsx.yucc
 endif  HAVE_RT_FUNS
 
-if HAVE_LIBEV
 sbin_PROGRAMS += echsd
 echsd_SOURCES = echsd.c echsd.yuck
 echsd_SOURCES += logger.c logger.h

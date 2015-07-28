@@ -48,12 +48,14 @@
 #include <time.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
+#include <ev.h>
 #include "logger.h"
 #include "nifty.h"
 #include "echsx.yucc"
@@ -74,7 +76,11 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 # endif	/* __INTEL_COMPILER */
 #endif	/* !SPLICE_F_MOVE */
 
+#undef EV_P
+#define EV_P  struct ev_loop *loop __attribute__((unused))
+
 #define USER_AGENT	"echsx/" VERSION " (echse job execution agent)"
+#define STRERR		(strerror(errno))
 
 typedef struct echs_task_s *echs_task_t;
 
@@ -236,61 +242,6 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static int
-init_iredir(const char *fn)
-{
-	const int fl = O_RDONLY;
-	int fd;
-
-	if ((fd = open(fn, fl)) < 0) {
-		/* grrrr, are we supposed to proceed without? */
-		ECHS_ERR_LOG("\
-Error: cannot open file `%s' for child input: %s", fn, strerror(errno));
-	}
-	return fd;
-}
-
-static int
-init_oredir(const char *fn)
-{
-	const int fl = O_WRONLY | O_TRUNC | O_CREAT;
-	int fd;
-
-	if ((fd = open(fn, fl, 0644)) < 0) {
-		/* grrrr, are we supposed to proceed without? */
-		ECHS_ERR_LOG("\
-Error: cannot open file `%s' for child output: %s", fn, strerror(errno));
-	}
-	return fd;
-}
-
-static int
-init_redirs(int tgt[static 3U])
-{
-	/* initialise somehow */
-	memset(tgt, -1, 3U * sizeof(*tgt));
-
-	if (argi->stdin_arg) {
-		if ((tgt[0U] = init_iredir(argi->stdin_arg)) < 0) {
-			return -1;
-		}
-	}
-
-	if (argi->stdout_arg && argi->stderr_arg &&
-	    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
-		/* caller wants stdout and stderr in the same file */
-		tgt[1U] = tgt[2U] = init_oredir(argi->stdout_arg);
-	} else {
-		if (argi->stdout_arg) {
-			tgt[1U] = init_oredir(argi->stdout_arg);
-		}
-		if (argi->stderr_arg) {
-			tgt[2U] = init_oredir(argi->stderr_arg);
-		}
-	}
-	return 0;
-}
-
 static size_t
 strfts(char *restrict buf, size_t bsz, struct timespec t)
 {
@@ -335,6 +286,7 @@ static struct tv_dur_s {
 	return res;
 }
 
+
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
 {
@@ -388,17 +340,6 @@ X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 }
 
 static int
-xdup2(int olfd, int nufd)
-{
-	if (UNLIKELY(dup2(olfd, nufd) < 0)) {
-		/* better close him, aye? */
-		close(nufd);
-		return -1;
-	}
-	return 0;
-}
-
-static int
 xsplice(int tgtfd, int srcfd)
 {
 #if defined HAVE_SPLICE || defined HAVE_SENDFILE
@@ -445,17 +386,60 @@ xsplice(int tgtfd, int srcfd)
 	return 0;
 }
 
+static void
+chld_cb(EV_P_ ev_child *c, int UNUSED(revents))
+{
+	ev_child_stop(EV_A_ c);
+	ev_break(EV_A_ EVBREAK_ALL);
+	return;
+}
+
+static void
+data_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	int cfd = w->fd;
+	int mfd = (intptr_t)w->data;
+
+#if defined HAVE_SPLICE
+	(void)splice(cfd, NULL, mfd, NULL, UINT_MAX, SPLICE_F_MOVE);
+#else  /* no splice */
+/* do it the old-fashioned way */
+	char buf[16U * 4096U];
+	ssize_t nrd;
+
+	nrd = read(w->fd, buf, sizeof(buf));
+	for (ssize_t nwr, tot = 0;
+	     tot < nrd && (nwr = write(mfd, buf + tot, nrd - tot)) > 0;
+	     tot += nwr);
+#endif	/* HAVE_SPLICE */
+	return;
+}
+
 
 static int
 run_task(echs_task_t t)
 {
+/* this is C for T->CMD >(> /path/stdout) 2>(> /path/stderr) &>(sendmail ...) */
+	static const char nulfn[] = "/dev/null";
+	static const char mailcmd[] = "/usr/sbin/sendmail";
+	char mailfn[] = "/tmp/echsXXXXXXXX";
 	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
-	pid_t mpid;
-	int mpip[2];
+	posix_spawn_file_actions_t fa;
+	/* stdin */
+	int ifd = -1;
+	/* stdout/stderr */
+	int ofd = -1;
+	int efd = -1;
+	/* stdout/stderr pipes */
+	int cpipout[2];
+	int cpiperr[2];
+	int mpipin[2];
 	int rc = 0;
 
 	/* go to the pwd as specified */
 	if (argi->cwd_arg && chdir(argi->cwd_arg) < 0) {
+		ECHS_ERR_LOG("\
+cannot change working directory to `%s': %s", argi->cwd_arg, strerror(errno));
 		return -1;
 	}
 	/* use the specified shell */
@@ -463,116 +447,242 @@ run_task(echs_task_t t)
 		*args = argi->shell_arg;
 	}
 
-	/* fork off the actual beef process */
-	switch ((chld = vfork())) {
-		int outfd[3];
-
-	case -1:
-		/* yeah bollocks */
-		rc = -1;
-		break;
-
-	case 0:
-		/* child */
-
-		/* deal with the output */
-		if (UNLIKELY(init_redirs(outfd) < 0)) {
-			/* fuck, something's wrong */
-			_exit(EXIT_FAILURE);
-		}
-		xdup2(outfd[0U], STDIN_FILENO);
-		xdup2(outfd[1U], STDOUT_FILENO);
-		xdup2(outfd[2U], STDERR_FILENO);
-
-		rc = execve(*args, deconst(args), t->env);
-		_exit(rc);
-		/* not reached */
-
-	default:
-		/* parent */
-		ECHS_NOTI_LOG("starting `%s' -> process %d", t->cmd, chld);
-		clock_gettime(CLOCK_REALTIME, &t->t_sta);
-		getrusage(RUSAGE_SELF, &t->rus_off);
-
-		while (waitpid(chld, &t->xc, 0) != chld);
-		/* unset timeouts */
-		alarm(0);
-		ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
-		chld = 0;
-
-		clock_gettime(CLOCK_REALTIME, &t->t_end);
-		getrusage(RUSAGE_CHILDREN, &t->rus);
-		break;
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		ECHS_ERR_LOG("\
+cannot initialise file actions: %s", strerror(errno));
+		return -1;
 	}
 
-	/* spawn sendmail */
+	if (argi->stdin_arg) {
+		if ((ifd = open(argi->stdin_arg, O_RDONLY)) < 0) {
+			/* grrrr, are we supposed to proceed without? */
+			ECHS_ERR_LOG("\
+cannot open file `%s' for child input: %s", argi->stdin_arg, strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+	} else if ((ifd = open(nulfn, O_RDONLY)) < 0) {
+		ECHS_ERR_LOG("\
+cannot open /dev/null for child input: %s", strerror(errno));
+		rc = -1;
+		goto clo;
+	}
+	if (posix_spawn_file_actions_adddup2(&fa, ifd, STDIN_FILENO) < 0) {
+		rc = -1;
+		goto clo;
+	} else if (posix_spawn_file_actions_addclose(&fa, ifd) < 0) {
+		rc = -1;
+		goto clo;
+	}
+
+	/* the idea here is that if we want STDXXX to be mailed we
+	 * pass it as a pipe to the child, if we want it filed we
+	 * dup2 an open()'d descriptor, and we redir to /dev/null
+	 * otherwise */
+	if (argi->mailout_flag) {
+		if (pipe(cpipout) < 0) {
+			/* grrr that is outrageous */
+			ECHS_ERR_LOG("\
+cannot pipe child's stdout to mailer process: %s", strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+		ofd = cpipout[1];
+		(void)fcntl(cpipout[0], F_SETFD, FD_CLOEXEC);
+	} else if (argi->stdout_arg) {
+		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+		if ((ofd = open(argi->stdout_arg, fl, 0644)) < 0) {
+			ECHS_ERR_LOG("\
+cannot open file `%s' for child output: %s", argi->stdout_arg, strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+	} else if ((ofd = open(nulfn, O_WRONLY, 0600)) < 0) {
+		ECHS_ERR_LOG("\
+cannot open /dev/null for child output: %s", strerror(errno));
+		rc = -1;
+		goto clo;
+	}
+	if (posix_spawn_file_actions_adddup2(&fa, ofd, STDOUT_FILENO) < 0) {
+		rc = -1;
+		goto clo;
+	} else if (posix_spawn_file_actions_addclose(&fa, ofd) < 0) {
+		rc = -1;
+		goto clo;
+	}
+
+	if (argi->mailerr_flag) {
+		if (pipe(cpiperr) < 0) {
+			/* grrr that is outrageous */
+			ECHS_ERR_LOG("\
+cannot pipe child's stderr to mailer process: %s", strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+		efd = cpiperr[1];
+		(void)fcntl(cpiperr[0], F_SETFD, FD_CLOEXEC);
+	} else if (argi->stderr_arg) {
+		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+		if ((efd = open(argi->stderr_arg, fl, 0644)) < 0) {
+			ECHS_ERR_LOG("\
+cannot open file `%s' for child output: %s", argi->stderr_arg, strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+	} else if ((efd = open(nulfn, O_WRONLY, 0600)) < 0) {
+		ECHS_ERR_LOG("\
+cannot open /dev/null for child output: %s", strerror(errno));
+		rc = -1;
+		goto clo;
+	}
+	if (posix_spawn_file_actions_adddup2(&fa, efd, STDERR_FILENO) < 0) {
+		rc = -1;
+		goto clo;
+	} else if (posix_spawn_file_actions_addclose(&fa, efd) < 0) {
+		rc = -1;
+		goto clo;
+	}
+
+	/* spawn the actual beef process */
+	if (posix_spawn(&chld, *args, &fa, NULL, deconst(args), t->env) < 0) {
+		ECHS_ERR_LOG("cannot spawn `%s': %s", *args, strerror(errno));
+		rc = -1;
+	} else {
+		ECHS_NOTI_LOG("starting `%s' -> process %d", t->cmd, chld);
+	}
+
+	/* parent */
+	clock_gettime(CLOCK_REALTIME, &t->t_sta);
+	getrusage(RUSAGE_SELF, &t->rus_off);
+
+	/* close descriptors that were good for our child only */
+	if (ifd >= 0) {
+		close(ifd);
+		ifd = -1;
+	}
+	if (ofd >= 0) {
+		close(ofd);
+		ofd = -1;
+	}
+	if (efd >= 0) {
+		close(efd);
+		efd = -1;
+	}
+	/* also get rid of the file actions resources */
+	posix_spawn_file_actions_destroy(&fa);
+
+	/* let's be quick and set up an event loop */
+	if (chld > 0) {
+		EV_P = ev_default_loop(EVFLAG_AUTO);
+		int mailfd = -1;
+		ev_child c;
+		ev_io o;
+		ev_io e;
+
+		ev_child_init(&c, chld_cb, chld, false);
+		ev_child_start(EV_A_ &c);
+
+		/* open file for mailer */
+		if (argi->mailout_flag || argi->mailerr_flag) {
+			mailfd = mkstemp(mailfn);
+		}
+
+		/* rearrange the descriptors again, for the mailer */
+		if (argi->mailout_flag && cpipout[0] >= 0) {
+			ev_io_init(&o, data_cb, cpipout[0], EV_READ);
+			o.data = (void*)(intptr_t)mailfd;
+			ev_io_start(EV_A_ &o);
+		}
+		if (argi->mailerr_flag && cpiperr[0] >= 0) {
+			ev_io_init(&e, data_cb, cpiperr[0], EV_READ);
+			e.data = (void*)(intptr_t)mailfd;
+			ev_io_start(EV_A_ &e);
+		}
+
+		ev_loop(EV_A_ 0);
+
+		if (mailfd >= 0) {
+			close(mailfd);
+		}
+
+		if (cpipout[0] >= 0) {
+			close(cpipout[0]);
+		}
+		if (cpiperr[0] >= 0) {
+			close(cpiperr[0]);
+		}
+
+		ev_break(EV_A_ EVBREAK_ALL);
+		ev_loop_destroy(EV_A);
+	}
+
+	/* unset timeouts */
+	alarm(0);
+	ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
+	chld = 0;
+
+	clock_gettime(CLOCK_REALTIME, &t->t_end);
+	getrusage(RUSAGE_CHILDREN, &t->rus);
+
+
+	/* now it's time to send a mail */
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
 		mail_hdrs(STDOUT_FILENO, t);
-		return rc;
-	} else if (pipe(mpip) < 0) {
-		/* shit, better fuck off? */
-		return rc;
+		goto clo;
+	} else if (pipe(mpipin) < 0) {
+		ECHS_ERR_LOG("\
+cannot set up pipe to mailer: %s", strerror(errno));
+		rc = -1;
+		goto clo;
 	}
 
-	switch ((mpid = vfork())) {
-		int fd;
-
-	case -1:
-		/* yeah bollocks */
+	(void)fcntl(mpipin[1], F_SETFD, FD_CLOEXEC);
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		ECHS_ERR_LOG("\
+cannot initialise file actions: %s", strerror(errno));
 		rc = -1;
-		break;
+		goto clo;
+	}
 
-	case 0:
-		/* child */
-		close(mpip[1U]);
-		xdup2(mpip[0U], STDIN_FILENO);
-		rc = execve("/usr/sbin/sendmail", _mcmd, t->env);
-		_exit(rc);
-		/* not reached */
+	posix_spawn_file_actions_adddup2(&fa, mpipin[0U], STDIN_FILENO);
+	posix_spawn_file_actions_addclose(&fa, mpipin[0U]);
 
-	default:
-		/* parent */
-		close(mpip[0U]);
-		mail_hdrs(mpip[1U], t);
+	if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
+		ECHS_ERR_LOG("cannot spawn `sendmail': %s", strerror(errno));
+		rc = -1;
+	}
 
-		if (argi->stdout_arg && argi->stderr_arg &&
-		    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
-			/* joint file */
-			const int fl = O_RDONLY;
-			const char *fn = argi->stdout_arg;
+	/* parent */
+	posix_spawn_file_actions_destroy(&fa);
+	close(mpipin[0U]);
+	mail_hdrs(mpipin[1U], t);
 
-			if ((fd = open(fn, fl)) < 0) {
-				/* fuck */
-				goto send;
-			}
-			xsplice(mpip[1U], fd);
-			close(fd);
-		} else {
-			if (argi->stdout_arg) {
-				const int fl = O_RDONLY;
+	/* joint file */
+	if_with (int fd, (fd = open(mailfn, O_RDONLY)) >= 0) {
+		xsplice(mpipin[1U], fd);
+		close(fd);
+	}
 
-				if ((fd = open(argi->stdout_arg, fl)) < 0) {
-					/* shit */
-					goto send;
-				}
-				xsplice(mpip[1U], fd);
-				close(fd);
-				if ((fd = open(argi->stderr_arg, fl)) < 0) {
-					/* even more shit */
-					goto send;
-				}
-				xsplice(mpip[1U], fd);
-				close(fd);
-			}
+	/* send off the mail by closing the in-pipe */
+	close(mpipin[1U]);
+
+	with (int mailrc) {
+		while (waitpid(chld, &mailrc, 0) != chld);
+		if (mailrc) {
+			rc = -1;
 		}
+	}
 
-	send:
-		/* send off the mail */
-		close(mpip[1U]);
-
-		while (waitpid(mpid, &rc, 0) != mpid);
-		break;
+clo:
+	if (ifd >= 0) {
+		close(ifd);
+	}
+	if (ofd >= 0) {
+		close(ofd);
+	}
+	if (efd >= 0) {
+		close(efd);
 	}
 	return rc;
 }
