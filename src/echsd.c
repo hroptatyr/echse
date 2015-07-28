@@ -69,6 +69,7 @@
 #if defined HAVE_PATHS_H
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
+#include <spawn.h>
 #include <pwd.h>
 #include <grp.h>
 #include <ev.h>
@@ -754,6 +755,7 @@ run_task(_task_t t, bool dtchp)
 	/* use a VLA for the real args */
 	const size_t natt = t->task->att ? t->task->att->nl : 0U;
 	char *args[countof(args_proto) + 2U * natt];
+	char *const *env = deconst(t->task->env);
 	pid_t r;
 
 	/* set up the real args */
@@ -797,32 +799,11 @@ run_task(_task_t t, bool dtchp)
 		args[i++] = NULL;
 	}
 
-	switch ((r = vfork())) {
-		int rc;
-
-	case -1:
+	if (UNLIKELY(posix_spawnp(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
-		break;
-
-	case 0:
-		/* I am daddy's daughter */
-
-		/* close standard socks */
-		if (dtchp) {
-			close(STDIN_FILENO);
-			close(STDOUT_FILENO);
-			close(STDERR_FILENO);
-		}
-		rc = execve(echsx, args, deconst(t->task->env));
-		_exit(rc);
-		/* not reached */
-
-	default:
-		/* I am daddy */
-		if (dtchp) {
-			while (waitpid(r, &rc, 0) != r);
-		}
-		break;
+	} else if (dtchp) {
+		int rc;
+		while (waitpid(r, &rc, 0) != r);
 	}
 	return r;
 }
