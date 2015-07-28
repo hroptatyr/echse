@@ -503,6 +503,8 @@ make_socket(const char *sdir)
 
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
+	} else if (fcntl(s, F_SETFD, (fcntl(s, F_GETFD) | FD_CLOEXEC)) < 0) {
+		return -1;
 	}
 	fn = pathcat(sdir, "=echsd", NULL);
 	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
@@ -1538,6 +1540,13 @@ main(int argc, char *argv[])
 		goto out;
 	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY)) < 0)) {
 		perror("Error: cannot open echsd spool directory");
+		rc = 1;
+		goto out;
+	} else if (UNLIKELY({
+				int x = fcntl(qdirfd, F_GETFD);
+				fcntl(qdirfd, F_SETFD, x | FD_CLOEXEC) < 0;
+			})) {
+		perror("Error: cannot set FD_CLOEXEC on spool directory");
 		rc = 1;
 		goto out;
 	} else if (UNLIKELY((sdir = get_sockdir()) == NULL)) {
