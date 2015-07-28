@@ -504,7 +504,7 @@ make_socket(const char *sdir)
 
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
-	} else if (fcntl(s, F_SETFD, (fcntl(s, F_GETFD) | FD_CLOEXEC)) < 0) {
+	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
 		return -1;
 	}
 	fn = pathcat(sdir, "=echsd", NULL);
@@ -799,6 +799,7 @@ run_task(_task_t t, bool dtchp)
 		args[i++] = NULL;
 	}
 
+	/* finally fork out our child */
 	if (UNLIKELY(posix_spawnp(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 	} else if (dtchp) {
