@@ -800,7 +800,7 @@ run_task(_task_t t, bool dtchp)
 	}
 
 	/* finally fork out our child */
-	if (UNLIKELY(posix_spawnp(&r, echsx, NULL, NULL, args, env) < 0)) {
+	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 	} else if (dtchp) {
 		int rc;
