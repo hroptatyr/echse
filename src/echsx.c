@@ -421,19 +421,38 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	struct data_s *out = (void*)w;
 
 #if defined HAVE_SPLICE
+	const unsigned int fl = SPLICE_F_MOVE;
 	int mfd = out->mailfd;
-	off_t mfo = lseek(mfd, 0, SEEK_CUR);
 	ssize_t nsp;
 
 	/* here we move things to out->mailfd, being certain it's a
 	 * descriptor where mmap-like opers work on, then, in the
 	 * next step we use sendfile(2) to push it to out->filed if
 	 * applicable */
-	nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, SPLICE_F_MOVE);
+	if ((nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, fl)) <= 0) {
+		/* nothing works, does it */
+		;
+	} else if (out->filefd >= 0) {
+		const int ofd = out->filefd;
+		off_t mfo = lseek(mfd, 0, SEEK_CUR);
 
-	if (out->filefd >= 0 && nsp > 0) {
+		assert(mfo >= nsp);
+		mfo -= nsp;
 #if defined HAVE_SENDFILE
-		(void)sendfile(out->filefd, mfd, &mfo, nsp);
+		(void)sendfile(ofd, mfd, &mfo, nsp);
+
+#else  /* !HAVE_SENDFILE */
+		char buf[16U * 4096U];
+
+		for (ssize_t nrd;
+		     (nrd = pread(mfd, buf, sizeof(buf), mfo)) > 0;
+		     mfo += nrd) {
+			for (ssize_t nwr, tot = 0;
+			     tot < nrd &&
+				     (nwr = write(
+					      ofd, buf + tot, nrd - tot)) > 0;
+			     tot += nwr);
+		}
 #endif	/* HAVE_SENDFILE */
 	}
 #else  /* !HAVE_SPLICE */
