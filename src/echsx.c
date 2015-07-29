@@ -110,7 +110,6 @@ struct echs_task_s {
 	int xc;
 	struct timespec t_sta, t_end;
 	struct rusage rus;
-	struct rusage rus_off;
 };
 
 static pid_t chld;
@@ -316,8 +315,8 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
 	strfts(tstmp2, sizeof(tstmp2), t->t_end);
 	real = ts_dur(t->t_sta, t->t_end);
-	user = tv_dur(t->rus_off.ru_utime, t->rus.ru_utime);
-	sys = tv_dur(t->rus_off.ru_stime, t->rus.ru_stime);
+	user = tv_dur((struct timeval){0}, t->rus.ru_utime);
+	sys = tv_dur((struct timeval){0}, t->rus.ru_stime);
 	cpu = ((double)(user.s + sys.s) + (double)(user.u + sys.u) * 1.e-6) /
 		((double)real.s + (double)real.n * 1.e-9) * 100.;
 
@@ -757,7 +756,6 @@ cannot initialise file actions: %s", strerror(errno));
 
 	/* parent */
 	clock_gettime(CLOCK_REALTIME, &t->t_sta);
-	getrusage(RUSAGE_SELF, &t->rus_off);
 
 	/* let's be quick and set up an event loop */
 	if (chld > 0) {
