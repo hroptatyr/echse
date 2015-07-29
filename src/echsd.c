@@ -1331,8 +1331,13 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 {
 	_task_t t;
 	EV_P = ctx->loop;
+	ncred_t c = compl_uid(u);
 
-	if (UNLIKELY((t = make_task()) == NULL)) {
+	if (UNLIKELY(c.sh == NULL || c.wd == NULL)) {
+		/* user doesn't exist, do they */
+		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
+		return;
+	} else if (UNLIKELY((t = make_task()) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
 		return;
 	}
@@ -1340,10 +1345,11 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 	/* store the stream */
 	t->strm = s;
 	/* run all tasks as U and the default group of U */
-	t->dflt_cred = compl_uid(u);
+	t->dflt_cred.u = c.u;
+	t->dflt_cred.g = c.g;
 	/* also, by default, in U's home dir using U's shell */
-	t->dflt_cred.wd = strdup(t->dflt_cred.wd);
-	t->dflt_cred.sh = strdup(t->dflt_cred.sh);
+	t->dflt_cred.wd = strdup(c.wd);
+	t->dflt_cred.sh = strdup(c.sh);
 
 	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &t->w);
