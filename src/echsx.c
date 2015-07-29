@@ -793,6 +793,18 @@ cannot initialise file actions: %s", strerror(errno));
 		ev_loop_destroy(EV_A);
 	}
 
+	/* close the rest */
+	if (t->opip >= 0 || t->epip >= 0) {
+		close(t->mfd);
+		close(t->teee);
+		close(t->teeo);
+		close(t->opip);
+		close(t->epip);
+
+		t->mfd = -1;
+		t->teeo = t->teee = t->opip = t->epip = -1;
+	}
+
 	/* unset timeouts */
 	alarm(0);
 	ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
@@ -873,6 +885,20 @@ cannot spawn `sendmail': %s", strerror(errno));
 	return rc;
 }
 
+static void
+free_task(echs_task_t t)
+{
+/* free resources associated with T
+ * there should be no descriptors open
+ * but we might want to rm temp files */
+	if (t->mrm) {
+		assert(t->mfn);
+		unlink(t->mfn);
+	}
+	return;
+}
+
+
 static int
 daemonise(void)
 {
@@ -899,7 +925,6 @@ daemonise(void)
 	return 0;
 }
 
-
 int
 main(int argc, char *argv[])
 {
@@ -969,7 +994,7 @@ cannot set timeout, job execution will be unbounded");
 		/* prepare */
 		if (prep_task(&t) < 0) {
 			rc = 127;
-			break;
+			goto clean_up;
 		}
 		/* set out sigs loose */
 		unblock_sigs();
@@ -977,18 +1002,21 @@ cannot set timeout, job execution will be unbounded");
 		if (run_task(&t) < 0) {
 			/* bollocks */
 			rc = 127;
-			break;
+			goto clean_up;
 		}
 		/* no disruptions please */
 		block_sigs();
 		/* brag about our findings */
 		if (mail_task(&t) < 0) {
 			rc = 127;
-			break;
+			goto clean_up;
 		}
 
 		/* finally, inherit task's return code */
 		rc = WEXITSTATUS(t.xc);
+
+	clean_up:
+		free_task(&t);
 	}
 
 	/* stop them log files */
