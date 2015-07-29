@@ -364,7 +364,7 @@ xsplice(int tgtfd, int srcfd)
 
 	if (fstat(srcfd, &st) < 0) {
 		/* big bollocks */
-		ECHS_ERR_LOG("cannot stat file to splice: %s", strerror(errno));
+		ECHS_ERR_LOG("cannot stat file to splice: %s", STRERR);
 		return -1;
 	} else if ((totz = st.st_size) < 0) {
 		/* hmmm, nice try */
@@ -534,7 +534,7 @@ prep_task(echs_task_t t)
 	/* go to the pwd as specified */
 	if (argi->cwd_arg && chdir(argi->cwd_arg) < 0) {
 		ECHS_ERR_LOG("\
-cannot change working directory to `%s': %s", argi->cwd_arg, strerror(errno));
+cannot change working directory to `%s': %s", argi->cwd_arg, STRERR);
 		rc = -1;
 		goto clo;
 	}
@@ -543,13 +543,13 @@ cannot change working directory to `%s': %s", argi->cwd_arg, strerror(errno));
 		if ((t->ifd = open(argi->stdin_arg, O_RDONLY)) < 0) {
 			/* grrrr, are we supposed to proceed without? */
 			ECHS_ERR_LOG("\
-cannot open file `%s' for child input: %s", argi->stdin_arg, strerror(errno));
+cannot open file `%s' for child input: %s", argi->stdin_arg, STRERR);
 			rc = -1;
 			goto clo;
 		}
 	} else if ((t->ifd = open(nulfn, O_RDONLY)) < 0) {
 		ECHS_ERR_LOG("\
-cannot open /dev/null for child input: %s", strerror(errno));
+cannot open /dev/null for child input: %s", STRERR);
 		rc = -1;
 		goto clo;
 	}
@@ -727,7 +727,7 @@ run_task(echs_task_t t)
 
 	if (posix_spawn_file_actions_init(&fa) < 0) {
 		ECHS_ERR_LOG("\
-cannot initialise file actions: %s", strerror(errno));
+cannot initialise file actions: %s", STRERR);
 		return -1;
 	}
 
@@ -743,7 +743,7 @@ cannot initialise file actions: %s", strerror(errno));
 
 	/* spawn the actual beef process */
 	if (posix_spawn(&chld, *args, &fa, NULL, deconst(args), t->env) < 0) {
-		ECHS_ERR_LOG("cannot spawn `%s': %s", *args, strerror(errno));
+		ECHS_ERR_LOG("cannot spawn `%s': %s", *args, STRERR);
 		rc = -1;
 	} else {
 		ECHS_NOTI_LOG("starting `%s' -> process %d", t->cmd, chld);
@@ -850,14 +850,14 @@ mail_task(echs_task_t t)
 		goto mail;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
-cannot set up pipe to mailer: %s", strerror(errno));
+cannot set up pipe to mailer: %s", STRERR);
 		return -1;
 	}
 
 	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
 	if (posix_spawn_file_actions_init(&fa) < 0) {
 		ECHS_ERR_LOG("\
-cannot initialise file actions: %s", strerror(errno));
+cannot initialise file actions: %s", STRERR);
 		rc = -1;
 	} else {
 		/* we're all set for the big forking */
@@ -866,7 +866,7 @@ cannot initialise file actions: %s", strerror(errno));
 
 		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
 			ECHS_ERR_LOG("\
-cannot spawn `sendmail': %s", strerror(errno));
+cannot spawn `sendmail': %s", STRERR);
 			rc = -1;
 		}
 
