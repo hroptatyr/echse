@@ -957,11 +957,21 @@ cannot set timeout, job execution will be unbounded");
 		/* set out sigs loose */
 		unblock_sigs();
 		/* and here we go */
-		run_task(&t);
+		if (run_task(&t) < 0) {
+			/* bollocks */
+			rc = 127;
+			break;
+		}
 		/* no disruptions please */
 		block_sigs();
 		/* brag about our findings */
-		mail_task(&t);
+		if (mail_task(&t) < 0) {
+			rc = 127;
+			break;
+		}
+
+		/* finally, inherit task's return code */
+		rc = WEXITSTATUS(t.xc);
 	}
 
 	/* stop them log files */
