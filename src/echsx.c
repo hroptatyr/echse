@@ -430,17 +430,17 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	 * applicable */
 	if ((nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, fl)) <= 0) {
 		/* nothing works, does it */
-		;
+		goto shut;
 	} else if (out->filefd >= 0) {
 		const int ofd = out->filefd;
 		off_t mfo = lseek(mfd, 0, SEEK_CUR);
 
 		assert(mfo >= nsp);
 		mfo -= nsp;
-#if defined HAVE_SENDFILE
+# if defined HAVE_SENDFILE
 		(void)sendfile(ofd, mfd, &mfo, nsp);
 
-#else  /* !HAVE_SENDFILE */
+# else  /* !HAVE_SENDFILE */
 		char buf[16U * 4096U];
 
 		for (ssize_t nrd;
@@ -452,7 +452,7 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 					      ofd, buf + tot, nrd - tot)) > 0;
 			     tot += nwr);
 		}
-#endif	/* HAVE_SENDFILE */
+# endif	/* HAVE_SENDFILE */
 	}
 #else  /* !HAVE_SPLICE */
 /* do it the old-fashioned way */
@@ -460,8 +460,9 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	ssize_t nrd;
 	int ofd;
 
-	nrd = read(w->fd, buf, sizeof(buf));
-	if ((ofd = out->filefd) >= 0) {
+	if ((nrd = read(cfd, buf, sizeof(buf))) <= 0) {
+		goto shut;
+	} else if ((ofd = out->filefd) >= 0) {
 		/* `tee'ing to the out file */
 		for (ssize_t nwr, tot = 0;
 		     tot < nrd && (nwr = write(ofd, buf + tot, nrd - tot)) > 0;
@@ -473,6 +474,11 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	     tot < nrd && (nwr = write(ofd, buf + tot, nrd - tot)) > 0;
 	     tot += nwr);
 #endif	/* HAVE_SPLICE */
+	return;
+
+shut:
+	ev_io_stop(EV_A_ w);
+	close(cfd);
 	return;
 }
 
@@ -796,12 +802,25 @@ cannot initialise file actions: %s", strerror(errno));
 	/* close the rest */
 	if (t->opip >= 0 || t->epip >= 0) {
 		close(t->mfd);
-		close(t->teee);
-		close(t->teeo);
-		close(t->opip);
-		close(t->epip);
-
 		t->mfd = -1;
+
+		if (t->teeo >= 0) {
+			close(t->teeo);
+		}
+		if (t->teee >= 0) {
+			close(t->teee);
+		}
+
+		/* t->opip and t->epip should have encountered EOF
+		 * but just to be sure */
+		if (t->opip >= 0) {
+			close(t->opip);
+		}
+		if (t->epip >= 0) {
+			close(t->epip);
+		}
+
+		/* make all them descriptors unknown from now on */
 		t->teeo = t->teee = t->opip = t->epip = -1;
 	}
 
