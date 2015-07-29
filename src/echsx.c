@@ -921,6 +921,8 @@ free_task(echs_task_t t)
 static int
 daemonise(void)
 {
+	static char nulfn[] = "/dev/null";
+	int nulfd;
 	pid_t pid;
 
 	switch (pid = fork()) {
@@ -934,13 +936,33 @@ daemonise(void)
 		exit(0);
 	}
 
-	if (setsid() == -1) {
+	if (UNLIKELY(setsid() < 0)) {
 		return -1;
 	}
 
-	close(STDIN_FILENO);
-	close(STDOUT_FILENO);
-	close(STDERR_FILENO);
+	if (UNLIKELY((nulfd = open(nulfn, O_RDONLY)) < 0)) {
+		/* nope, consider us fucked, we can't even print
+		 * the error message anymore */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
+		/* yay, just what we need right now */
+		return -1;
+	}
+	/* make sure nobody sees what we've been doing */
+	close(nulfd);
+
+	if (UNLIKELY((nulfd = open(nulfn, O_WRONLY, 0600)) < 0)) {
+		/* bugger */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
+		/* nah, that's just not good enough */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
+		/* still shit */
+		return -1;
+	}
+	/* make sure we only have the copies around */
+	close(nulfd);
 	return 0;
 }
 
