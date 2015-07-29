@@ -359,7 +359,7 @@ X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 static int
 xsplice(int tgtfd, int srcfd)
 {
-#if defined HAVE_SPLICE || defined HAVE_SENDFILE
+#if defined HAVE_SENDFILE
 	struct stat st;
 	off_t totz;
 
@@ -372,22 +372,14 @@ xsplice(int tgtfd, int srcfd)
 		ECHS_ERR_LOG("cannot obtain size of file to splice");
 		return -1;
 	}
-#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
 
-#if defined HAVE_SPLICE
-	for (ssize_t nsp, tots = 0;
-	     tots < totz &&
-		     (nsp = splice(srcfd, NULL,
-				   tgtfd, NULL,
-				   totz - tots, SPLICE_F_MOVE)) >= 0;
-	     tots += nsp);
-#elif defined HAVE_SENDFILE
 	for (ssize_t nsf, tots = 0;
 	     tots < totz &&
 		     (nsf = sendfile(tgtfd, srcfd, NULL, totz - tots)) >= 0;
 	     tots += nsf);
-#else  /* !HAVE_SPLICE && !HAVE_SENDFILE */
-	with (char *buf[4096U]) {
+
+#else  /* !HAVE_SENDFILE */
+	with (char *buf[16U * 4096U]) {
 		ssize_t nrd;
 
 		while ((nrd = read(srcfd, buf, sizeof(buf))) > 0) {
@@ -399,7 +391,7 @@ xsplice(int tgtfd, int srcfd)
 			     totw += nwr);
 		}
 	}
-#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
+#endif	/* HAVE_SENDFILE */
 	return 0;
 }
 
@@ -440,7 +432,6 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, SPLICE_F_MOVE);
 
 	if (out->filefd >= 0 && nsp > 0) {
-		ECHS_NOTI_LOG("sendfiling from %zd", mfo);
 #if defined HAVE_SENDFILE
 		(void)sendfile(out->filefd, mfd, &mfo, nsp);
 #endif	/* HAVE_SENDFILE */
@@ -701,7 +692,6 @@ static int
 run_task(echs_task_t t)
 {
 /* this is C for T->CMD >(> /path/stdout) 2>(> /path/stderr) &>(sendmail ...) */
-	static const char mailcmd[] = "/usr/sbin/sendmail";
 	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
 	posix_spawn_file_actions_t fa;
 	int rc = 0;
@@ -793,57 +783,76 @@ cannot initialise file actions: %s", strerror(errno));
 
 	clock_gettime(CLOCK_REALTIME, &t->t_end);
 	getrusage(RUSAGE_CHILDREN, &t->rus);
+	return rc;
+}
 
-#if 0
-	/* now it's time to send a mail */
+static int
+mail_task(echs_task_t t)
+{
+/* send our findings from task T via mail */
+	static const char mailcmd[] = "/usr/sbin/sendmail";
+	int mpip[2] = {-1, -1};
+	posix_spawn_file_actions_t fa;
+	int mfd = -1;
+	int rc = 0;
+
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
-		mail_hdrs(STDOUT_FILENO, t);
-		goto clo;
-	} else if (pipe(mpipin) < 0) {
+		mfd = STDOUT_FILENO;
+		goto mail;
+	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", strerror(errno));
-		rc = -1;
-		goto clo;
+		return -1;
 	}
 
-	(void)fcntl(mpipin[1], F_SETFD, FD_CLOEXEC);
+	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
 	if (posix_spawn_file_actions_init(&fa) < 0) {
 		ECHS_ERR_LOG("\
 cannot initialise file actions: %s", strerror(errno));
 		rc = -1;
-		goto clo;
+	} else {
+		/* we're all set for the big forking */
+		posix_spawn_file_actions_adddup2(&fa, mpip[0U], STDIN_FILENO);
+		posix_spawn_file_actions_addclose(&fa, mpip[0U]);
+
+		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
+			ECHS_ERR_LOG("\
+cannot spawn `sendmail': %s", strerror(errno));
+			rc = -1;
+		}
+
+		/* parent */
+		posix_spawn_file_actions_destroy(&fa);
 	}
+	/* we're not interested in the read end of the descriptor */
+	close(mpip[0U]);
 
-	posix_spawn_file_actions_adddup2(&fa, mpipin[0U], STDIN_FILENO);
-	posix_spawn_file_actions_addclose(&fa, mpipin[0U]);
+	if (chld > 0) {
+	mail:
+		/* now it's time to send the actual mail */
+		mail_hdrs(mfd, t);
 
-	if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
-		ECHS_ERR_LOG("cannot spawn `sendmail': %s", strerror(errno));
-		rc = -1;
-	}
-
-	/* parent */
-	posix_spawn_file_actions_destroy(&fa);
-	close(mpipin[0U]);
-	mail_hdrs(mpipin[1U], t);
-
-	/* joint file */
-	if_with (int fd, (fd = open(mailfn, O_RDONLY)) >= 0) {
-		xsplice(mpipin[1U], fd);
-		close(fd);
+		/* joint file */
+		if_with (int fd, (fd = open(t->mfn, O_RDONLY)) >= 0) {
+			xsplice(mfd, fd);
+			close(fd);
+		}
 	}
 
 	/* send off the mail by closing the in-pipe */
-	close(mpipin[1U]);
+	close(mfd);
 
-	with (int mailrc) {
+	if (chld > 0) {
+		int mailrc;
+
 		while (waitpid(chld, &mailrc, 0) != chld);
 		if (mailrc) {
 			rc = -1;
 		}
 	}
-#endif
+	/* we're not monitoring anything anymore */
+	chld = 0;
 	return rc;
 }
 
@@ -949,8 +958,10 @@ cannot set timeout, job execution will be unbounded");
 		unblock_sigs();
 		/* and here we go */
 		run_task(&t);
-		/* not reached */
+		/* no disruptions please */
 		block_sigs();
+		/* brag about our findings */
+		mail_task(&t);
 	}
 
 	/* stop them log files */
