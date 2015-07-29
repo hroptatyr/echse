@@ -48,12 +48,15 @@
 #include <time.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
+#include <ev.h>
+#include <assert.h>
 #include "logger.h"
 #include "nifty.h"
 #include "echsx.yucc"
@@ -67,6 +70,7 @@
 # if defined __INTEL_COMPILER
 #  pragma warning(disable:1419)
 # endif	/* __INTEL_COMPILER */
+extern ssize_t tee(int, int, size_t, unsigned int);
 extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 # define SPLICE_F_MOVE	(0U)
 # if defined __INTEL_COMPILER
@@ -74,7 +78,11 @@ extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
 # endif	/* __INTEL_COMPILER */
 #endif	/* !SPLICE_F_MOVE */
 
+#undef EV_P
+#define EV_P  struct ev_loop *loop __attribute__((unused))
+
 #define USER_AGENT	"echsx/" VERSION " (echse job execution agent)"
+#define STRERR		(strerror(errno))
 
 typedef struct echs_task_s *echs_task_t;
 
@@ -83,11 +91,25 @@ struct echs_task_s {
 	const char *cmd;
 	char **env;
 
+	/* them descriptors and file names prepped for us */
+	int ifd;
+	int ofd;
+	int efd;
+	int mfd;
+
+	/* this is for the complicated cases where we need pipes */
+	int opip;
+	int epip;
+	int teeo;
+	int teee;
+
+	const char *mfn;
+	unsigned int mrm:1U;
+
 	/* exit code */
 	int xc;
 	struct timespec t_sta, t_end;
 	struct rusage rus;
-	struct rusage rus_off;
 };
 
 static pid_t chld;
@@ -236,82 +258,6 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static const char*
-get_env(const char *key, char *const *env)
-{
-	const size_t nkey = strlen(key);
-
-	if (UNLIKELY(env == NULL)) {
-		return NULL;
-	}
-	for (char *const *e = env; *e; e++) {
-		const size_t ez = strlen(*e);
-
-		if (ez < nkey + 1U) {
-			continue;
-		} else if (!memcmp(*e, key, nkey) && (*e)[nkey] == '=') {
-			/* found him */
-			return *e + nkey + 1U;
-		}
-	}
-	return NULL;
-}
-
-static int
-init_iredir(const char *fn)
-{
-	const int fl = O_RDONLY;
-	int fd;
-
-	if ((fd = open(fn, fl)) < 0) {
-		/* grrrr, are we supposed to proceed without? */
-		ECHS_ERR_LOG("\
-Error: cannot open file `%s' for child input: %s", fn, strerror(errno));
-	}
-	return fd;
-}
-
-static int
-init_oredir(const char *fn)
-{
-	const int fl = O_WRONLY | O_TRUNC | O_CREAT;
-	int fd;
-
-	if ((fd = open(fn, fl, 0644)) < 0) {
-		/* grrrr, are we supposed to proceed without? */
-		ECHS_ERR_LOG("\
-Error: cannot open file `%s' for child output: %s", fn, strerror(errno));
-	}
-	return fd;
-}
-
-static int
-init_redirs(int tgt[static 3U])
-{
-	/* initialise somehow */
-	memset(tgt, -1, 3U * sizeof(*tgt));
-
-	if (argi->stdin_arg) {
-		if ((tgt[0U] = init_iredir(argi->stdin_arg)) < 0) {
-			return -1;
-		}
-	}
-
-	if (argi->stdout_arg && argi->stderr_arg &&
-	    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
-		/* caller wants stdout and stderr in the same file */
-		tgt[1U] = tgt[2U] = init_oredir(argi->stdout_arg);
-	} else {
-		if (argi->stdout_arg) {
-			tgt[1U] = init_oredir(argi->stdout_arg);
-		}
-		if (argi->stderr_arg) {
-			tgt[2U] = init_oredir(argi->stderr_arg);
-		}
-	}
-	return 0;
-}
-
 static size_t
 strfts(char *restrict buf, size_t bsz, struct timespec t)
 {
@@ -356,6 +302,7 @@ static struct tv_dur_s {
 	return res;
 }
 
+
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
 {
@@ -368,8 +315,8 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
 	strfts(tstmp2, sizeof(tstmp2), t->t_end);
 	real = ts_dur(t->t_sta, t->t_end);
-	user = tv_dur(t->rus_off.ru_utime, t->rus.ru_utime);
-	sys = tv_dur(t->rus_off.ru_stime, t->rus.ru_stime);
+	user = tv_dur((struct timeval){0}, t->rus.ru_utime);
+	sys = tv_dur((struct timeval){0}, t->rus.ru_stime);
 	cpu = ((double)(user.s + sys.s) + (double)(user.u + sys.u) * 1.e-6) /
 		((double)real.s + (double)real.n * 1.e-9) * 100.;
 
@@ -409,20 +356,9 @@ X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 }
 
 static int
-xdup2(int olfd, int nufd)
-{
-	if (UNLIKELY(dup2(olfd, nufd) < 0)) {
-		/* better close him, aye? */
-		close(nufd);
-		return -1;
-	}
-	return 0;
-}
-
-static int
 xsplice(int tgtfd, int srcfd)
 {
-#if defined HAVE_SPLICE || defined HAVE_SENDFILE
+#if defined HAVE_SENDFILE
 	struct stat st;
 	off_t totz;
 
@@ -435,22 +371,14 @@ xsplice(int tgtfd, int srcfd)
 		ECHS_ERR_LOG("cannot obtain size of file to splice");
 		return -1;
 	}
-#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
 
-#if defined HAVE_SPLICE
-	for (ssize_t nsp, tots = 0;
-	     tots < totz &&
-		     (nsp = splice(srcfd, NULL,
-				   tgtfd, NULL,
-				   totz - tots, SPLICE_F_MOVE)) >= 0;
-	     tots += nsp);
-#elif defined HAVE_SENDFILE
 	for (ssize_t nsf, tots = 0;
 	     tots < totz &&
 		     (nsf = sendfile(tgtfd, srcfd, NULL, totz - tots)) >= 0;
 	     tots += nsf);
-#else  /* !HAVE_SPLICE && !HAVE_SENDFILE */
-	with (char *buf[4096U]) {
+
+#else  /* !HAVE_SENDFILE */
+	with (char *buf[16U * 4096U]) {
 		ssize_t nrd;
 
 		while ((nrd = read(srcfd, buf, sizeof(buf))) > 0) {
@@ -462,145 +390,539 @@ xsplice(int tgtfd, int srcfd)
 			     totw += nwr);
 		}
 	}
-#endif	/* HAVE_SPLICE || HAVE_SENDFILE */
+#endif	/* HAVE_SENDFILE */
 	return 0;
 }
 
 
-static int
-run_task(echs_task_t t)
+/* callbacks for run task */
+struct data_s {
+	ev_io w;
+
+	int mailfd;
+	int filefd;
+};
+
+static void
+chld_cb(EV_P_ ev_child *c, int UNUSED(revents))
 {
-	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
-	pid_t mpid;
-	int mpip[2];
+	echs_task_t t = c->data;
+	t->xc = c->rstatus;
+	ev_child_stop(EV_A_ c);
+	ev_break(EV_A_ EVBREAK_ALL);
+	return;
+}
+
+static void
+data_cb(EV_P_ ev_io *w, int UNUSED(revents))
+{
+	int cfd = w->fd;
+	struct data_s *out = (void*)w;
+
+#if defined HAVE_SPLICE
+	const unsigned int fl = SPLICE_F_MOVE;
+	int mfd = out->mailfd;
+	ssize_t nsp;
+
+	/* here we move things to out->mailfd, being certain it's a
+	 * descriptor where mmap-like opers work on, then, in the
+	 * next step we use sendfile(2) to push it to out->filed if
+	 * applicable */
+	if ((nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, fl)) <= 0) {
+		/* nothing works, does it */
+		goto shut;
+	} else if (out->filefd >= 0) {
+		const int ofd = out->filefd;
+		off_t mfo = lseek(mfd, 0, SEEK_CUR);
+
+		assert(mfo >= nsp);
+		mfo -= nsp;
+# if defined HAVE_SENDFILE
+		(void)sendfile(ofd, mfd, &mfo, nsp);
+
+# else  /* !HAVE_SENDFILE */
+		char buf[16U * 4096U];
+
+		for (ssize_t nrd;
+		     (nrd = pread(mfd, buf, sizeof(buf), mfo)) > 0;
+		     mfo += nrd) {
+			for (ssize_t nwr, tot = 0;
+			     tot < nrd &&
+				     (nwr = write(
+					      ofd, buf + tot, nrd - tot)) > 0;
+			     tot += nwr);
+		}
+# endif	/* HAVE_SENDFILE */
+	}
+#else  /* !HAVE_SPLICE */
+/* do it the old-fashioned way */
+	char buf[16U * 4096U];
+	ssize_t nrd;
+	int ofd;
+
+	if ((nrd = read(cfd, buf, sizeof(buf))) <= 0) {
+		goto shut;
+	} else if ((ofd = out->filefd) >= 0) {
+		/* `tee'ing to the out file */
+		for (ssize_t nwr, tot = 0;
+		     tot < nrd && (nwr = write(ofd, buf + tot, nrd - tot)) > 0;
+		     tot += nwr);
+	}
+	/* definitely write stuff to mail fd though */
+	ofd = out->mailfd;
+	for (ssize_t nwr, tot = 0;
+	     tot < nrd && (nwr = write(ofd, buf + tot, nrd - tot)) > 0;
+	     tot += nwr);
+#endif	/* HAVE_SPLICE */
+	return;
+
+shut:
+	ev_io_stop(EV_A_ w);
+	close(cfd);
+	return;
+}
+
+
+static int
+prep_task(echs_task_t t)
+{
+/* we've got those 20 combinations between
+ * --mailout (Mo), --mailerr (Me) --stdout (So), stderr (Se)
+ *
+ *      So  Se   Mo  Me
+ *  1   0   0   [*] [*]   ofd = efd = mfd = X                rm X  .
+ *  2   0   0   [*] [ ]   ofd = mfd = X     efd = /dev/null  rm X  .
+ *  3   0   0   [ ] [*]   ofd = /dev/null   efd = mfd = X    rm X  .
+ *  4   0   0   [ ] [ ]   ofd = efd = mfd = /dev/null              .
+ *
+ *      So  Se   Mo  Me
+ *  5   0   F   [*] [*]   ofd = |  efd = |  mfd = X          rm X  .
+ *  6   0   F   [*] [ ]   ofd = mfd = X     efd = F          rm X  .
+ *  7   0   F   [ ] [*]   ofd = /dev/null   efd = mfd = F          .
+ *  8   0   F   [ ] [ ]   ofd = mfd = /dev/null   efd = F          .
+ *
+ *      So  Se   Mo  Me
+ *  9   F   0   [*] [*]   ofd = |  efd = |  mfd = X          rm X  .
+ * 10   F   0   [*] [ ]   ofd = mfd = F     efd = /dev/null        .
+ * 11   F   0   [ ] [*]   ofd = F     efd = mfd = X          rm X  .
+ * 12   F   0   [ ] [ ]   ofd = F     efd = mfd = /dev/null        .
+ *
+ *      So  Se   Mo  Me
+ * 13   F   F   [*] [*]   ofd = efd = mfd = F                      .
+ * 14   F   F   [*] [ ]   ofd = |     efd = |   mfd = X      rm X  .
+ * 15   F   F   [ ] [*]   ofd = |     efd = |   mfd = X      rm X  .
+ * 16   F   F   [ ] [ ]   ofd = efd = F     mfd = /dev/null        .
+ *
+ *      So  Se   Mo  Me
+ * 17   F1  F2  [*] [*]   ofd = |  efd = |  mfd = X          rm X  .
+ * 18   F1  F2  [*] [ ]   ofd = mfd = F1    efd = F2               .
+ * 19   F1  F2  [ ] [*]   ofd = F1    efd = mfd = F2               .
+ * 20   F1  F2  [ ] [ ]   ofd = F1    efd = F2                     .
+ *
+ * where 0 is /dev/null and Fi denotes a file name. */
+	static const char nulfn[] = "/dev/null";
+	static char tmpl[] = "/tmp/echsXXXXXXXX";
+	int nulfd = open(nulfn, O_WRONLY, 0600);
+	int nulfd_used = 0;
 	int rc = 0;
+
+#define NULFD	(nulfd_used++, nulfd)
+	/* put some sane defaults into t */
+	t->ifd = t->ofd = t->efd = t->mfd = -1;
+	t->opip = t->epip = t->teeo = t->teee = -1;
 
 	/* go to the pwd as specified */
 	if (argi->cwd_arg && chdir(argi->cwd_arg) < 0) {
-		return -1;
+		ECHS_ERR_LOG("\
+cannot change working directory to `%s': %s", argi->cwd_arg, strerror(errno));
+		rc = -1;
+		goto clo;
 	}
+
+	if (argi->stdin_arg) {
+		if ((t->ifd = open(argi->stdin_arg, O_RDONLY)) < 0) {
+			/* grrrr, are we supposed to proceed without? */
+			ECHS_ERR_LOG("\
+cannot open file `%s' for child input: %s", argi->stdin_arg, strerror(errno));
+			rc = -1;
+			goto clo;
+		}
+	} else if ((t->ifd = open(nulfn, O_RDONLY)) < 0) {
+		ECHS_ERR_LOG("\
+cannot open /dev/null for child input: %s", strerror(errno));
+		rc = -1;
+		goto clo;
+	}
+
+	if (argi->stdout_arg == NULL && argi->stderr_arg == NULL &&
+	    !argi->mailout_flag && !argi->mailerr_flag) {
+		/* this is fucking simple, R4 */
+		t->ofd = t->efd = NULFD;
+	} else if (argi->stdout_arg == NULL && argi->stderr_arg == NULL) {
+		/* this one is without pipes entirely, R1, R2, R3 */
+		int fd = mkstemp(tmpl);
+
+		if (argi->mailout_flag && argi->mailerr_flag) {
+			t->ofd = t->efd = t->mfd = fd;
+		} else if (argi->mailout_flag) {
+			t->ofd = t->mfd = fd;
+		} else if (argi->mailerr_flag) {
+			t->efd = t->mfd = fd;
+		}
+		/* mark t->mfn for deletion */
+		t->mfn = tmpl;
+		t->mrm = 1U;
+	} else if (!argi->mailout_flag && !argi->mailerr_flag) {
+		/* yay, we don't have to mail at all, R8, R12, R16, R20 */
+		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+
+		if (argi->stdout_arg) {
+			t->ofd = open(argi->stdout_arg, fl, 0644);
+		}
+		if (argi->stderr_arg && t->ofd >= 0 &&
+		    strcmp(argi->stdout_arg, argi->stderr_arg)) {
+			t->efd = open(argi->stderr_arg, fl, 0644);
+		} else if (argi->stderr_arg && t->ofd >= 0) {
+			t->efd = t->ofd;
+		}
+		/* postset with defaults */
+		if (t->ofd < 0) {
+			t->ofd = NULFD;
+		}
+		if (t->efd < 0) {
+			t->efd = NULFD;
+		}
+	} else if (argi->mailout_flag && argi->mailerr_flag &&
+		   argi->stdout_arg && argi->stderr_arg &&
+		   !strcmp(argi->stdout_arg, argi->stderr_arg)) {
+		/* this is simple again, R13 */
+		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+
+		t->ofd = t->efd = t->mfd = open(argi->stdout_arg, fl, 0644);
+		t->mfn = argi->stdout_arg;
+	} else if ((argi->mailout_flag == 0U) ^ (argi->mailerr_flag == 0U) &&
+		   (argi->stdout_arg == NULL || argi->stderr_arg == NULL ||
+		    strcmp(argi->stdout_arg, argi->stderr_arg))) {
+		/* all the pipe-less stuff, R6, R7, R10, R11, R18, R19 */
+		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
+
+		if (argi->stdout_arg == NULL && argi->mailout_flag) {
+			/* R6 */
+			t->ofd = t->mfd = mkstemp(tmpl);
+			t->mfn = tmpl;
+			t->mrm = 1U;
+		} else if (argi->stdout_arg == NULL) {
+			/* R7 */
+			assert(argi->stderr_arg);
+			assert(argi->mailerr_flag);
+			t->ofd = NULFD;
+			t->efd = t->mfd = open(argi->stderr_arg, fl, 0644);
+			t->mfn = argi->stderr_arg;
+		} else if (argi->stderr_arg == NULL && argi->mailout_flag) {
+			/* R10 */
+			t->efd = NULFD;
+			t->ofd = t->mfd = open(argi->stdout_arg, fl, 0644);
+			t->mfn = argi->stdout_arg;
+		} else if (argi->stderr_arg == NULL) {
+			/* R11 */
+			assert(argi->stdout_arg);
+			assert(argi->mailerr_flag);
+			t->efd = t->mfd = mkstemp(tmpl);
+			t->mfn = tmpl;
+			t->mrm = 1U;
+		} else if (argi->mailout_flag) {
+			/* R18 */
+			assert(argi->stdout_arg);
+			assert(argi->stderr_arg);
+			assert(!argi->mailerr_flag);
+			t->ofd = t->mfd = open(argi->stdout_arg, fl, 0644);
+			t->efd = open(argi->stderr_arg, fl, 0644);
+			t->mfn = argi->stdout_arg;
+		} else {
+			/* R19 */
+			assert(argi->stdout_arg);
+			assert(argi->stderr_arg);
+			assert(argi->mailerr_flag);
+			t->ofd = open(argi->stdout_arg, fl, 0644);
+			t->efd = t->mfd = open(argi->stderr_arg, fl, 0644);
+			t->mfn = argi->stderr_arg;
+		}
+	} else {
+		/* all the pipe-ful rest, R5, R9, R14, R15, R17 */
+		const int fl = O_RDWR | O_TRUNC | O_CREAT;
+		int opip[2] = {-1, -1};
+		int epip[2] = {-1, -1};
+
+		if (pipe(opip) < 0) {
+			rc = -1;
+			goto clo;
+		} else if (pipe(epip) < 0) {
+			close(opip[0U]);
+			close(opip[1U]);
+			rc = -1;
+			goto clo;
+		}
+		/* we assign pipe ends from the perspective of the child */
+		t->ofd = opip[1U];
+		t->opip = opip[0U];
+		t->efd = epip[1U];
+		t->epip = epip[0U];
+
+		/* mark parent side as close-on-exec */
+		(void)fcntl(t->opip, F_SETFD, FD_CLOEXEC);
+		(void)fcntl(t->epip, F_SETFD, FD_CLOEXEC);
+
+		/* and get us a file for the mailer */
+		t->mfd = mkstemp(tmpl);
+		t->mfn = tmpl;
+		t->mrm = 1U;
+
+		if (argi->stdout_arg && argi->stderr_arg &&
+		    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
+			/* R14, R15, turn the tee on its head */
+			if (argi->mailout_flag) {
+				/* R14 */
+				t->teeo = t->mfd;
+			} else if (argi->mailerr_flag) {
+				/* R15 */
+				t->teee = t->mfd;
+			} else {
+				abort();
+			}
+			t->mfd = open(argi->stdout_arg, fl, 0644);
+		} else if (argi->stdout_arg && argi->stderr_arg) {
+			/* R17 */
+			t->teeo = open(argi->stdout_arg, fl, 0644);
+			t->teee = open(argi->stderr_arg, fl, 0644);
+		} else if (argi->stdout_arg) {
+			/* R9 */
+			t->teeo = open(argi->stdout_arg, fl, 0644);
+		} else if (argi->stderr_arg) {
+			/* R5 */
+			t->teee = open(argi->stdout_arg, fl, 0644);
+		} else {
+			abort();
+		}
+	}
+clo:
+	if (!nulfd_used) {
+		close(nulfd);
+	}
+#undef NULFD
+	return rc;
+}
+
+static int
+run_task(echs_task_t t)
+{
+/* this is C for T->CMD >(> /path/stdout) 2>(> /path/stderr) &>(sendmail ...) */
+	const char *args[] = {"/bin/sh", "-c", t->cmd, NULL};
+	posix_spawn_file_actions_t fa;
+	int rc = 0;
+
 	/* use the specified shell */
 	if (argi->shell_arg) {
 		*args = argi->shell_arg;
 	}
 
-	/* fork off the actual beef process */
-	switch ((chld = vfork())) {
-		int outfd[3];
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		ECHS_ERR_LOG("\
+cannot initialise file actions: %s", strerror(errno));
+		return -1;
+	}
 
-	case -1:
-		/* yeah bollocks */
+	/* fiddle with the child's descriptors */
+	rc += posix_spawn_file_actions_adddup2(&fa, t->ifd, STDIN_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, t->ofd, STDOUT_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, t->efd, STDERR_FILENO);
+	rc += posix_spawn_file_actions_addclose(&fa, t->ifd);
+	rc += posix_spawn_file_actions_addclose(&fa, t->ofd);
+	if (t->efd != t->ofd) {
+		rc += posix_spawn_file_actions_addclose(&fa, t->efd);
+	}
+
+	/* spawn the actual beef process */
+	if (posix_spawn(&chld, *args, &fa, NULL, deconst(args), t->env) < 0) {
+		ECHS_ERR_LOG("cannot spawn `%s': %s", *args, strerror(errno));
 		rc = -1;
-		break;
-
-	case 0:
-		/* child */
-
-		/* deal with the output */
-		if (UNLIKELY(init_redirs(outfd) < 0)) {
-			/* fuck, something's wrong */
-			_exit(EXIT_FAILURE);
-		}
-		xdup2(outfd[0U], STDIN_FILENO);
-		xdup2(outfd[1U], STDOUT_FILENO);
-		xdup2(outfd[2U], STDERR_FILENO);
-
-		rc = execve(*args, deconst(args), t->env);
-		_exit(rc);
-		/* not reached */
-
-	default:
-		/* parent */
+	} else {
 		ECHS_NOTI_LOG("starting `%s' -> process %d", t->cmd, chld);
-		clock_gettime(CLOCK_REALTIME, &t->t_sta);
-		getrusage(RUSAGE_SELF, &t->rus_off);
-
-		while (waitpid(chld, &t->xc, 0) != chld);
-		/* unset timeouts */
-		alarm(0);
-		ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
-		chld = 0;
-
-		clock_gettime(CLOCK_REALTIME, &t->t_end);
-		getrusage(RUSAGE_CHILDREN, &t->rus);
-		break;
 	}
 
-	/* spawn sendmail */
-	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
-		/* no mail */
-		mail_hdrs(STDOUT_FILENO, t);
-		return rc;
-	} else if (pipe(mpip) < 0) {
-		/* shit, better fuck off? */
-		return rc;
+	/* also get rid of the file actions resources */
+	posix_spawn_file_actions_destroy(&fa);
+
+	/* close descriptors that were good for our child only */
+	close(t->ifd);
+	close(t->ofd);
+	if (t->efd != t->ofd) {
+		close(t->efd);
 	}
+	t->ifd = t->ofd = t->efd = -1;
 
-	switch ((mpid = vfork())) {
-		int fd;
+	/* parent */
+	clock_gettime(CLOCK_REALTIME, &t->t_sta);
 
-	case -1:
-		/* yeah bollocks */
-		rc = -1;
-		break;
+	/* let's be quick and set up an event loop */
+	if (chld > 0) {
+		EV_P = ev_default_loop(EVFLAG_AUTO);
+		ev_child c;
 
-	case 0:
-		/* child */
-		close(mpip[1U]);
-		xdup2(mpip[0U], STDIN_FILENO);
-		rc = execve("/usr/sbin/sendmail", _mcmd, t->env);
-		_exit(rc);
-		/* not reached */
+		ev_child_init(&c, chld_cb, chld, false);
+		c.data = t;
+		ev_child_start(EV_A_ &c);
 
-	default:
-		/* parent */
-		close(mpip[0U]);
-		mail_hdrs(mpip[1U], t);
+		/* rearrange the descriptors again, for the mailer */
+		if (t->opip >= 0 || t->epip >= 0) {
+			struct data_s o = {
+				.mailfd = t->mfd,
+				.filefd = t->teeo,
+			};
+			struct data_s e = {
+				.mailfd = t->mfd,
+				.filefd = t->teee,
+			};
 
-		if (argi->stdout_arg && argi->stderr_arg &&
-		    !strcmp(argi->stdout_arg, argi->stderr_arg)) {
-			/* joint file */
-			const int fl = O_RDONLY;
-			const char *fn = argi->stdout_arg;
+			assert(t->opip >= 0);
+			assert(t->epip >= 0);
 
-			if ((fd = open(fn, fl)) < 0) {
-				/* fuck */
-				goto send;
-			}
-			xsplice(mpip[1U], fd);
-			close(fd);
-		} else {
-			if (argi->stdout_arg) {
-				const int fl = O_RDONLY;
+			ev_io_init(&o.w, data_cb, t->opip, EV_READ);
+			ev_io_start(EV_A_ &o.w);
 
-				if ((fd = open(argi->stdout_arg, fl)) < 0) {
-					/* shit */
-					goto send;
-				}
-				xsplice(mpip[1U], fd);
-				close(fd);
-				if ((fd = open(argi->stderr_arg, fl)) < 0) {
-					/* even more shit */
-					goto send;
-				}
-				xsplice(mpip[1U], fd);
-				close(fd);
-			}
+			ev_io_init(&e.w, data_cb, t->epip, EV_READ);
+			ev_io_start(EV_A_ &e.w);
 		}
 
-	send:
-		/* send off the mail */
-		close(mpip[1U]);
+		ev_loop(EV_A_ 0);
 
-		while (waitpid(mpid, &rc, 0) != mpid);
-		break;
+		ev_break(EV_A_ EVBREAK_ALL);
+		ev_loop_destroy(EV_A);
 	}
+
+	/* close the rest */
+	if (t->opip >= 0 || t->epip >= 0) {
+		close(t->mfd);
+		t->mfd = -1;
+
+		if (t->teeo >= 0) {
+			close(t->teeo);
+		}
+		if (t->teee >= 0) {
+			close(t->teee);
+		}
+
+		/* t->opip and t->epip should have encountered EOF
+		 * but just to be sure */
+		if (t->opip >= 0) {
+			close(t->opip);
+		}
+		if (t->epip >= 0) {
+			close(t->epip);
+		}
+
+		/* make all them descriptors unknown from now on */
+		t->teeo = t->teee = t->opip = t->epip = -1;
+	}
+
+	/* unset timeouts */
+	alarm(0);
+	ECHS_NOTI_LOG("process %d finished with %d", chld, t->xc);
+	chld = 0;
+
+	clock_gettime(CLOCK_REALTIME, &t->t_end);
+	getrusage(RUSAGE_CHILDREN, &t->rus);
 	return rc;
 }
 
 static int
+mail_task(echs_task_t t)
+{
+/* send our findings from task T via mail */
+	static const char mailcmd[] = "/usr/sbin/sendmail";
+	int mpip[2] = {-1, -1};
+	posix_spawn_file_actions_t fa;
+	int mfd = -1;
+	int rc = 0;
+
+	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
+		/* no mail */
+		mfd = STDOUT_FILENO;
+		goto mail;
+	} else if (pipe(mpip) < 0) {
+		ECHS_ERR_LOG("\
+cannot set up pipe to mailer: %s", strerror(errno));
+		return -1;
+	}
+
+	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		ECHS_ERR_LOG("\
+cannot initialise file actions: %s", strerror(errno));
+		rc = -1;
+	} else {
+		/* we're all set for the big forking */
+		posix_spawn_file_actions_adddup2(&fa, mpip[0U], STDIN_FILENO);
+		posix_spawn_file_actions_addclose(&fa, mpip[0U]);
+
+		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
+			ECHS_ERR_LOG("\
+cannot spawn `sendmail': %s", strerror(errno));
+			rc = -1;
+		}
+
+		/* parent */
+		posix_spawn_file_actions_destroy(&fa);
+	}
+	/* we're not interested in the read end of the descriptor */
+	close(mpip[0U]);
+
+	if (chld > 0) {
+	mail:
+		/* now it's time to send the actual mail */
+		mail_hdrs(mfd, t);
+
+		/* joint file */
+		if_with (int fd, (fd = open(t->mfn, O_RDONLY)) >= 0) {
+			xsplice(mfd, fd);
+			close(fd);
+		}
+	}
+
+	/* send off the mail by closing the in-pipe */
+	close(mfd);
+
+	if (chld > 0) {
+		int mailrc;
+
+		while (waitpid(chld, &mailrc, 0) != chld);
+		if (mailrc) {
+			rc = -1;
+		}
+	}
+	/* we're not monitoring anything anymore */
+	chld = 0;
+	return rc;
+}
+
+static void
+free_task(echs_task_t t)
+{
+/* free resources associated with T
+ * there should be no descriptors open
+ * but we might want to rm temp files */
+	if (t->mrm) {
+		assert(t->mfn);
+		unlink(t->mfn);
+	}
+	return;
+}
+
+
+static int
 daemonise(void)
 {
+	static char nulfn[] = "/dev/null";
+	int nulfd;
 	pid_t pid;
 
 	switch (pid = fork()) {
@@ -614,17 +936,36 @@ daemonise(void)
 		exit(0);
 	}
 
-	if (setsid() == -1) {
+	if (UNLIKELY(setsid() < 0)) {
 		return -1;
 	}
 
-	close(STDIN_FILENO);
-	close(STDOUT_FILENO);
-	close(STDERR_FILENO);
+	if (UNLIKELY((nulfd = open(nulfn, O_RDONLY)) < 0)) {
+		/* nope, consider us fucked, we can't even print
+		 * the error message anymore */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
+		/* yay, just what we need right now */
+		return -1;
+	}
+	/* make sure nobody sees what we've been doing */
+	close(nulfd);
+
+	if (UNLIKELY((nulfd = open(nulfn, O_WRONLY, 0600)) < 0)) {
+		/* bugger */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
+		/* nah, that's just not good enough */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
+		/* still shit */
+		return -1;
+	}
+	/* make sure we only have the copies around */
+	close(nulfd);
 	return 0;
 }
 
-
 int
 main(int argc, char *argv[])
 {
@@ -691,12 +1032,32 @@ cannot set timeout, job execution will be unbounded");
 
 	/* main loop */
 	with (struct echs_task_s t = {argi->command_arg}) {
+		/* prepare */
+		if (prep_task(&t) < 0) {
+			rc = 127;
+			goto clean_up;
+		}
 		/* set out sigs loose */
 		unblock_sigs();
 		/* and here we go */
-		run_task(&t);
-		/* not reached */
+		if (run_task(&t) < 0) {
+			/* bollocks */
+			rc = 127;
+			goto clean_up;
+		}
+		/* no disruptions please */
 		block_sigs();
+		/* brag about our findings */
+		if (mail_task(&t) < 0) {
+			rc = 127;
+			goto clean_up;
+		}
+
+		/* finally, inherit task's return code */
+		rc = WEXITSTATUS(t.xc);
+
+	clean_up:
+		free_task(&t);
 	}
 
 	/* stop them log files */

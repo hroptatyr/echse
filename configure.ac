@@ -65,6 +65,7 @@ SXE_CHECK_LIBLTDL
 
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
+AC_CHECK_FUNCS([tee])
 
 AC_CHECK_HEADERS([ucred.h])
 AC_CHECK_HEADERS([sys/ucred.h])
