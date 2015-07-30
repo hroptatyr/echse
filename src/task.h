@@ -66,6 +66,13 @@ struct echs_task_s {
 	/* the organiser and attendees of the whole shebang */
 	const char *org;
 	struct strlst_s *att;
+
+	/* input and output files */
+	const char *in;
+	const char *out;
+	const char *err;
+	unsigned int mailout:1U;
+	unsigned int mailerr:1U;
 };
 
 

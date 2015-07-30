@@ -801,6 +801,35 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		ve->t.run_as.wd = strndup(vp, ep - vp);
 		break;
 
+	case FLD_IFILE:
+		if (ve->t.in != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.in = strndup(vp, ep - vp);
+		break;
+
+	case FLD_OFILE:
+		if (ve->t.out != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.out = strndup(vp, ep - vp);
+		ve->t.mailout = 1U;
+		break;
+
+	case FLD_EFILE:
+		if (ve->t.err != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.err = strndup(vp, ep - vp);
+		ve->t.mailerr = 1U;
+		break;
+
 	case FLD_SHELL:
 		if (ve->t.run_as.sh != NULL) {
 			/* only the first shell wins */
