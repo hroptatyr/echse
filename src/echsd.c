@@ -740,21 +740,21 @@ static pid_t
 run_task(_task_t t, bool dtchp)
 {
 /* assumes ev_loop_fork() has been called */
-	static char fileX[] = "/tmp/foo";
 	static char uid[16U], gid[16U];
 	static char *args_proto[] = {
 		[0] = "echsx",
 		[1] = "-c", NULL,
-		[3] = "--stdout", fileX,
-		[5] = "--stderr", fileX,
-		[7] = "--uid", uid,
-		[9] = "--gid", gid,
-		[11] = "--cwd", NULL,
-		[13] = "--shell", NULL,
-		[15] = "--mailout",
-		[16] = "--mailerr",
-		[17] = "--mailfrom",
-		[20] = "-n",
+		[3] = "--uid", uid,
+		[5] = "--gid", gid,
+		[7] = "--cwd", NULL,
+		[9] = "--shell", NULL,
+		[11] = "--mailfrom", NULL,
+		[13] = "--mailout",
+		[14] = "--mailerr",
+		[15] = "--stdin", NULL,
+		[17] = "--stdout", NULL,
+		[19] = "--stderr", NULL,
+		[21] = "-n",
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -765,6 +765,7 @@ run_task(_task_t t, bool dtchp)
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
+	args[2U] = deconst(t->task->cmd);
 	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
@@ -781,18 +782,35 @@ run_task(_task_t t, bool dtchp)
 		if (!run_as.sh) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[12U] = deconst(run_as.wd);
-		args[14U] = deconst(run_as.sh);
+		args[8U] = deconst(run_as.wd);
+		args[10U] = deconst(run_as.sh);
 	}
-	args[2U] = deconst(t->task->cmd);
 	if (t->task->org) {
-		args[18U] = deconst(t->task->org);
+		args[12U] = deconst(t->task->org);
 	} else if (natt) {
-		args[18U] = t->task->att->l[0U];
+		args[12U] = t->task->att->l[0U];
 	} else {
-		args[18U] = "echse";
+		args[12U] = "echse";
 	}
-	with (size_t i = 19U) {
+	with (size_t i = 13U) {
+		if (t->task->mailout) {
+			args[i++] = "--mailout";
+		}
+		if (t->task->mailerr) {
+			args[i++] = "--mailerr";
+		}
+		if (t->task->in) {
+			args[i++] = args[15];
+			args[i++] = deconst(t->task->in);
+		}
+		if (t->task->out) {
+			args[i++] = args[17];
+			args[i++] = deconst(t->task->out);
+		}
+		if (t->task->err) {
+			args[i++] = args[19];
+			args[i++] = deconst(t->task->err);
+		}
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
 			args[i++] = t->task->att->l[j];
