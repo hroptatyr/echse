@@ -743,13 +743,18 @@ run_task(_task_t t, bool dtchp)
 	static char fileX[] = "/tmp/foo";
 	static char uid[16U], gid[16U];
 	static char *args_proto[] = {
-		"echsx",
-		"-c", NULL,
-		"--stdout", fileX, "--stderr", fileX,
-		"--uid", uid, "--gid", gid,
-		"--cwd", NULL, "--shell", NULL,
-		"--mailfrom", NULL,
-		"-n",
+		[0] = "echsx",
+		[1] = "-c", NULL,
+		[3] = "--stdout", fileX,
+		[5] = "--stderr", fileX,
+		[7] = "--uid", uid,
+		[9] = "--gid", gid,
+		[11] = "--cwd", NULL,
+		[13] = "--shell", NULL,
+		[15] = "--mailout",
+		[16] = "--mailerr",
+		[17] = "--mailfrom",
+		[20] = "-n",
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -781,13 +786,13 @@ run_task(_task_t t, bool dtchp)
 	}
 	args[2U] = deconst(t->task->cmd);
 	if (t->task->org) {
-		args[16U] = deconst(t->task->org);
+		args[18U] = deconst(t->task->org);
 	} else if (natt) {
-		args[16U] = t->task->att->l[0U];
+		args[18U] = t->task->att->l[0U];
 	} else {
-		args[16U] = "echse";
+		args[18U] = "echse";
 	}
-	with (size_t i = 17U) {
+	with (size_t i = 19U) {
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
 			args[i++] = t->task->att->l[j];
