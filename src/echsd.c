@@ -1338,7 +1338,7 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 	EV_P = ctx->loop;
 	ncred_t c = compl_uid(u);
 
-	if (UNLIKELY(c.sh == NULL || c.wd == NULL)) {
+	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
 		return;
