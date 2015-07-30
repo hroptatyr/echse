@@ -1,5 +1,9 @@
 language: c
 
+env:
+  global:
+    - secure: "qIyxfoi6sDAu+bqx8fBsEHDQjI1myHFFJQqmm/03kGTZ8iuFMuP0q64xmNhq11t6xnB/XUuNJkw2zKizM2cTHCs3T6wElQ+GJ8ImUoSF/VDOjo1b/KLbar19zh5xO14adtlEsR6M/SKcEErwr7Mf8kHSNfLIjREm8lZn5jPN+tI="
+
 compiler:
   - gcc
   - clang
@@ -24,7 +28,18 @@ branches:
   only:
     - master
     - next
+    - coverity-scan
 
 notifications:
   email:
     - devel@fresse.org
+
+addons:
+  coverity_scan:
+    project:
+      name: "hroptatyr/echse"
+      description: "echse coverity scan"
+    notification_email: devel@fresse.org
+    build_command_prepend: "./configure"
+    build_command: "make all check"
+    branch_pattern: coverity_scan
