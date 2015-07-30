@@ -817,7 +817,6 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		/* bang straight into the proto task */
 		ve->t.out = strndup(vp, ep - vp);
-		ve->t.mailout = 1U;
 		break;
 
 	case FLD_EFILE:
@@ -827,6 +826,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		/* bang straight into the proto task */
 		ve->t.err = strndup(vp, ep - vp);
+		break;
+
+	case FLD_MOUT:
+		ve->t.mailout = 1U;
+		break;
+
+	case FLD_MERR:
 		ve->t.mailerr = 1U;
 		break;
 
