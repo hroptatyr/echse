@@ -1547,12 +1547,14 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
+static echs_evuid_t uid_evical_vevent(echs_const_evstrm_t);
 static void prnt_evical_vevent(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
+	.uid = uid_evical_vevent,
 	.prnt1 = prnt_evical_vevent,
 };
 
@@ -1598,6 +1600,18 @@ clone_evical_vevent(echs_const_evstrm_t s)
 		res->ev[i].task = echs_task_clone(res->ev[i].task);
 	}
 	return (echs_evstrm_t)res;
+}
+
+static echs_evuid_t
+uid_evical_vevent(echs_const_evstrm_t s)
+{
+	const struct evical_s *this = (const struct evical_s*)s;
+	const size_t i = this->i;
+
+	if (UNLIKELY(i >= this->nev)) {
+		return 0U;
+	}
+	return this->ev[i].task->uid;
 }
 
 static echs_event_t
@@ -1653,6 +1667,7 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
+static echs_evuid_t uid_evrrul(echs_const_evstrm_t);
 static void prnt_evrrul1(echs_const_evstrm_t);
 static void prnt_evrrulm(const echs_const_evstrm_t s[], size_t n);
 
@@ -1660,6 +1675,7 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
+	.uid = uid_evrrul,
 	.prnt1 = prnt_evrrul1,
 	.prntm = prnt_evrrulm,
 };
@@ -1802,6 +1818,14 @@ clone_evrrul(echs_const_evstrm_t s)
 		clon->xd = clon_dtlst(this->xd);
 	}
 	return (echs_evstrm_t)clon;
+}
+
+static echs_evuid_t
+uid_evrrul(echs_const_evstrm_t s)
+{
+	const struct evrrul_s *this = (const struct evrrul_s*)s;
+
+	return this->e.task->uid;
 }
 
 /* this should be somewhere else, evrrul.c maybe? */
