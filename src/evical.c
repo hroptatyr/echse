@@ -1524,6 +1524,26 @@ prnt_ev(echs_event_t e)
 			puts(*ap);
 		}
 	}
+	if (e.task->in) {
+		fputs("X-ECHS-IFILE:", stdout);
+		puts(e.task->in);
+	}
+	if (e.task->out) {
+		fputs("X-ECHS-OFILE:", stdout);
+		puts(e.task->out);
+	}
+	if (e.task->err) {
+		fputs("X-ECHS-EFILE:", stdout);
+		puts(e.task->err);
+	}
+	if (e.task->run_as.sh) {
+		fputs("X-ECHS-SHELL:", stdout);
+		puts(e.task->run_as.sh);
+	}
+	if (e.task->run_as.wd) {
+		fputs("LOCATION:", stdout);
+		puts(e.task->run_as.wd);
+	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
 		prnt_stset(e.sts);
