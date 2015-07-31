@@ -1,0 +1,39 @@
+%{
+typedef enum {
+	ICAL_METH_UNK,
+	ICAL_METH_PUBLISH,
+	ICAL_METH_REQUEST,
+	ICAL_METH_REPLY,
+	ICAL_METH_ADD,
+	ICAL_METH_CANCEL,
+	ICAL_METH_REFRESH,
+	ICAL_METH_COUNTER,
+	ICAL_METH_DECLINECOUNTER,
+} ical_meth_t;
+
+%}
+%7bit
+%readonly-tables
+%enum
+%switch=1
+%struct-type
+%define slot-name keystr
+%define hash-function-name __evrrul_key_hash
+%define lookup-function-name __evrrul_key
+%null-strings
+%compare-strncmp
+
+struct ical_meth_cell_s {
+	const char *keystr;
+	ical_meth_t key;
+};
+
+%%
+PUBLISH, ICAL_METH_PUBLISH
+REQUEST, ICAL_METH_REQUEST
+REPLY, ICAL_METH_REPLY
+ADD, ICAL_METH_ADD
+CANCEL, ICAL_METH_CANCEL
+REFRESH, ICAL_METH_REFRESH
+COUNTER, ICAL_METH_COUNTER
+DECLINECOUNTER, ICAL_METH_DECLINECOUNTER

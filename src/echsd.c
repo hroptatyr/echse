@@ -877,6 +877,10 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 typedef enum {
 	ECHS_CMD_UNK,
 	ECHS_CMD_LIST,
+	ECHS_CMD_CREA,
+	ECHS_CMD_REPL,
+	ECHS_CMD_UPDT,
+	ECHS_CMD_DELE,
 
 	/* to indicate that we need more data to finish the command */
 	ECHS_CMD_MORE = -1
@@ -977,6 +981,15 @@ handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
 	switch (param->cmd) {
 	case ECHS_CMD_LIST:
 		nwr = cmd_list(fd, &param->list);
+		break;
+
+	case ECHS_CMD_CREA:
+		break;
+	case ECHS_CMD_REPL:
+		break;
+	case ECHS_CMD_UPDT:
+		break;
+	case ECHS_CMD_DELE:
 		break;
 
 	case ECHS_CMD_MORE:
