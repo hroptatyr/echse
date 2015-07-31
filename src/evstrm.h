@@ -51,6 +51,8 @@ struct echs_evstrm_class_s {
 	echs_evstrm_t(*clone)(echs_const_evstrm_t);
 	/** dtor method */
 	void(*free)(echs_evstrm_t);
+	/** uid method */
+	echs_evuid_t(*uid)(echs_const_evstrm_t);
 	/** printer methods */
 	void(*prnt1)(echs_const_evstrm_t);
 	void(*prntm)(const echs_const_evstrm_t s[], size_t n);
@@ -116,6 +118,15 @@ static inline echs_evstrm_t
 clone_echs_evstrm(echs_evstrm_t s)
 {
 	return s->class->clone(s);
+}
+
+static inline echs_evuid_t
+echs_evstrm_uid(echs_evstrm_t s)
+{
+	if (s->class->uid != NULL) {
+		return s->class->uid(s);
+	}
+	return 0U;
 }
 
 #endif	/* INCLUDED_evstrm_h_ */
