@@ -35,6 +35,7 @@ libechse_la_SOURCES += task.c task.h
 libechse_la_SOURCES += strlst.c strlst.h
 libechse_la_SOURCES += bufpool.c bufpool.h
 libechse_la_SOURCES += event.c event.h
+libechse_la_SOURCES += oid.h
 libechse_la_SOURCES += instruc.h
 libechse_la_SOURCES += evstrm.c evstrm.h
 libechse_la_SOURCES += evical.c evical.h

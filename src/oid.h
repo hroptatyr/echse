@@ -1,4 +1,4 @@
-/*** instruc.h -- instructions over event streams
+/*** oid.h -- object identifiers
  *
  * Copyright (C) 2014-2015 Sebastian Freundt
  *
@@ -34,47 +34,21 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instruc_h_
-#define INCLUDED_instruc_h_
+#if !defined INCLUDED_oid_h_
+#define INCLUDED_oid_h_
 
-#include "instant.h"
-#include "task.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-typedef struct echs_instruc_s echs_instruc_t;
+typedef uintptr_t echs_oid_t;
 
-typedef enum {
-	INSVERB_UNK,
-	/**
-	 * Create task T with oid O.
-	 * If O == 0 generate a oid on the fly. */
-	INSVERB_CREA,
-	/**
-	 * List all tasks (O == 0) or task with oid O.
-	 * T or S and I are unused. */
-	INSVERB_LIST,
-	/**
-	 * Update task with oid O to specifics in T. */
-	INSVERB_UPDT,
-	/**
-	 * Reschedule task with oid O to S.
-	 * To reschedule one recurrence instance in O specify I. */
-	INSVERB_RESC,
-	/**
-	 * Unschedule (cancel) task with oid O.
-	 * To unschedule one recurrence instance in O specify I. */
-	INSVERB_UNSC,
-} echs_insverb_t;
+
+/* convenience */
+static inline __attribute__((const, pure)) bool
+echs_oid_eq_p(echs_oid_t o1, echs_oid_t o2)
+{
+	return o1 == o2;
+}
 
-struct echs_instruc_s {
-	echs_insverb_t v;
-	echs_toid_t o;
-	union {
-		echs_task_t t;
-		struct {
-			echs_evstrm_t s;
-			echs_instant_t i;
-		};
-	};
-};
-
-#endif	/* INCLUDED_instruc_h_ */
+#endif	/* INCLUDED_oid_h_ */

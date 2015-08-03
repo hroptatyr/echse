@@ -42,9 +42,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "strlst.h"
+#include "evstrm.h"
+#include "oid.h"
 
 typedef const struct echs_task_s *echs_task_t;
-typedef uintptr_t echs_evuid_t;
+typedef echs_oid_t echs_toid_t;
 
 typedef struct {
 	const char *u;
@@ -54,7 +56,10 @@ typedef struct {
 } cred_t;
 
 struct echs_task_s {
-	echs_evuid_t uid;
+	echs_toid_t oid;
+
+	/* stream of instants when to run this task */
+	echs_evstrm_t strm;
 
 	/* command, environment */
 	const char *cmd;
@@ -84,7 +89,7 @@ extern void free_echs_task(echs_task_t);
 static inline __attribute__((const, pure)) bool
 echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 {
-	return t1 == t2 || t1->uid == t2->uid;
+	return t1 == t2 || (t1 && t2 && t1->oid == t2->oid);
 }
 
 #endif	/* INCLUDED_task_h_ */
