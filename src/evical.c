@@ -59,6 +59,7 @@
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 #include "evmrul-gp.c"
+#include "evmeth-gp.c"
 
 #if !defined assert
 # define assert(x)
@@ -103,6 +104,9 @@ struct ical_vevent_s {
 
 	/* proto typical task */
 	struct echs_task_s t;
+
+	/* just to transport the method specified */
+	ical_meth_t m;
 
 	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
@@ -892,9 +896,16 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			add1_to_urlst(&ve->mf, u);
 		}
 		break;
-	case FLD_METH:
+	case FLD_METH:;
 		/* oooh, they've been so kind as to give us precise
 		 * instructions ... */
+		const struct ical_meth_cell_s *m;
+
+		if ((lp++, m = __evical_meth(lp, llen - (lp - line))) == NULL) {
+			/* nope, no methods given */
+			break;
+		}
+		ve->m = m->meth;
 		break;
 	default:
 		break;
@@ -912,6 +923,8 @@ struct ical_parser_s {
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
+
+	echs_instruc_t protoi;
 
 	/* the input buffer we're currently working on */
 	const char *buf;
@@ -1018,10 +1031,10 @@ _ical_proc(struct ical_parser_s p[static 1U])
 
 	default:
 	case ST_UNK:
-		/* check if it's a X-GA-* line, we like those */
-		snarf_pro(&p->globve, sp, sz);
 		/*@fallthrough@*/
 	case ST_BODY:
+		/* check for globals */
+		snarf_pro(&p->globve, sp, sz);
 		/* check if line is a new vevent */
 		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
 			/* yep, rinse our bucket */
@@ -2072,6 +2085,53 @@ echs_read_rrul(const char *s, size_t z)
 	return snarf_rrule(s, z);
 }
 
+static echs_task_t
+make_task(struct ical_vevent_s *ve)
+{
+	struct echs_task_s *res;
+	echs_evstrm_t s;
+
+	if (UNLIKELY((res = malloc(sizeof(*res))) == NULL)) {
+		return NULL;
+	}
+
+	if (!ve->rr.nr && !ve->rd.ndt) {
+		/* not an rrule but a normal vevent */
+
+		/* free all the bits and bobs that
+		 * might have been added */
+		if (ve->xr.nr) {
+			free(ve->xr.r);
+		}
+		if (ve->xd.ndt) {
+			free(ve->xd.dt);
+		}
+		if (ve->mr.nr) {
+			free(ve->mr.r);
+		}
+		if (ve->mf.nu) {
+			free(ve->mf.u);
+		}
+		assert(ve->rr.r == NULL);
+		s = make_evical_vevent(&ve->e, 1U);
+	} else {
+		/* it's an rrule */
+		echs_instant_t *xd;
+
+		/* check for exdates here, and sort them */
+		if (UNLIKELY(ve->xd.ndt > 1UL &&
+			     (xd = ve->xd.dt) != NULL)) {
+			echs_instant_sort(xd, ve->xd.ndt);
+		}
+
+		s = make_evrrul(*ve);
+	}
+	/* now massage the task specific fields in VE into an echs_task_t */
+	*res = ve->t;
+	res->strm = s;
+	return res;
+}
+
 
 /* the push parser,
  * one day the file parser will be implemented in terms of this */
@@ -2095,11 +2155,11 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 	return 0;
 }
 
-echs_evstrm_t
+echs_instruc_t
 echs_evical_pull(ical_parser_t p[static 1U])
 {
 	struct ical_vevent_s *ve;
-	echs_evstrm_t res = NULL;
+	echs_task_t t = NULL;
 
 	/* just let _ical_pull do the yakka and we split everything
 	 * into evical vevents and evrruls */
@@ -2114,59 +2174,16 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		_ical_fini(*p);
 		free(*p);
 		*p = NULL;
-	} else if (!ve->rr.nr && !ve->rd.ndt) {
-		/* not an rrule but a normal vevent */
-
-		/* free all the bits and bobs that
-		 * might have been added */
-		if (ve->xr.nr) {
-			free(ve->xr.r);
-		}
-		if (ve->xd.ndt) {
-			free(ve->xd.dt);
-		}
-		if (ve->mr.nr) {
-			free(ve->mr.r);
-		}
-		if (ve->mf.nu) {
-			free(ve->mf.u);
-		}
-		assert(ve->rr.r == NULL);
-		res = make_evical_vevent(&ve->e, 1U);
 	} else {
-		/* it's an rrule */
-		echs_instant_t *xd;
-
-		/* check for exdates here, and sort them */
-		if (UNLIKELY(ve->xd.ndt > 1UL &&
-			     (xd = ve->xd.dt) != NULL)) {
-			echs_instant_sort(xd, ve->xd.ndt);
-		}
-
-		res = make_evrrul(*ve);
+		t = make_task(ve);
 	}
-	return res;
+	return (echs_instruc_t){INSVERB_UNK, 0U, .t = t};
 }
 
 echs_instruc_t
-echs_instruc_pull(ical_parser_t p[static 1U])
-{
-	echs_evstrm_t s;
-
-	if (UNLIKELY(*p == NULL)) {
-		/* how brave */
-		;
-	} else if (UNLIKELY((s = echs_evical_pull(p)) != NULL)) {
-		/* ooooh */
-		;
-	}
-	return (echs_instruc_t){INSVERB_UNK};
-}
-
-echs_evstrm_t
 echs_evical_last_pull(ical_parser_t p[static 1U])
 {
-	echs_evstrm_t res = echs_evical_pull(p);
+	echs_instruc_t res = echs_evical_pull(p);
 
 	if (LIKELY(*p != NULL)) {
 		_ical_fini(*p);

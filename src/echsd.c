@@ -104,8 +104,7 @@ struct _task_s {
 	ev_child c;
 
 	/* this is the task as understood by libechse */
-	echs_task_t task;
-	echs_evstrm_t strm;
+	echs_task_t t;
 
 	/* number of runs */
 	size_t nrun;
@@ -758,15 +757,15 @@ run_task(_task_t t, bool dtchp)
 		NULL
 	};
 	/* use a VLA for the real args */
-	const size_t natt = t->task->att ? t->task->att->nl : 0U;
+	const size_t natt = t->t->att ? t->t->att->nl : 0U;
 	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->task->env);
+	char *const *env = deconst(t->t->env);
 	pid_t r;
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	args[2U] = deconst(t->task->cmd);
-	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
+	args[2U] = deconst(t->t->cmd);
+	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
 		}
@@ -785,35 +784,35 @@ run_task(_task_t t, bool dtchp)
 		args[8U] = deconst(run_as.wd);
 		args[10U] = deconst(run_as.sh);
 	}
-	if (t->task->org) {
-		args[12U] = deconst(t->task->org);
+	if (t->t->org) {
+		args[12U] = deconst(t->t->org);
 	} else if (natt) {
-		args[12U] = t->task->att->l[0U];
+		args[12U] = t->t->att->l[0U];
 	} else {
 		args[12U] = "echse";
 	}
 	with (size_t i = 13U) {
-		if (t->task->mailout) {
+		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
-		if (t->task->mailerr) {
+		if (t->t->mailerr) {
 			args[i++] = "--mailerr";
 		}
-		if (t->task->in) {
+		if (t->t->in) {
 			args[i++] = args[15];
-			args[i++] = deconst(t->task->in);
+			args[i++] = deconst(t->t->in);
 		}
-		if (t->task->out) {
+		if (t->t->out) {
 			args[i++] = args[17];
-			args[i++] = deconst(t->task->out);
+			args[i++] = deconst(t->t->out);
 		}
-		if (t->task->err) {
+		if (t->t->err) {
 			args[i++] = args[19];
-			args[i++] = deconst(t->task->err);
+			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
-			args[i++] = t->task->att->l[j];
+			args[i++] = t->t->att->l[j];
 		}
 		if (!dtchp) {
 			args[i++] = "-n";
@@ -1171,7 +1170,7 @@ resched(ev_periodic *w, ev_tstamp now)
  * This will be called BEFORE the actual callback is called so we have
  * to defer unschedule operations by one. */
 	_task_t t = (void*)w;
-	echs_evstrm_t s = t->strm;
+	echs_evstrm_t s = t->t->strm;
 	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
 
@@ -1362,9 +1361,9 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
+_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
 {
-	_task_t t;
+	_task_t res;
 	EV_P = ctx->loop;
 	ncred_t c = compl_uid(u);
 
@@ -1372,43 +1371,22 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
 		return;
-	} else if (UNLIKELY((t = make_task()) == NULL)) {
+	} else if (UNLIKELY((res = make_task()) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
 		return;
 	}
 
-	/* store the stream */
-	t->strm = s;
+	/* bang libechse task into our _task */
+	res->t = t;
 	/* run all tasks as U and the default group of U */
-	t->dflt_cred.u = c.u;
-	t->dflt_cred.g = c.g;
+	res->dflt_cred.u = c.u;
+	res->dflt_cred.g = c.g;
 	/* also, by default, in U's home dir using U's shell */
-	t->dflt_cred.wd = strdup(c.wd);
-	t->dflt_cred.sh = strdup(c.sh);
+	res->dflt_cred.wd = strdup(c.wd);
+	res->dflt_cred.sh = strdup(c.sh);
 
-	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
-	ev_periodic_start(EV_A_ &t->w);
-	return;
-}
-
-static void
-_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
-{
-	echs_evstrm_t strm[64U];
-
-	for (size_t tots = 0U, nstrm;
-	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
-		     tots == 0U; tots += nstrm) {
-		/* we've either got some streams or our stream S isn't muxed */
-		if (nstrm == 0) {
-			/* put original stream as task */
-			_inject_evstrm1(ctx, s, u, cb);
-			break;
-		}
-		for (size_t i = 0U; i < nstrm; i++) {
-			_inject_evstrm1(ctx, strm[i], u, cb);
-		}
-	}
+	ev_periodic_init(&res->w, cb, 0./*ignored*/, 0., resched);
+	ev_periodic_start(EV_A_ &res->w);
 	return;
 }
 
@@ -1432,7 +1410,7 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 
 more:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		echs_evstrm_t s;
+		echs_instruc_t ins;
 
 	default:
 		if (echs_evical_push(&pp, buf, nrd) < 0) {
@@ -1440,17 +1418,17 @@ more:
 			break;
 		}
 	case 0:
-		while ((s = echs_evical_pull(&pp)) != NULL) {
-			_inject_evstrm(ctx, s, run_as, cb);
+		while ((ins = echs_evical_pull(&pp)).t != NULL) {
+			_inject_task1(ctx, ins.t, run_as, cb);
 		}
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
 		break;
 	case -1:
-		if (UNLIKELY((s = echs_evical_last_pull(&pp)) != NULL)) {
+		if (UNLIKELY((ins = echs_evical_last_pull(&pp)).t != NULL)) {
 			/* close right away */
-			free_echs_evstrm(s);
+			free_echs_task(ins.t);
 		}
 		break;
 	}

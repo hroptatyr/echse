@@ -74,6 +74,9 @@ free_echs_task(echs_task_t t)
 {
 	struct echs_task_s *restrict tmpt = deconst(t);
 
+	if (tmpt->strm) {
+		free_echs_evstrm(tmpt->strm);
+	}
 	if (tmpt->cmd) {
 		free(deconst(tmpt->cmd));
 	}

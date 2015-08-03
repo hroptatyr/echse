@@ -1,14 +1,14 @@
 %{
 typedef enum {
-	ICAL_METH_UNK,
-	ICAL_METH_PUBLISH,
-	ICAL_METH_REQUEST,
-	ICAL_METH_REPLY,
-	ICAL_METH_ADD,
-	ICAL_METH_CANCEL,
-	ICAL_METH_REFRESH,
-	ICAL_METH_COUNTER,
-	ICAL_METH_DECLINECOUNTER,
+	METH_UNK,
+	METH_PUBLISH,
+	METH_REQUEST,
+	METH_REPLY,
+	METH_ADD,
+	METH_CANCEL,
+	METH_REFRESH,
+	METH_COUNTER,
+	METH_DECLINECOUNTER,
 } ical_meth_t;
 
 %}
@@ -17,23 +17,23 @@ typedef enum {
 %enum
 %switch=1
 %struct-type
-%define slot-name keystr
-%define hash-function-name __evrrul_key_hash
-%define lookup-function-name __evrrul_key
+%define slot-name methstr
+%define hash-function-name __evical_meth_hash
+%define lookup-function-name __evical_meth
 %null-strings
 %compare-strncmp
 
 struct ical_meth_cell_s {
-	const char *keystr;
-	ical_meth_t key;
+	const char *methstr;
+	ical_meth_t meth;
 };
 
 %%
-PUBLISH, ICAL_METH_PUBLISH
-REQUEST, ICAL_METH_REQUEST
-REPLY, ICAL_METH_REPLY
-ADD, ICAL_METH_ADD
-CANCEL, ICAL_METH_CANCEL
-REFRESH, ICAL_METH_REFRESH
-COUNTER, ICAL_METH_COUNTER
-DECLINECOUNTER, ICAL_METH_DECLINECOUNTER
+PUBLISH, METH_PUBLISH
+REQUEST, METH_REQUEST
+REPLY, METH_REPLY
+ADD, METH_ADD
+CANCEL, METH_CANCEL
+REFRESH, METH_REFRESH
+COUNTER, METH_COUNTER
+DECLINECOUNTER, METH_DECLINECOUNTER
