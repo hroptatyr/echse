@@ -27,12 +27,6 @@ AM_CLIT_LOG_FLAGS = -v --builddir $(top_builddir)/src
 AM_LOG_COMPILER = false
 
 ## actual regression tests
-check_PROGRAMS += evical_prnt
-evical_prnt_CPPFLAGS = $(AM_CPPFLAGS)
-evical_prnt_CPPFLAGS += $(echse_CFLAGS)
-evical_prnt_LDADD = $(echse_LIBS)
-TESTS += evical_prnt_01.clit
-
 check_PROGRAMS += bitint_test_01
 bitint_test_01_CPPFLAGS = $(AM_CPPFLAGS)
 bitint_test_01_CPPFLAGS += $(echse_CFLAGS)

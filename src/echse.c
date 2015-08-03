@@ -127,7 +127,8 @@ unroll_ical(echs_evstrm_t smux, struct unroll_param_s p)
 }
 
 static char*
-unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
+unroll_prnt(char *restrict buf, size_t bsz,
+	    echs_task_t t, echs_event_t e, const char *fmt)
 {
 	char *restrict bp = buf;
 	const char *const ebp = buf + bsz;
@@ -157,14 +158,14 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
-				if (e.task && e.task->cmd) {
-					const char *cmd = e.task->cmd;
+				if (t && t->cmd) {
+					const char *cmd = t->cmd;
 					bp += xstrlcpy(bp, cmd, ebp - bp);
 				}
 				continue;
 			case 'u':
-				if (e.task) {
-					x = e.task->uid;
+				if (t) {
+					x = t->oid;
 					goto cpy_obint;
 				}
 				continue;
@@ -212,7 +213,7 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 			continue;
 		}
 		/* otherwise print */
-		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
+		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, NULL, e, fmt);
 		/* finalise buf */
 		*bp++ = '\n';
 		*bp++ = '\0';

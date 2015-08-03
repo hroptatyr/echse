@@ -1189,7 +1189,6 @@ resched(ev_periodic *w, ev_tstamp now)
 	}
 
 	soon = instant_to_tstamp(e.from);
-	t->task = e.task;
 	t->nrun++;
 
 	ECHS_NOTI_LOG("next run %f", soon);

@@ -40,6 +40,7 @@
 #include "event.h"
 #include "evstrm.h"
 #include "evrrul.h"
+#include "instruc.h"
 
 typedef void *ical_parser_t;
 
@@ -79,7 +80,18 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz);
 extern echs_evstrm_t echs_evical_pull(ical_parser_t p[static 1U]);
 
 /**
+ * Parse buffer pushed into the pull parser P, return an instruction
+ * based on RFC5546 in form of an echs_instruc_t object every time one
+ * becomes available, or one with verb INSVERB_UNK otherwise,
+ * indicating that more data needs to be pushed. */
+extern echs_instruc_t echs_instruc_pull(ical_parser_t p[static 1U]);
+
+/**
  * Indicate that this will be the last pull. */
 extern echs_evstrm_t echs_evical_last_pull(ical_parser_t p[static 1U]);
+
+/**
+ * Indicate that this will be the last pull. */
+extern echs_instruc_t echs_instruc_last_pull(ical_parser_t p[static 1U]);
 
 #endif	/* INCLUDED_evical_h_ */

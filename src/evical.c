@@ -249,7 +249,6 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	}
 	/* copy the proto task over */
 	*res = ve->t;
-	ve->e.task = res;
 	return;
 }
 
@@ -777,7 +776,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_UID:
-		ve->t.uid = intern(vp, ep - vp);
+		ve->t.oid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
 		if (ve->t.cmd != NULL) {
@@ -892,6 +891,10 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			/* bang to global array */
 			add1_to_urlst(&ve->mf, u);
 		}
+		break;
+	case FLD_METH:
+		/* oooh, they've been so kind as to give us precise
+		 * instructions ... */
 		break;
 	default:
 		break;
@@ -1451,33 +1454,8 @@ prnt_stset(echs_stset_t sts)
 }
 
 static void
-prnt_mrul(mrulsp_t mr)
-{
-	static const char *const mdirs[] = {
-		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
-	};
-
-	if (mr.mdir) {
-		fputs("DIR=", stdout);
-		fputs(mdirs[mr.mdir], stdout);
-	}
-	if (mr.from) {
-		fputs(";MOVEFROM=", stdout);
-		prnt_stset(mr.from);
-	}
-	if (mr.into) {
-		fputs(";MOVEINTO=", stdout);
-		prnt_stset(mr.into);
-	}
-
-	fputc('\n', stdout);
-	return;
-}
-
-static void
 prnt_ev(echs_event_t e)
 {
-	static unsigned int auto_uid;
 	char stmp[32U] = {':'};
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
@@ -1500,54 +1478,61 @@ prnt_ev(echs_event_t e)
 		fputs(";VALUE=DATE", stdout);
 	}
 	puts(stmp);
-
-	/* fill in a missing uid? */
-	auto_uid++;
-	if (e.task->uid) {
-		fputs("UID:", stdout);
-		puts(obint_name(e.task->uid));
-	} else {
-		/* it's mandatory, so generate one */
-		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
-	}
-	if (e.task->cmd) {
-		fputs("SUMMARY:", stdout);
-		puts(e.task->cmd);
-	}
-	if (e.task->org) {
-		fputs("ORGANIZER:", stdout);
-		puts(e.task->org);
-	}
-	if (e.task->att) {
-		for (const char *const *ap = e.task->att->l; *ap; ap++) {
-			fputs("ATTENDEE:", stdout);
-			puts(*ap);
-		}
-	}
-	if (e.task->in) {
-		fputs("X-ECHS-IFILE:", stdout);
-		puts(e.task->in);
-	}
-	if (e.task->out) {
-		fputs("X-ECHS-OFILE:", stdout);
-		puts(e.task->out);
-	}
-	if (e.task->err) {
-		fputs("X-ECHS-EFILE:", stdout);
-		puts(e.task->err);
-	}
-	if (e.task->run_as.sh) {
-		fputs("X-ECHS-SHELL:", stdout);
-		puts(e.task->run_as.sh);
-	}
-	if (e.task->run_as.wd) {
-		fputs("LOCATION:", stdout);
-		puts(e.task->run_as.wd);
-	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
 		prnt_stset(e.sts);
 		fputc('\n', stdout);
+	}
+	return;
+}
+
+static void
+prnt_task(echs_task_t t)
+{
+	static unsigned int auto_uid;
+
+	/* fill in a missing uid? */
+	auto_uid++;
+	if (t->oid) {
+		fputs("UID:", stdout);
+		puts(obint_name(t->oid));
+	} else {
+		/* it's mandatory, so generate one */
+		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
+	}
+	if (t->cmd) {
+		fputs("SUMMARY:", stdout);
+		puts(t->cmd);
+	}
+	if (t->org) {
+		fputs("ORGANIZER:", stdout);
+		puts(t->org);
+	}
+	if (t->att) {
+		for (const char *const *ap = t->att->l; *ap; ap++) {
+			fputs("ATTENDEE:", stdout);
+			puts(*ap);
+		}
+	}
+	if (t->in) {
+		fputs("X-ECHS-IFILE:", stdout);
+		puts(t->in);
+	}
+	if (t->out) {
+		fputs("X-ECHS-OFILE:", stdout);
+		puts(t->out);
+	}
+	if (t->err) {
+		fputs("X-ECHS-EFILE:", stdout);
+		puts(t->err);
+	}
+	if (t->run_as.sh) {
+		fputs("X-ECHS-SHELL:", stdout);
+		puts(t->run_as.sh);
+	}
+	if (t->run_as.wd) {
+		fputs("LOCATION:", stdout);
+		puts(t->run_as.wd);
 	}
 	return;
 }
@@ -1567,14 +1552,12 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
-static echs_evuid_t uid_evical_vevent(echs_const_evstrm_t);
 static void prnt_evical_vevent(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
-	.uid = uid_evical_vevent,
 	.prnt1 = prnt_evical_vevent,
 };
 
@@ -1598,11 +1581,6 @@ free_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
 
-	for (size_t i = 0U; i < this->nev; i++) {
-		if (this->ev[i].task) {
-			free_echs_task(this->ev[i].task);
-		}
-	}
 	free(this);
 	return;
 }
@@ -1615,23 +1593,7 @@ clone_evical_vevent(echs_const_evstrm_t s)
 
 	res = (struct evical_s*)make_evical_vevent(
 		this->ev + this->i, this->nev - this->i);
-	for (size_t i = 0U; i < this->nev - this->i; i++) {
-		/* increment task ref-counter */
-		res->ev[i].task = echs_task_clone(res->ev[i].task);
-	}
 	return (echs_evstrm_t)res;
-}
-
-static echs_evuid_t
-uid_evical_vevent(echs_const_evstrm_t s)
-{
-	const struct evical_s *this = (const struct evical_s*)s;
-	const size_t i = this->i;
-
-	if (UNLIKELY(i >= this->nev)) {
-		return 0U;
-	}
-	return this->ev[i].task->uid;
 }
 
 static echs_event_t
@@ -1662,6 +1624,9 @@ prnt_evical_vevent(echs_const_evstrm_t s)
 struct evrrul_s {
 	echs_evstrm_class_t class;
 
+	/* proto method */
+	echs_instruc_t i;
+
 	/* proto-event */
 	echs_event_t e;
 
@@ -1687,7 +1652,6 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
-static echs_evuid_t uid_evrrul(echs_const_evstrm_t);
 static void prnt_evrrul1(echs_const_evstrm_t);
 static void prnt_evrrulm(const echs_const_evstrm_t s[], size_t n);
 
@@ -1695,7 +1659,6 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
-	.uid = uid_evrrul,
 	.prnt1 = prnt_evrrul1,
 	.prntm = prnt_evrrulm,
 };
@@ -1801,9 +1764,6 @@ free_evrrul(echs_evstrm_t s)
 		return;
 	}
 
-	if (this->e.task) {
-		free_echs_task(this->e.task);
-	}
 	if (this->xr.nr) {
 		free(this->xr.r);
 	}
@@ -1825,9 +1785,6 @@ clone_evrrul(echs_const_evstrm_t s)
 
 	*clon = *this;
 	/* clone lists if applicable */
-	if (this->e.task) {
-		clon->e.task = echs_task_clone(this->e.task);
-	}
 	if (this->xr.nr) {
 		clon->xr = clon_rrlst(this->xr);
 	}
@@ -1838,14 +1795,6 @@ clone_evrrul(echs_const_evstrm_t s)
 		clon->xd = clon_dtlst(this->xd);
 	}
 	return (echs_evstrm_t)clon;
-}
-
-static echs_evuid_t
-uid_evrrul(echs_const_evstrm_t s)
-{
-	const struct evrrul_s *this = (const struct evrrul_s*)s;
-
-	return this->e.task->uid;
 }
 
 /* this should be somewhere else, evrrul.c maybe? */
@@ -2197,6 +2146,21 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		res = make_evrrul(*ve);
 	}
 	return res;
+}
+
+echs_instruc_t
+echs_instruc_pull(ical_parser_t p[static 1U])
+{
+	echs_evstrm_t s;
+
+	if (UNLIKELY(*p == NULL)) {
+		/* how brave */
+		;
+	} else if (UNLIKELY((s = echs_evical_pull(p)) != NULL)) {
+		/* ooooh */
+		;
+	}
+	return (echs_instruc_t){INSVERB_UNK};
 }
 
 echs_evstrm_t
