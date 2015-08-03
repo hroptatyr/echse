@@ -1,0 +1,27 @@
+%{
+typedef enum {
+	COMP_UNK,
+	COMP_VCAL,
+	COMP_VEVT,
+} ical_comp_t;
+
+%}
+%7bit
+%readonly-tables
+%enum
+%switch=1
+%struct-type
+%define slot-name compstr
+%define hash-function-name __evical_comp_hash
+%define lookup-function-name __evical_comp
+%null-strings
+%compare-strncmp
+
+struct ical_comp_cell_s {
+	const char *compstr;
+	ical_comp_t comp;
+};
+
+%%
+VCALENDAR, COMP_VCAL
+VEVENT, COMP_VEVT
