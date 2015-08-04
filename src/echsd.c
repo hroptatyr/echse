@@ -876,10 +876,7 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 typedef enum {
 	ECHS_CMD_UNK,
 	ECHS_CMD_LIST,
-	ECHS_CMD_CREA,
-	ECHS_CMD_REPL,
-	ECHS_CMD_UPDT,
-	ECHS_CMD_DELE,
+	ECHS_CMD_ICAL,
 
 	/* to indicate that we need more data to finish the command */
 	ECHS_CMD_MORE = -1
@@ -894,6 +891,7 @@ struct echs_cmdparam_s {
 	echs_cmd_t cmd;
 	union {
 		struct echs_cmd_list_s list;
+		ical_parser_t ical;
 	};
 };
 
@@ -917,6 +915,18 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 			? ECHS_CMD_LIST : ECHS_CMD_MORE;
 	}
 	return ECHS_CMD_UNK;
+}
+
+static echs_cmd_t
+cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	if (echs_evical_push(&param->ical, buf, bsz) < 0) {
+		/* pushing won't help */
+		return ECHS_CMD_UNK;
+	}
+	/* aaaah ical stuff, just hand back control and let the pull parser
+	 * do its job, he's more magnificent than us anyway */
+	return ECHS_CMD_ICAL;
 }
 
 static ssize_t
@@ -964,45 +974,19 @@ guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r = ECHS_CMD_UNK;
 
-	if ((r = cmd_list_p(param, buf, bsz))) {
+	if ((r = cmd_ical_p(param, buf, bsz))) {
 		;
-	} else if (0) {
+	} else if ((r = cmd_list_p(param, buf, bsz))) {
 		;
 	}
 	return r;
-}
-
-static ssize_t
-handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
-{
-	ssize_t nwr = 0;
-
-	switch (param->cmd) {
-	case ECHS_CMD_LIST:
-		nwr = cmd_list(fd, &param->list);
-		break;
-
-	case ECHS_CMD_CREA:
-		break;
-	case ECHS_CMD_REPL:
-		break;
-	case ECHS_CMD_UPDT:
-		break;
-	case ECHS_CMD_DELE:
-		break;
-
-	case ECHS_CMD_MORE:
-	default:
-		/* just do fuckall */
-		break;
-	}
-	return nwr;
 }
 
 
 /* libev conn handling */
 #define MAX_CONNS	(sizeof(free_conns) * 8U)
 #define MAX_QUEUE	MAX_CONNS
+typedef char echs_iobuf_t[4096U];
 static uint64_t free_conns = -1;
 static struct echs_conn_s {
 	ev_io r;
@@ -1014,6 +998,7 @@ static struct echs_conn_s {
 	 * this contains a partial or full parse of all parameters */
 	struct echs_cmdparam_s cmd[1U];
 } conns[MAX_CONNS];
+static echs_iobuf_t bufs[MAX_CONNS];
 
 static struct echs_conn_s*
 make_conn(void)
@@ -1025,14 +1010,10 @@ make_conn(void)
 		/* toggle bit in free conns */
 		free_conns ^= 1ULL << i;
 
-		conns[i].buf = malloc(conns[i].bsz = 4096U);
+		conns[i].buf = bufs[i];
+		conns[i].bsz = sizeof(bufs[i]);
 		conns[i].bix = 0;
-
-		memset(conns[i].cmd, 0, sizeof(*conns[i].cmd));
-
-		if (LIKELY(conns[i].buf != NULL)) {
-			return conns + i;
-		}
+		return conns + i;
 	}
 	return NULL;
 }
@@ -1050,10 +1031,6 @@ free_conn(struct echs_conn_s *c)
 	/* toggle C-th bit */
 	free_conns ^= 1ULL << i;
 	memset(c, 0, sizeof(*c));
-	/* also free buffer resources */
-	if (LIKELY(c->buf != NULL)) {
-		free(c->buf);
-	}
 	return;
 }
 
@@ -1216,29 +1193,62 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	const int fd = c->r.fd;
 	ssize_t nrd;
 
-	if (UNLIKELY((nrd = read(fd, c->buf + c->bix, c->bsz - c->bix)) < 0)) {
+	/* just have a peek at what's there */
+	if (UNLIKELY((nrd = recv(fd, c->buf, c->bsz, 0)) < 0)) {
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, c->bix += nrd)) {
-	default:
-		handle_cmd(fd, c->cmd);
+	switch (guess_cmd(c->cmd, c->buf, nrd)) {
+	case ECHS_CMD_LIST:
+		(void)cmd_list(fd, &c->cmd->list);
+		/* always shut him down */
 		goto shut;
 
-	case ECHS_CMD_MORE:
-		/* don't close the connection, prepare for more */
-		if ((size_t)c->bix >= c->bsz) {
-			c->buf = realloc(c->buf, c->bsz *= 2U);
-			if (UNLIKELY(c->buf == NULL)) {
-				goto shut;
+	case ECHS_CMD_ICAL:
+		do {
+			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
 			}
+			/* and otherwise inject him */
+			ECHS_NOTI_LOG("INJ %p", ins.t);
+		} while (1);
+		if (UNLIKELY(nrd == 0)) {
+			goto shut;
 		}
 		break;
+
+	case ECHS_CMD_MORE:
+		break;
+
+	default:
+	case ECHS_CMD_UNK:
+		/* just shut him down */
+		ECHS_NOTI_LOG("unknown command");
+		goto shut;
 	}
 	return;
 
 shut:
+	if (c->cmd->cmd == ECHS_CMD_ICAL && c->cmd->ical) {
+		/* ical needs a special massage */
+		echs_instruc_t ins = echs_evical_last_pull(&c->cmd->ical);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+		}
+	}
 	ev_io_stop(EV_A_ w);
+	ECHS_NOTI_LOG("freeing connection %d", w->fd);
 	shut_conn((struct echs_conn_s*)w);
 	return;
 }
@@ -1263,7 +1273,7 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 	}
 
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection from %u/%u", u, g);
+	ECHS_NOTI_LOG("connection %d from %u/%u", s, u, g);
 	if (UNLIKELY((ec = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
