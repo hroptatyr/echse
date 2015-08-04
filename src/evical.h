@@ -1,6 +1,6 @@
-/*** evical.h -- icalendar event stremas
+/*** evical.h -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

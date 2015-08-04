@@ -1,4 +1,4 @@
-/*** evical.c -- simple icalendar parser for echse
+/*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
  * Copyright (C) 2013-2015 Sebastian Freundt
  *
@@ -2159,7 +2159,7 @@ echs_instruc_t
 echs_evical_pull(ical_parser_t p[static 1U])
 {
 	struct ical_vevent_s *ve;
-	echs_task_t t = NULL;
+	echs_instruc_t i = {INSVERB_UNK};
 
 	/* just let _ical_pull do the yakka and we split everything
 	 * into evical vevents and evrruls */
@@ -2175,9 +2175,27 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		free(*p);
 		*p = NULL;
 	} else {
-		t = make_task(ve);
+		struct ical_parser_s *_p = *p;
+
+		switch (_p->globve.m) {
+		case METH_UNK:
+		case METH_PUBLISH:
+		case METH_REQUEST:
+			i.v = INSVERB_CREA;
+			i.t = make_task(ve);
+			puts("BENGO");
+			break;
+		default:
+		case METH_CANCEL:
+		case METH_ADD:
+		case METH_REPLY:
+		case METH_REFRESH:
+		case METH_COUNTER:
+		case METH_DECLINECOUNTER:
+			break;
+		}
 	}
-	return (echs_instruc_t){INSVERB_UNK, 0U, .t = t};
+	return i;
 }
 
 echs_instruc_t

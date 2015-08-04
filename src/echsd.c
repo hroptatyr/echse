@@ -1418,16 +1418,32 @@ more:
 			break;
 		}
 	case 0:
-		while ((ins = echs_evical_pull(&pp)).t != NULL) {
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
 			_inject_task1(ctx, ins.t, run_as, cb);
-		}
+		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
 		break;
 	case -1:
-		if (UNLIKELY((ins = echs_evical_last_pull(&pp)).t != NULL)) {
-			/* close right away */
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
 			free_echs_task(ins.t);
 		}
 		break;
