@@ -65,6 +65,10 @@ extern void echs_prnt_ical_event(echs_event_t);
  * For filters and command-line stuff. */
 extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
 
+/**
+ * Helper for echsq(1) et al */
+extern void echs_task_icalify(int whither, echs_task_t t);
+
 /* The pull parser */
 /**
  * Feed the pull parser P a buffer BUF of size BSZ.

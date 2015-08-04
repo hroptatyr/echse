@@ -1499,54 +1499,262 @@ prnt_ev(echs_event_t e)
 	return;
 }
 
+
+/* sending is like printing but into a file descriptor of choice */
 static void
-prnt_task(echs_task_t t)
+send_task(int whither, echs_task_t t)
 {
 	static unsigned int auto_uid;
 
 	/* fill in a missing uid? */
 	auto_uid++;
 	if (t->oid) {
-		fputs("UID:", stdout);
-		puts(obint_name(t->oid));
+		dprintf(whither, "UID:%s\n", obint_name(t->oid));
 	} else {
 		/* it's mandatory, so generate one */
-		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
+		dprintf(whither, "UID:echse_merged_vevent_%u\n", auto_uid);
 	}
 	if (t->cmd) {
-		fputs("SUMMARY:", stdout);
-		puts(t->cmd);
+		dprintf(whither, "SUMMARY:%s\n", t->cmd);
 	}
 	if (t->org) {
-		fputs("ORGANIZER:", stdout);
-		puts(t->org);
+		dprintf(whither, "ORGANIZER:%s\n", t->org);
 	}
 	if (t->att) {
 		for (const char *const *ap = t->att->l; *ap; ap++) {
-			fputs("ATTENDEE:", stdout);
-			puts(*ap);
+			dprintf(whither, "ATTENDEE:%s\n", *ap);
 		}
 	}
 	if (t->in) {
-		fputs("X-ECHS-IFILE:", stdout);
-		puts(t->in);
+		dprintf(whither, "X-ECHS-IFILE:%s\n", t->in);
 	}
 	if (t->out) {
-		fputs("X-ECHS-OFILE:", stdout);
-		puts(t->out);
+		dprintf(whither, "X-ECHS-OFILE:%s\n", t->out);
 	}
 	if (t->err) {
-		fputs("X-ECHS-EFILE:", stdout);
-		puts(t->err);
+		dprintf(whither, "X-ECHS-EFILE:%s\n", t->err);
 	}
 	if (t->run_as.sh) {
-		fputs("X-ECHS-SHELL:", stdout);
-		puts(t->run_as.sh);
+		dprintf(whither, "X-ECHS-SHELL:%s\n", t->run_as.sh);
 	}
 	if (t->run_as.wd) {
-		fputs("LOCATION:", stdout);
-		puts(t->run_as.wd);
+		dprintf(whither, "LOCATION:%s\n", t->run_as.wd);
 	}
+	return;
+}
+
+static void
+send_ical_hdr(int whither)
+{
+	static const char beg[] = "BEGIN:VEVENT\n";
+	static char stmp[32U] = "DTSTAMP:";
+	static size_t ztmp = strlenof("DTSTAMP:");
+	/* singleton, there's only one now */
+	static time_t now;
+
+	write(whither, beg, strlenof(beg));
+	if (LIKELY(now)) {
+		;
+	} else {
+		struct tm tm;
+		echs_instant_t nowi;
+
+		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) == NULL))) {
+			/* screw up the singleton */
+			now = 0;
+			return;
+		}
+		/* otherwise fill in now and materialise */
+		nowi.y = tm.tm_year + 1900,
+			nowi.m = tm.tm_mon + 1,
+			nowi.d = tm.tm_mday,
+			nowi.H = tm.tm_hour,
+			nowi.M = tm.tm_min,
+			nowi.S = tm.tm_sec,
+			nowi.ms = ECHS_ALL_SEC;
+
+		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
+		stmp[ztmp++] = '\n';
+	}
+	write(whither, stmp, ztmp);
+	return;
+}
+
+static void
+send_ical_ftr(int whither)
+{
+	static const char end[] = "END:VEVENT\n";
+	write(whither, end, strlenof(end));
+	return;
+}
+
+static void
+send_ev(int whither, echs_event_t e)
+{
+	char stmp[32U] = {':'};
+	size_t ztmp = 1U;
+
+	if (UNLIKELY(echs_nul_instant_p(e.from))) {
+		return;
+	}
+	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
+	dprintf(whither, "DTSTART");
+	if (echs_instant_all_day_p(e.from)) {
+		dprintf(whither, ";VALUE=DATE");
+	}
+	stmp[ztmp++ + 1U] = '\n';
+	write(whither, stmp, ztmp + 1U);
+
+	if (LIKELY(!echs_nul_instant_p(e.till))) {
+		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
+	} else {
+		e.till = e.from;
+	}
+	dprintf(whither, "DTEND");
+	if (echs_instant_all_day_p(e.till)) {
+		dprintf(whither, ";VALUE=DATE");
+	}
+	stmp[ztmp++ + 1U] = '\n';
+	write(whither, stmp, ztmp + 1U);
+	return;
+}
+
+static void
+send_rrul(int whither, rrulsp_t rr)
+{
+	static const char *const f[] = {
+		[FREQ_NONE] = "FREQ=NONE",
+		[FREQ_YEARLY] = "FREQ=YEARLY",
+		[FREQ_MONTHLY] = "FREQ=MONTHLY",
+		[FREQ_WEEKLY] = "FREQ=WEEKLY",
+		[FREQ_DAILY] = "FREQ=DAILY",
+		[FREQ_HOURLY] = "FREQ=HOURLY",
+		[FREQ_MINUTELY] = "FREQ=MINUTELY",
+		[FREQ_SECONDLY] = "FREQ=SECONDLY",
+	};
+
+	dprintf(whither, "RRULE:%s", f[rr->freq]);
+
+	if (rr->inter > 1U) {
+		dprintf(whither, ";INTERVAL=%u", rr->inter);
+	}
+	with (unsigned int m) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->mon)) {
+			break;
+		}
+		m = bui31_next(&i, rr->mon);
+		dprintf(whither, ";BYMONTH=%u", m);
+		while (m = bui31_next(&i, rr->mon), i) {
+			dprintf(whither, ",%u", m);
+		}
+	}
+
+	with (int yw) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi63_has_bits_p(rr->wk)) {
+			break;
+		}
+		yw = bi63_next(&i, rr->wk);
+		dprintf(whither, ";BYWEEKNO=%d", yw);
+		while (yw = bi63_next(&i, rr->wk), i) {
+			dprintf(whither, ",%d", yw);
+		}
+	}
+
+	with (int yd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->doy)) {
+			break;
+		}
+		yd = bi383_next(&i, &rr->doy);
+		dprintf(whither, ";BYYEARDAY=%d", yd);
+		while (yd = bi383_next(&i, &rr->doy), i) {
+			dprintf(whither, ",%d", yd);
+		}
+	}
+
+	with (int d) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi31_has_bits_p(rr->dom)) {
+			break;
+		}
+		d = bi31_next(&i, rr->dom);
+		dprintf(whither, ";BYMONTHDAY=%d", d);
+		while (d = bi31_next(&i, rr->dom), i) {
+			dprintf(whither, ",%d", d);
+		}
+	}
+
+	with (int e) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->easter)) {
+			break;
+		}
+		e = bi383_next(&i, &rr->easter);
+		dprintf(whither, ";BYEASTER=%d", e);
+		while (e = bi383_next(&i, &rr->easter), i) {
+			dprintf(whither, ",%d", e);
+		}
+	}
+
+	with (struct cd_s cd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi447_has_bits_p(&rr->dow)) {
+			break;
+		}
+		cd = unpack_cd(bi447_next(&i, &rr->dow));
+		fputs(";BYDAY=", stdout);
+		prnt_cd(cd);
+		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
+			fputc(',', stdout);
+			prnt_cd(cd);
+		}
+	}
+
+	with (int a) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->add)) {
+			break;
+		}
+		a = bi383_next(&i, &rr->add);
+		dprintf(whither, ";BYADD=%d", a);
+		while (a = bi383_next(&i, &rr->add), i) {
+			dprintf(whither, ",%d", a);
+		}
+	}
+
+	with (int p) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->pos)) {
+			break;
+		}
+		p = bi383_next(&i, &rr->pos);
+		dprintf(whither, ";BYPOS=%d", p);
+		while (p = bi383_next(&i, &rr->pos), i) {
+			dprintf(whither, ",%d", p);
+		}
+	}
+
+	if ((int)rr->count > 0) {
+		dprintf(whither, ";COUNT=%u", rr->count);
+	}
+	if (rr->until.u < -1ULL) {
+		char until[32U];
+
+		dt_strf_ical(until, sizeof(until), rr->until);
+		dprintf(whither, ";UNTIL=%s", until);
+	}
+
+	write(whither, "\n", 1U);
 	return;
 }
 
@@ -1633,6 +1841,14 @@ prnt_evical_vevent(echs_const_evstrm_t s)
 	return;
 }
 
+static void
+send_vevent(int whither, echs_const_evstrm_t s)
+{
+	const struct evical_s *this = (const struct evical_s*)s;
+
+	send_ev(whither, this->ev[0U]);
+	return;
+}
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
@@ -1973,6 +2189,16 @@ one_by_one:
 	return;
 }
 
+static void
+send_evrrul(int whither, echs_const_evstrm_t s)
+{
+	const struct evrrul_s *this = (const struct evrrul_s*)s;
+
+	send_ev(whither, this->e);
+	send_rrul(whither, &this->rr);
+	return;
+}
+
 
 echs_evstrm_t
 make_echs_evical(const char *fn)
@@ -2207,6 +2433,31 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 		free(*p);
 	}
 	return res;
+}
+
+
+/* seria/deseria helpers */
+static void
+echs_strm_icalify(int whither, echs_evstrm_t s)
+{
+	if (s->class == &evrrul_cls) {
+		send_evrrul(whither, s);
+	} else if (s->class == &evical_cls) {
+		send_vevent(whither, s);
+	}
+	return;
+}
+
+void
+echs_task_icalify(int whither, echs_task_t t)
+{
+	send_ical_hdr(whither);
+	send_task(whither, t);
+	if (LIKELY(t->strm != NULL)) {
+		echs_strm_icalify(whither, t->strm);
+	}
+	send_ical_ftr(whither);
+	return;
 }
 
 /* evical.c ends here */
