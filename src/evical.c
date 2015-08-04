@@ -2183,7 +2183,6 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_REQUEST:
 			i.v = INSVERB_CREA;
 			i.t = make_task(ve);
-			puts("BENGO");
 			break;
 		default:
 		case METH_CANCEL:
