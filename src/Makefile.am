@@ -91,6 +91,7 @@ echsq_SOURCES = echsq.c echsq.yuck
 echsq_SOURCES += version.h version.c
 echsq_CPPFLAGS = $(AM_CPPFLAGS) -DSTANDALONE
 echsq_CPPFLAGS += -DHAVE_VERSION_H
+echsq_LDADD = libechse.la
 BUILT_SOURCES += echsq.yucc
 
 if HAVE_LIBEV
