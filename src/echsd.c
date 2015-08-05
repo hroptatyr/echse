@@ -831,6 +831,50 @@ run_task(_task_t t)
 	return r;
 }
 
+static pid_t
+norun_task(_task_t t)
+{
+/* assumes ev_loop_fork() has been called */
+	static char *args_proto[] = {
+		[0] = "echsx",
+		[1] = "--no-run",
+		[2] = "-c", NULL,
+		[4] = "--mailfrom", NULL,
+		NULL
+	};
+	/* use a VLA for the real args */
+	const size_t natt = t->t->att ? t->t->att->nl : 0U;
+	char *args[countof(args_proto) + 2U * natt];
+	char *const *env = deconst(t->t->env);
+	pid_t r;
+
+	/* set up the real args */
+	memcpy(args, args_proto, sizeof(args_proto));
+	args[3U] = deconst(t->t->cmd);
+
+	if (t->t->org) {
+		args[5U] = deconst(t->t->org);
+	} else if (natt) {
+		args[5U] = t->t->att->l[0U];
+	} else {
+		args[5U] = "echse";
+	}
+	with (size_t i = 6U) {
+		for (size_t j = 0U; j < natt; j++) {
+			args[i++] = "--mailto";
+			args[i++] = t->t->att->l[j];
+		}
+		/* finalise args array */
+		args[i++] = NULL;
+	}
+
+	/* finally fork out our child */
+	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
+		ECHS_ERR_LOG("cannot fork: %s", STRERR);
+	}
+	return r;
+}
+
 static __attribute__((pure, const)) ev_tstamp
 instant_to_tstamp(echs_instant_t i)
 {
@@ -1241,6 +1285,10 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 			ev_child_init(c, chld_cb, p, false);
 			ev_child_start(EV_A_ c);
 		}
+	} else {
+		/* ooooh, we can't run, call run task with the warning
+		 * flag and use fire and forget */
+		norun_task(t);
 	}
 
 	/* prepare for rescheduling */
