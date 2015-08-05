@@ -49,7 +49,6 @@
 #include <limits.h>
 #include <time.h>
 #include <fcntl.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -743,24 +742,24 @@ free_task(_task_t t)
 }
 
 static pid_t
-run_task(_task_t t, bool dtchp)
+run_task(_task_t t)
 {
 /* assumes ev_loop_fork() has been called */
 	static char uid[16U], gid[16U];
 	static char *args_proto[] = {
 		[0] = "echsx",
-		[1] = "-c", NULL,
-		[3] = "--uid", uid,
-		[5] = "--gid", gid,
-		[7] = "--cwd", NULL,
-		[9] = "--shell", NULL,
-		[11] = "--mailfrom", NULL,
-		[13] = "--mailout",
-		[14] = "--mailerr",
-		[15] = "--stdin", NULL,
-		[17] = "--stdout", NULL,
-		[19] = "--stderr", NULL,
-		[21] = "-n",
+		[1] = "-n",
+		[2] = "-c", NULL,
+		[4] = "--uid", uid,
+		[6] = "--gid", gid,
+		[8] = "--cwd", NULL,
+		[10] = "--shell", NULL,
+		[12] = "--mailfrom", NULL,
+		[14] = "--mailout",
+		[15] = "--mailerr",
+		[16] = "--stdin", NULL,
+		[18] = "--stdout", NULL,
+		[20] = "--stderr", NULL,
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -771,7 +770,7 @@ run_task(_task_t t, bool dtchp)
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	args[2U] = deconst(t->t->cmd);
+	args[3U] = deconst(t->t->cmd);
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
@@ -788,17 +787,17 @@ run_task(_task_t t, bool dtchp)
 		if (!run_as.sh) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[8U] = deconst(run_as.wd);
-		args[10U] = deconst(run_as.sh);
+		args[9U] = deconst(run_as.wd);
+		args[11U] = deconst(run_as.sh);
 	}
 	if (t->t->org) {
-		args[12U] = deconst(t->t->org);
+		args[13U] = deconst(t->t->org);
 	} else if (natt) {
-		args[12U] = t->t->att->l[0U];
+		args[13U] = t->t->att->l[0U];
 	} else {
-		args[12U] = "echse";
+		args[13U] = "echse";
 	}
-	with (size_t i = 13U) {
+	with (size_t i = 14U) {
 		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
@@ -806,23 +805,20 @@ run_task(_task_t t, bool dtchp)
 			args[i++] = "--mailerr";
 		}
 		if (t->t->in) {
-			args[i++] = args[15];
+			args[i++] = args[16];
 			args[i++] = deconst(t->t->in);
 		}
 		if (t->t->out) {
-			args[i++] = args[17];
+			args[i++] = args[18];
 			args[i++] = deconst(t->t->out);
 		}
 		if (t->t->err) {
-			args[i++] = args[19];
+			args[i++] = args[20];
 			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
 			args[i++] = t->t->att->l[j];
-		}
-		if (!dtchp) {
-			args[i++] = "-n";
 		}
 		/* finalise args array */
 		args[i++] = NULL;
@@ -831,9 +827,6 @@ run_task(_task_t t, bool dtchp)
 	/* finally fork out our child */
 	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
-	} else if (dtchp) {
-		int rc;
-		while (waitpid(r, &rc, 0) != r);
 	}
 	return r;
 }
@@ -1221,29 +1214,7 @@ chld_cb(EV_P_ ev_child *c, int UNUSED(revents))
 }
 
 static void
-taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
-{
-/* A tasks always run asynchronously, echsx decouples itself from echsd
- * and manages the job with no further interaction */
-	_task_t t = (void*)w;
-
-	/* indicate that we might want to reuse the loop */
-	ev_loop_fork(EV_A);
-
-	/* these are completely asynchronous with no further monitoring
-	 * so fire and forget */
-	(void)run_task(t, true);
-
-	/* prepare for rescheduling */
-	if (UNLIKELY(w->reschedule_cb == NULL)) {
-		/* that's the end of our streak */
-		unsched(EV_A_ w, 0);
-	}
-	return;
-}
-
-static void
-taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
 /* B tasks always run under supervision of our event loop, should the task
  * be scheduled again while max_simul other tasks are still running, cancel
@@ -1265,7 +1236,7 @@ taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 
 		/* keep track of the spawned child pid and register
 		 * a watcher for status changes */
-		with (pid_t p = run_task(t, false)) {
+		with (pid_t p = run_task(t)) {
 			ECHS_NOTI_LOG("supervising pid %d", p);
 			ev_child_init(c, chld_cb, p, false);
 			ev_child_start(EV_A_ c);
@@ -1524,7 +1495,7 @@ _inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u)
 	res->dflt_cred.wd = strdup(c.wd);
 	res->dflt_cred.sh = strdup(c.sh);
 
-	ev_periodic_init(&res->w, taskB_cb, 0./*ignored*/, 0., resched);
+	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
 	return;
 }
