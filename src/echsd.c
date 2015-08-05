@@ -982,6 +982,39 @@ guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	return r;
 }
 
+static void
+shut_cmd(struct echs_cmdparam_s param[static 1U])
+{
+	switch (param->cmd) {
+	default:
+		break;
+
+	case ECHS_CMD_ICAL:
+		if (LIKELY(param->ical == NULL)) {
+			break;
+		}
+		/* ical needs a special massage */
+		echs_instruc_t ins;
+
+		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
+		case INSVERB_CREA:
+			if (LIKELY(ins.t == NULL)) {
+				break;
+			}
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+	return;
+}
+
 
 /* libev conn handling */
 #define MAX_CONNS	(sizeof(free_conns) * 8U)
@@ -1233,20 +1266,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	return;
 
 shut:
-	if (c->cmd->cmd == ECHS_CMD_ICAL && c->cmd->ical) {
-		/* ical needs a special massage */
-		echs_instruc_t ins = echs_evical_last_pull(&c->cmd->ical);
-
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
-			;
-		} else if (UNLIKELY(ins.t != NULL)) {
-			/* that can't be right, we should have got
-			 * the last task in the loop above, this means
-			 * this is a half-finished thing and we don't
-			 * want no half-finished things */
-			free_echs_task(ins.t);
-		}
-	}
+	shut_cmd(c->cmd);
 	ev_io_stop(EV_A_ w);
 	ECHS_NOTI_LOG("freeing connection %d", w->fd);
 	shut_conn((struct echs_conn_s*)w);
