@@ -868,6 +868,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			ve->t.org = strndup(a.s, a.z);
 		}
 		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(vp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
 	}
 	return 0;
 }
