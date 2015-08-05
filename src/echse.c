@@ -158,6 +158,26 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				goto cpy_inst;
 			case 's':
 				continue;
+			case 'S':
+				if (e.sts) {
+					echs_state_t st = 0U;
+					for (;
+					     e.sts && !(e.sts & 0b1U);
+					     e.sts >>= 1U, st++);
+					bp += xstrlcpy(
+						bp, state_name(st), ebp - bp);
+					/* and the rest of the states */
+					while (st++, e.sts >>= 1U) {
+						for (;
+						     e.sts && !(e.sts & 0b1U);
+						     e.sts >>= 1U, st++);
+						*bp++ = ',';
+						bp += xstrlcpy(
+							bp, state_name(st),
+							ebp - bp);
+					}
+				}
+				continue;
 			case 'u':
 				if ((x = e.oid)) {
 					goto cpy_obint;
