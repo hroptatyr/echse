@@ -101,13 +101,14 @@ struct _task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	_task_t next;
-	ev_child c;
 
 	/* this is the task as understood by libechse */
 	echs_task_t t;
 
 	/* number of runs */
 	size_t nrun;
+	/* number of concurrent runs */
+	size_t nsim;
 
 	ncred_t dflt_cred;
 };
@@ -644,24 +645,24 @@ cred_to_ncred(cred_t c)
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
-static _task_t free_pers;
-static size_t nfree_pers;
-static size_t zfree_pers;
+static _task_t free_tasks;
+static size_t nfree_tasks;
+static size_t zfree_tasks;
 
 /* pool list */
-struct plst_s {
+struct tlst_s {
 	_task_t _1st;
 	size_t size;
 };
 
-static struct plst_s *pools;
-static size_t npools;
-static size_t zpools;
+static struct tlst_s *tpools;
+static size_t ntpools;
+static size_t ztpools;
 
 static _task_t
 make_task_pool(size_t n)
 {
-/* generate a pile of ev_periodics and chain them up */
+/* generate a pile of _task_t's and chain them up */
 	_task_t res;
 
 	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
@@ -673,24 +674,29 @@ make_task_pool(size_t n)
 		res[i - 1U].next = res + i;
 	}
 	/* also add res to the list of pools (for freeing them later) */
-	if (npools >= zpools) {
-		if (!(zpools *= 2U)) {
-			zpools = 16U;
+	if (ntpools >= ztpools) {
+		if (!(ztpools *= 2U)) {
+			ztpools = 16U;
 		}
-		pools = realloc(pools, zpools * sizeof(*pools));
+		tpools = realloc(tpools, ztpools * sizeof(*tpools));
 	}
-	pools[npools]._1st = res;
-	pools[npools].size = n;
-	npools++;
+	tpools[ntpools]._1st = res;
+	tpools[ntpools].size = n;
+	ntpools++;
 	return res;
 }
 
 static void
-free_task_pool(void)
+free_task_pools(void)
 {
-	for (size_t i = 0U; i < npools; i++) {
-		free(pools[i]._1st);
+	for (size_t i = 0U; i < ntpools; i++) {
+		free(tpools[i]._1st);
 	}
+	if (tpools) {
+		free(tpools);
+	}
+	tpools = NULL;
+	ntpools = ztpools = 0UL;
 	return;
 }
 
@@ -700,21 +706,22 @@ make_task(void)
 /* create one task */
 	_task_t res;
 
-	if (UNLIKELY(!nfree_pers)) {
+	if (UNLIKELY(!nfree_tasks)) {
 		/* put some more task objects in the task pool */
-		free_pers = make_task_pool(nfree_pers = zfree_pers ?: 256U);
-		if (UNLIKELY(free_pers == NULL)) {
+		free_tasks = make_task_pool(
+			nfree_tasks = zfree_tasks ?: ECHS_TASK_POOL_INIZ);
+		if (UNLIKELY(free_tasks == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_pers *= 2U))) {
-			zfree_pers = 256U;
+		if (UNLIKELY(!(zfree_tasks *= 2U))) {
+			zfree_tasks = ECHS_TASK_POOL_INIZ;
 		}
 	}
 	/* pop off the free list */
-	res = free_pers;
-	free_pers = free_pers->next;
-	nfree_pers--;
+	res = free_tasks;
+	free_tasks = free_tasks->next;
+	nfree_tasks--;
 	return res;
 }
 
@@ -729,9 +736,9 @@ free_task(_task_t t)
 		free(deconst(t->dflt_cred.sh));
 	}
 
-	t->next = free_pers;
-	free_pers = t;
-	nfree_pers++;
+	t->next = free_tasks;
+	free_tasks = t;
+	nfree_tasks++;
 	return;
 }
 
@@ -869,6 +876,99 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 	while (!echs_event_0_p(e = echs_evstrm_next(x)) &&
 	       instant_to_tstamp(e.from) < t);
 	return e;
+}
+
+
+/* child pool */
+#define ECHS_CHLD_POOL_INIZ	(256U)
+static ev_child *free_chlds;
+static size_t nfree_chlds;
+static size_t zfree_chlds;
+
+/* pool list */
+struct clst_s {
+	ev_child *_1st;
+	size_t size;
+};
+
+static struct clst_s *cpools;
+static size_t ncpools;
+static size_t zcpools;
+
+static ev_child*
+make_chld_pool(size_t n)
+{
+/* generate a pile of ev_childs and chain them up */
+	ev_child *res;
+
+	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
+		return NULL;
+	}
+	/* chain them up */
+	res[n - 1U].data = NULL;
+	for (size_t i = n - 1U; i > 0; i--) {
+		res[i - 1U].data = res + i;
+	}
+	/* also add res to the list of pools (for freeing them later) */
+	if (ncpools >= zcpools) {
+		if (!(zcpools *= 2U)) {
+			zcpools = 16U;
+		}
+		cpools = realloc(cpools, zcpools * sizeof(*cpools));
+	}
+	cpools[ncpools]._1st = res;
+	cpools[ncpools].size = n;
+	ncpools++;
+	return res;
+}
+
+static void
+free_chld_pools(void)
+{
+	for (size_t i = 0U; i < ncpools; i++) {
+		free(cpools[i]._1st);
+	}
+	if (cpools) {
+		free(cpools);
+	}
+	cpools = NULL;
+	ncpools = zcpools = 0UL;
+	return;
+}
+
+static ev_child*
+make_chld(void)
+{
+/* create one child */
+	ev_child *res;
+
+	if (UNLIKELY(!nfree_chlds)) {
+		/* put some more ev_child objects into the pool */
+		free_chlds = make_chld_pool(
+			nfree_chlds = zfree_chlds ?: ECHS_CHLD_POOL_INIZ);
+		if (UNLIKELY(free_chlds == NULL)) {
+			/* grrrr */
+			return NULL;
+		}
+		if (UNLIKELY(!(zfree_chlds *= 2U))) {
+			zfree_chlds = ECHS_CHLD_POOL_INIZ;
+		}
+	}
+	/* pop off the free list */
+	res = free_chlds;
+	free_chlds = free_chlds->data;
+	nfree_chlds--;
+	return res;
+}
+
+static void
+free_chld(ev_child *c)
+{
+/* hand chld C over to free list */
+	c->data = free_chlds;
+	free_chlds = c;
+	nfree_chlds++;
+	return;
 }
 
 
@@ -1103,18 +1203,20 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 }
 
 static void
-chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
+chld_cb(EV_P_ ev_child *c, int UNUSED(revents))
 {
-	_task_t t = (void*)((char*)w - offsetof(struct _task_s, c));
+	_task_t t = c->data;
 
-	ECHS_NOTI_LOG("chld %d coughed: %d", w->rpid, w->rstatus);
-	ev_child_stop(EV_A_ w);
-	w->rpid = w->pid = 0;
+	ECHS_NOTI_LOG("chld %d coughed: %d", c->rpid, c->rstatus);
+	ev_child_stop(EV_A_ c);
+	c->rpid = c->pid = 0;
+	t->nsim--;
 
 	if (UNLIKELY(t->w.reschedule_cb == NULL)) {
 		/* we promised taskB_cb to kill this guy */
 		unsched(EV_A_ &t->w, 0);
 	}
+	free_chld(c);
 	return;
 }
 
@@ -1148,19 +1250,25 @@ taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
  * reschedule for the next time. */
 	_task_t t = (void*)w;
 
-	/* the global context holds the currently running child
-	 * if there is one running, defer the execution of this task */
-	if (!t->c.pid) {
+	/* the task context holds the number of currently running children
+	 * as well as the maximum number of simultaneous children
+	 * if the maximum is running, defer the execution of this task */
+	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
+		ev_child *c = make_chld();
+
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		/* unlike A tasks these will run only once
-		 * keep track of the spawned child pid and register
+		/* consider us running already */
+		t->nsim++;
+		c->data = t;
+
+		/* keep track of the spawned child pid and register
 		 * a watcher for status changes */
 		with (pid_t p = run_task(t, false)) {
 			ECHS_NOTI_LOG("supervising pid %d", p);
-			ev_child_init(&t->c, chld_cb, p, false);
-			ev_child_start(EV_A_ &t->c);
+			ev_child_init(c, chld_cb, p, false);
+			ev_child_start(EV_A_ c);
 		}
 	}
 
@@ -1385,7 +1493,8 @@ free_echsd(struct _echsd_s *ctx)
 		ev_break(ctx->loop, EVBREAK_ALL);
 		ev_loop_destroy(ctx->loop);
 	}
-	free_task_pool();
+	free_task_pools();
+	free_chld_pools();
 	free(ctx);
 	return;
 }
