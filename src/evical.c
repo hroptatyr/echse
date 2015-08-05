@@ -46,7 +46,6 @@
 #include <stdio.h>
 #include <time.h>
 #include <fcntl.h>
-#include <sys/socket.h>
 #include "evical.h"
 #include "task.h"
 #include "intern.h"
@@ -1526,12 +1525,6 @@ prnt_ev(echs_event_t e)
 
 
 /* sending is like printing but into a file descriptor of choice */
-#if defined MSG_MORE
-# define SEND_FL	(MSG_MORE)
-#else  /* !MSG_MORE */
-# define SEND_FL	(0)
-#endif	/* MSG_MORE */
-
 static void
 send_task(int whither, echs_task_t t)
 {
@@ -1583,7 +1576,7 @@ send_ical_hdr(int whither)
 	/* singleton, there's only one now */
 	static time_t now;
 
-	send(whither, beg, strlenof(beg), SEND_FL);
+	write(whither, beg, strlenof(beg));
 	if (LIKELY(now)) {
 		;
 	} else {
@@ -1607,7 +1600,7 @@ send_ical_hdr(int whither)
 		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
 		stmp[ztmp++] = '\n';
 	}
-	send(whither, stmp, ztmp, SEND_FL);
+	write(whither, stmp, ztmp);
 	return;
 }
 
@@ -1615,7 +1608,7 @@ static void
 send_ical_ftr(int whither)
 {
 	static const char end[] = "END:VEVENT\n";
-	send(whither, end, strlenof(end), 0);
+	write(whither, end, strlenof(end));
 	return;
 }
 
@@ -1634,7 +1627,7 @@ send_ev(int whither, echs_event_t e)
 		dprintf(whither, ";VALUE=DATE");
 	}
 	stmp[ztmp++ + 1U] = '\n';
-	send(whither, stmp, ztmp + 1U, SEND_FL);
+	write(whither, stmp, ztmp + 1U);
 
 	if (LIKELY(!echs_nul_instant_p(e.till))) {
 		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
@@ -1646,7 +1639,7 @@ send_ev(int whither, echs_event_t e)
 		dprintf(whither, ";VALUE=DATE");
 	}
 	stmp[ztmp++ + 1U] = '\n';
-	send(whither, stmp, ztmp + 1U, SEND_FL);
+	write(whither, stmp, ztmp + 1U);
 	return;
 }
 
@@ -1785,7 +1778,7 @@ send_rrul(int whither, rrulsp_t rr)
 		dprintf(whither, ";UNTIL=%s", until);
 	}
 
-	send(whither, "\n", 1U, SEND_FL);
+	write(whither, "\n", 1U);
 	return;
 }
 
