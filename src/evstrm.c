@@ -47,8 +47,6 @@
 /* our event class */
 struct evmux_s {
 	echs_evstrm_class_t class;
-	/* a common uid? */
-	echs_evuid_t uid;
 	/** number of streams */
 	size_t ns;
 	/** all them streams */
@@ -60,7 +58,6 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
-static echs_evuid_t uid_evmuxm(echs_const_evstrm_t);
 static void prnt_evmux1(echs_const_evstrm_t);
 static void prnt_evmuxm(echs_const_evstrm_t);
 
@@ -75,7 +72,6 @@ static const struct echs_evstrm_class_s evmuxm_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
-	.uid = uid_evmuxm,
 	.prnt1 = prnt_evmuxm,
 };
 
@@ -181,28 +177,21 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	/* otherwise we have to resort to merge-sorting aka muxing */
 	res = malloc(sizeof(*res) + ns * sizeof(*res->ev));
 	res->class = &evmux_cls;
-	res->uid = 0U;
 	res->ns = ns;
 	res->s = s;
 	/* check if we can use the many-items printer */
 	if ((*s)->class->prntm != NULL) {
 		const echs_evstrm_class_t proto = (*s)->class;
-		const echs_evuid_t protu = echs_evstrm_uid(*s);
 		bool same_class_p = true;
-		bool same_uid_p = true;
 
 		for (size_t i = 1U; i < ns; i++) {
 			if (s[i]->class != proto) {
 				same_class_p = false;
 				break;
-			} else if (echs_evstrm_uid(s[i]) != protu) {
-				same_uid_p = false;
-				break;
 			}
 		}
-		if (same_class_p && same_uid_p) {
+		if (same_class_p) {
 			res->class = &evmuxm_cls;
-			res->uid = protu;
 		}
 	}
 	/* we used to precache events here but seeing as not every
@@ -260,13 +249,6 @@ clone_evmux(echs_const_evstrm_t s)
 		res->s[i] = stmp;
 	}
 	return (echs_evstrm_t)res;
-}
-
-static echs_evuid_t
-uid_evmuxm(echs_const_evstrm_t s)
-{
-	const struct evmux_s *this = (const struct evmux_s*)s;
-	return this->uid;
 }
 
 

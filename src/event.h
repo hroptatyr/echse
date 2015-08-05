@@ -41,14 +41,14 @@
 #include <stdbool.h>
 #include "instant.h"
 #include "state.h"
-#include "task.h"
+#include "oid.h"
 
 typedef struct echs_event_s echs_event_t;
 
 struct echs_event_s {
 	echs_instant_t from;
 	echs_instant_t till;
-	echs_task_t task;
+	echs_oid_t oid;
 	echs_stset_t sts;
 };
 
@@ -75,8 +75,7 @@ echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 static inline __attribute__((const, pure)) bool
 echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	return echs_task_eq_p(e1.task, e2.task) &&
-		echs_instant_eq_p(e1.from, e2.from);
+	return echs_oid_eq_p(e1.oid, e2.oid);
 }
 
 static inline __attribute__((const, pure)) bool
@@ -99,13 +98,6 @@ static inline __attribute__((const, pure)) bool
 echs_nul_event_p(echs_event_t e)
 {
 	return echs_nul_instant_p(e.from);
-}
-
-static inline echs_event_t
-echs_event_clone(echs_event_t e)
-{
-	e.task = echs_task_clone(e.task);
-	return e;
 }
 
 #endif	/* INCLUDED_event_h_ */

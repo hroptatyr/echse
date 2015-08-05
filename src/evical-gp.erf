@@ -1,6 +1,9 @@
 %{
 typedef enum {
 	FLD_UNK,
+	FLD_BEGIN,
+	FLD_END,
+	FLD_METH,
 	FLD_DTSTART,
 	FLD_DTEND,
 	FLD_DURA,
@@ -43,6 +46,9 @@ struct ical_fld_cell_s {
 };
 
 %%
+BEGIN, FLD_BEGIN
+END, FLD_END
+METHOD, FLD_METH
 DTSTART, FLD_DTSTART
 DTEND, FLD_DTEND
 DURATION, FLD_DURA

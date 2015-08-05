@@ -60,6 +60,7 @@
 #endif	/* HAVE_PATHS_H */
 #include <pwd.h>
 #include "nifty.h"
+#include "evical.h"
 
 extern char **environ;
 
@@ -187,6 +188,57 @@ free_conn(int s)
 }
 
 
+static void
+proc1(int tgt_fd, int src_fd)
+{
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	size_t nrd;
+
+more:
+	switch ((nrd = read(src_fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
+
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+	case 0:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			echs_task_icalify(tgt_fd, ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+		break;
+	case -1:
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return;
+}
+
+
 #if defined STANDALONE
 #include "echsq.yucc"
 
@@ -263,6 +315,51 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	return 0;
 }
 
+static int
+cmd_add(const struct yuck_cmd_add_s argi[static 1U])
+{
+/* scan for BEGIN:VEVENT/END:VEVENT pairs */
+	static const char hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+METHOD:PUBLISH\n\
+CALSCALE:GREGORIAN\n";
+	static const char ftr[] = "\
+END:VCALENDAR\n";
+	const char *e;
+	int s = -1;
+
+	/* let's try the local echsd and then the system-wide one */
+	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		return 1;
+	} else if ((s = make_conn(e)) < 0) {
+		serror("Error: cannot connect to `%s'", e);
+		return 1;
+	}
+	/* otherwise it's time for a `yay' */
+	errno = 0, serror("connected to %s ...", e);
+
+	write(s, hdr, strlenof(hdr));
+	for (size_t i = 0U; i < argi->nargs; i++) {
+		int fd;
+
+		if (UNLIKELY((fd = open(argi->args[i], O_RDONLY)) < 0)) {
+			serror("\
+Error: cannot open file `%s'", argi->args[i]);
+			continue;
+		}
+
+		proc1(s, fd);
+		close(fd);
+	}
+	write(s, ftr, strlenof(ftr));
+
+	close(s);
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -284,6 +381,7 @@ main(int argc, char *argv[])
 
 
 	case ECHSQ_CMD_ADD:
+		rc = cmd_add((struct yuck_cmd_add_s*)argi);;
 		break;
 
 	default:

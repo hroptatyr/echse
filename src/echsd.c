@@ -104,8 +104,7 @@ struct _task_s {
 	ev_child c;
 
 	/* this is the task as understood by libechse */
-	echs_task_t task;
-	echs_evstrm_t strm;
+	echs_task_t t;
 
 	/* number of runs */
 	size_t nrun;
@@ -758,15 +757,15 @@ run_task(_task_t t, bool dtchp)
 		NULL
 	};
 	/* use a VLA for the real args */
-	const size_t natt = t->task->att ? t->task->att->nl : 0U;
+	const size_t natt = t->t->att ? t->t->att->nl : 0U;
 	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->task->env);
+	char *const *env = deconst(t->t->env);
 	pid_t r;
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	args[2U] = deconst(t->task->cmd);
-	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
+	args[2U] = deconst(t->t->cmd);
+	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
 		}
@@ -785,35 +784,35 @@ run_task(_task_t t, bool dtchp)
 		args[8U] = deconst(run_as.wd);
 		args[10U] = deconst(run_as.sh);
 	}
-	if (t->task->org) {
-		args[12U] = deconst(t->task->org);
+	if (t->t->org) {
+		args[12U] = deconst(t->t->org);
 	} else if (natt) {
-		args[12U] = t->task->att->l[0U];
+		args[12U] = t->t->att->l[0U];
 	} else {
 		args[12U] = "echse";
 	}
 	with (size_t i = 13U) {
-		if (t->task->mailout) {
+		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
-		if (t->task->mailerr) {
+		if (t->t->mailerr) {
 			args[i++] = "--mailerr";
 		}
-		if (t->task->in) {
+		if (t->t->in) {
 			args[i++] = args[15];
-			args[i++] = deconst(t->task->in);
+			args[i++] = deconst(t->t->in);
 		}
-		if (t->task->out) {
+		if (t->t->out) {
 			args[i++] = args[17];
-			args[i++] = deconst(t->task->out);
+			args[i++] = deconst(t->t->out);
 		}
-		if (t->task->err) {
+		if (t->t->err) {
 			args[i++] = args[19];
-			args[i++] = deconst(t->task->err);
+			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
-			args[i++] = t->task->att->l[j];
+			args[i++] = t->t->att->l[j];
 		}
 		if (!dtchp) {
 			args[i++] = "-n";
@@ -877,6 +876,7 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 typedef enum {
 	ECHS_CMD_UNK,
 	ECHS_CMD_LIST,
+	ECHS_CMD_ICAL,
 
 	/* to indicate that we need more data to finish the command */
 	ECHS_CMD_MORE = -1
@@ -891,6 +891,7 @@ struct echs_cmdparam_s {
 	echs_cmd_t cmd;
 	union {
 		struct echs_cmd_list_s list;
+		ical_parser_t ical;
 	};
 };
 
@@ -914,6 +915,18 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 			? ECHS_CMD_LIST : ECHS_CMD_MORE;
 	}
 	return ECHS_CMD_UNK;
+}
+
+static echs_cmd_t
+cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	if (echs_evical_push(&param->ical, buf, bsz) < 0) {
+		/* pushing won't help */
+		return ECHS_CMD_UNK;
+	}
+	/* aaaah ical stuff, just hand back control and let the pull parser
+	 * do its job, he's more magnificent than us anyway */
+	return ECHS_CMD_ICAL;
 }
 
 static ssize_t
@@ -961,36 +974,52 @@ guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r = ECHS_CMD_UNK;
 
-	if ((r = cmd_list_p(param, buf, bsz))) {
+	if ((r = cmd_ical_p(param, buf, bsz))) {
 		;
-	} else if (0) {
+	} else if ((r = cmd_list_p(param, buf, bsz))) {
 		;
 	}
 	return r;
 }
 
-static ssize_t
-handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
+static void
+shut_cmd(struct echs_cmdparam_s param[static 1U])
 {
-	ssize_t nwr = 0;
-
 	switch (param->cmd) {
-	case ECHS_CMD_LIST:
-		nwr = cmd_list(fd, &param->list);
+	default:
 		break;
 
-	case ECHS_CMD_MORE:
-	default:
-		/* just do fuckall */
+	case ECHS_CMD_ICAL:
+		if (LIKELY(param->ical == NULL)) {
+			break;
+		}
+		/* ical needs a special massage */
+		echs_instruc_t ins;
+
+		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
+		case INSVERB_CREA:
+			if (LIKELY(ins.t == NULL)) {
+				break;
+			}
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+			break;
+		default:
+			break;
+		}
 		break;
 	}
-	return nwr;
+	return;
 }
 
 
 /* libev conn handling */
 #define MAX_CONNS	(sizeof(free_conns) * 8U)
 #define MAX_QUEUE	MAX_CONNS
+typedef char echs_iobuf_t[4096U];
 static uint64_t free_conns = -1;
 static struct echs_conn_s {
 	ev_io r;
@@ -1002,6 +1031,7 @@ static struct echs_conn_s {
 	 * this contains a partial or full parse of all parameters */
 	struct echs_cmdparam_s cmd[1U];
 } conns[MAX_CONNS];
+static echs_iobuf_t bufs[MAX_CONNS];
 
 static struct echs_conn_s*
 make_conn(void)
@@ -1013,14 +1043,10 @@ make_conn(void)
 		/* toggle bit in free conns */
 		free_conns ^= 1ULL << i;
 
-		conns[i].buf = malloc(conns[i].bsz = 4096U);
+		conns[i].buf = bufs[i];
+		conns[i].bsz = sizeof(bufs[i]);
 		conns[i].bix = 0;
-
-		memset(conns[i].cmd, 0, sizeof(*conns[i].cmd));
-
-		if (LIKELY(conns[i].buf != NULL)) {
-			return conns + i;
-		}
+		return conns + i;
 	}
 	return NULL;
 }
@@ -1038,10 +1064,6 @@ free_conn(struct echs_conn_s *c)
 	/* toggle C-th bit */
 	free_conns ^= 1ULL << i;
 	memset(c, 0, sizeof(*c));
-	/* also free buffer resources */
-	if (LIKELY(c->buf != NULL)) {
-		free(c->buf);
-	}
 	return;
 }
 
@@ -1158,7 +1180,7 @@ resched(ev_periodic *w, ev_tstamp now)
  * This will be called BEFORE the actual callback is called so we have
  * to defer unschedule operations by one. */
 	_task_t t = (void*)w;
-	echs_evstrm_t s = t->strm;
+	echs_evstrm_t s = t->t->strm;
 	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
 
@@ -1176,7 +1198,6 @@ resched(ev_periodic *w, ev_tstamp now)
 	}
 
 	soon = instant_to_tstamp(e.from);
-	t->task = e.task;
 	t->nrun++;
 
 	ECHS_NOTI_LOG("next run %f", soon);
@@ -1205,29 +1226,49 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	const int fd = c->r.fd;
 	ssize_t nrd;
 
-	if (UNLIKELY((nrd = read(fd, c->buf + c->bix, c->bsz - c->bix)) < 0)) {
+	/* just have a peek at what's there */
+	if (UNLIKELY((nrd = recv(fd, c->buf, c->bsz, 0)) < 0)) {
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, c->bix += nrd)) {
-	default:
-		handle_cmd(fd, c->cmd);
+	switch (guess_cmd(c->cmd, c->buf, nrd)) {
+	case ECHS_CMD_LIST:
+		(void)cmd_list(fd, &c->cmd->list);
+		/* always shut him down */
 		goto shut;
 
-	case ECHS_CMD_MORE:
-		/* don't close the connection, prepare for more */
-		if ((size_t)c->bix >= c->bsz) {
-			c->buf = realloc(c->buf, c->bsz *= 2U);
-			if (UNLIKELY(c->buf == NULL)) {
-				goto shut;
+	case ECHS_CMD_ICAL:
+		do {
+			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
 			}
+			/* and otherwise inject him */
+			ECHS_NOTI_LOG("INJ %p", ins.t);
+		} while (1);
+		if (UNLIKELY(nrd == 0)) {
+			goto shut;
 		}
 		break;
+
+	case ECHS_CMD_MORE:
+		break;
+
+	default:
+	case ECHS_CMD_UNK:
+		/* just shut him down */
+		ECHS_NOTI_LOG("unknown command");
+		goto shut;
 	}
 	return;
 
 shut:
+	shut_cmd(c->cmd);
 	ev_io_stop(EV_A_ w);
+	ECHS_NOTI_LOG("freeing connection %d", w->fd);
 	shut_conn((struct echs_conn_s*)w);
 	return;
 }
@@ -1252,7 +1293,7 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 	}
 
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection from %u/%u", u, g);
+	ECHS_NOTI_LOG("connection %d from %u/%u", s, u, g);
 	if (UNLIKELY((ec = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
@@ -1350,9 +1391,9 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
+_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
 {
-	_task_t t;
+	_task_t res;
 	EV_P = ctx->loop;
 	ncred_t c = compl_uid(u);
 
@@ -1360,43 +1401,22 @@ _inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
 		return;
-	} else if (UNLIKELY((t = make_task()) == NULL)) {
+	} else if (UNLIKELY((res = make_task()) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
 		return;
 	}
 
-	/* store the stream */
-	t->strm = s;
+	/* bang libechse task into our _task */
+	res->t = t;
 	/* run all tasks as U and the default group of U */
-	t->dflt_cred.u = c.u;
-	t->dflt_cred.g = c.g;
+	res->dflt_cred.u = c.u;
+	res->dflt_cred.g = c.g;
 	/* also, by default, in U's home dir using U's shell */
-	t->dflt_cred.wd = strdup(c.wd);
-	t->dflt_cred.sh = strdup(c.sh);
+	res->dflt_cred.wd = strdup(c.wd);
+	res->dflt_cred.sh = strdup(c.sh);
 
-	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
-	ev_periodic_start(EV_A_ &t->w);
-	return;
-}
-
-static void
-_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
-{
-	echs_evstrm_t strm[64U];
-
-	for (size_t tots = 0U, nstrm;
-	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
-		     tots == 0U; tots += nstrm) {
-		/* we've either got some streams or our stream S isn't muxed */
-		if (nstrm == 0) {
-			/* put original stream as task */
-			_inject_evstrm1(ctx, s, u, cb);
-			break;
-		}
-		for (size_t i = 0U; i < nstrm; i++) {
-			_inject_evstrm1(ctx, strm[i], u, cb);
-		}
-	}
+	ev_periodic_init(&res->w, cb, 0./*ignored*/, 0., resched);
+	ev_periodic_start(EV_A_ &res->w);
 	return;
 }
 
@@ -1420,7 +1440,7 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 
 more:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		echs_evstrm_t s;
+		echs_instruc_t ins;
 
 	default:
 		if (echs_evical_push(&pp, buf, nrd) < 0) {
@@ -1428,17 +1448,33 @@ more:
 			break;
 		}
 	case 0:
-		while ((s = echs_evical_pull(&pp)) != NULL) {
-			_inject_evstrm(ctx, s, run_as, cb);
-		}
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			_inject_task1(ctx, ins.t, run_as, cb);
+		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
 		break;
 	case -1:
-		if (UNLIKELY((s = echs_evical_last_pull(&pp)) != NULL)) {
-			/* close right away */
-			free_echs_evstrm(s);
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
 		}
 		break;
 	}
