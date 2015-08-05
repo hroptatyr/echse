@@ -896,6 +896,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			add1_to_urlst(&ve->mf, u);
 		}
 		break;
+
 	case FLD_METH:;
 		/* oooh, they've been so kind as to give us precise
 		 * instructions ... */
@@ -907,6 +908,17 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		ve->m = m->meth;
 		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(lp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
 	default:
 		break;
 	}
