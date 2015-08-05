@@ -1084,6 +1084,22 @@ _ical_pull(struct ical_parser_s p[static 1U])
 #define BP	(p->buf + p->bix)
 #define BZ	(p->bsz - p->bix)
 #define BI	(p->bix)
+	/* before delving into the current buffer check the stash,
+	 * we might have put a multiline there and only now it
+	 * becomes apparent that it's indeed a valid line when
+	 * examinging the new bytes in the parser buffer */
+	if (p->six && p->stash[p->six] == '\001') {
+		/* go back to 0 termination */
+		p->stash[p->six] = '\0';
+		/* now check if the stuff in the buffer happens
+		 * to start with a single allowed whitespace in
+		 * which case we enter the normal chop_more
+		 * procedure */
+		if (LIKELY(*BP != ' ' && *BP != '\t')) {
+			goto proc;
+		}
+		/* just get on with it */
+	}
 chop_more:
 	/* chop _p->buf into lines (possibly multilines) */
 	for (const char *tmp = BP, *const ep = BP + BZ;
@@ -1101,6 +1117,14 @@ chop_more:
 		size_t sz = sizeof(p->stash) - p->six;
 
 		p->six += esccpy(sp, sz, BP, BZ);
+		if (eol != NULL) {
+			/* means at least we've seen a \n up there
+			 * leave a mark in the stash buffer so the
+			 * pre-examination in the next iteration can
+			 * rule whether this was a multi-line or in
+			 * fact a complete line */
+			p->stash[p->six] = '\001';
+		}
 	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
 			    !strncmp(BP, ftr, strlenof(ftr)))) {
 		/* oooh it's the end of the whole shebang,
@@ -1120,6 +1144,7 @@ chop_more:
 		/* store new stash pointer */
 		p->six += slen;
 
+	proc:
 		if (p->six && (res = _ical_proc(p)) == NULL) {
 			goto chop_more;
 		}
@@ -1258,7 +1283,6 @@ prnt_ical_hdr(void)
 	static time_t now;
 	static char stmp[32U];
 
-	puts("BEGIN:VEVENT");
 	if (LIKELY(now)) {
 		;
 	} else {
