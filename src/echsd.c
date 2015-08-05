@@ -742,7 +742,7 @@ free_task(_task_t t)
 }
 
 static pid_t
-run_task(_task_t t)
+run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
 	static char uid[16U], gid[16U];
@@ -770,6 +770,9 @@ run_task(_task_t t)
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
+	if (no_run) {
+		args[1U] = "--no-run";
+	}
 	args[3U] = deconst(t->t->cmd);
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
@@ -816,50 +819,6 @@ run_task(_task_t t)
 			args[i++] = args[20];
 			args[i++] = deconst(t->t->err);
 		}
-		for (size_t j = 0U; j < natt; j++) {
-			args[i++] = "--mailto";
-			args[i++] = t->t->att->l[j];
-		}
-		/* finalise args array */
-		args[i++] = NULL;
-	}
-
-	/* finally fork out our child */
-	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
-		ECHS_ERR_LOG("cannot fork: %s", STRERR);
-	}
-	return r;
-}
-
-static pid_t
-norun_task(_task_t t)
-{
-/* assumes ev_loop_fork() has been called */
-	static char *args_proto[] = {
-		[0] = "echsx",
-		[1] = "--no-run",
-		[2] = "-c", NULL,
-		[4] = "--mailfrom", NULL,
-		NULL
-	};
-	/* use a VLA for the real args */
-	const size_t natt = t->t->att ? t->t->att->nl : 0U;
-	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->t->env);
-	pid_t r;
-
-	/* set up the real args */
-	memcpy(args, args_proto, sizeof(args_proto));
-	args[3U] = deconst(t->t->cmd);
-
-	if (t->t->org) {
-		args[5U] = deconst(t->t->org);
-	} else if (natt) {
-		args[5U] = t->t->att->l[0U];
-	} else {
-		args[5U] = "echse";
-	}
-	with (size_t i = 6U) {
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
 			args[i++] = t->t->att->l[j];
@@ -1280,7 +1239,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 
 		/* keep track of the spawned child pid and register
 		 * a watcher for status changes */
-		with (pid_t p = run_task(t)) {
+		with (pid_t p = run_task(t, false)) {
 			ECHS_NOTI_LOG("supervising pid %d", p);
 			ev_child_init(c, chld_cb, p, false);
 			ev_child_start(EV_A_ c);
@@ -1288,7 +1247,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	} else {
 		/* ooooh, we can't run, call run task with the warning
 		 * flag and use fire and forget */
-		norun_task(t);
+		(void)run_task(t, true);
 	}
 
 	/* prepare for rescheduling */
