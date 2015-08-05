@@ -78,6 +78,11 @@ struct echs_task_s {
 	const char *err;
 	unsigned int mailout:1U;
 	unsigned int mailerr:1U;
+
+	/* maximum number of simultaneous runs, upped by 1, i.e.
+	 * 0 means -1 means infinite, 1 means 0 means never run
+	 * 2 means 1 means don't run concurrently, etc. */
+	unsigned int max_simul:6U;
 };
 
 

@@ -868,6 +868,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			ve->t.org = strndup(a.s, a.z);
 		}
 		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(vp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
 	}
 	return 0;
 }
@@ -896,6 +906,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			add1_to_urlst(&ve->mf, u);
 		}
 		break;
+
 	case FLD_METH:;
 		/* oooh, they've been so kind as to give us precise
 		 * instructions ... */
@@ -907,6 +918,17 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		ve->m = m->meth;
 		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(lp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
 	default:
 		break;
 	}
@@ -1039,6 +1061,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
 			/* yep, rinse our bucket */
 			memset(&p->ve, 0, sizeof(p->ve));
+			/* copy global task properties */
+			p->ve.t = p->globve.t;
 			/* and set state to vevent */
 			p->st = ST_VEVENT;
 		}
@@ -1563,6 +1587,9 @@ send_task(int whither, echs_task_t t)
 	}
 	if (t->run_as.wd) {
 		dprintf(whither, "LOCATION:%s\n", t->run_as.wd);
+	}
+	if (t->max_simul) {
+		dprintf(whither, "X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
 	}
 	return;
 }
