@@ -904,6 +904,102 @@ cannot spawn `sendmail': %s", STRERR);
 	return rc;
 }
 
+static int
+mail_warn(void)
+{
+/* mail some error about task not being run */
+	static const char mailcmd[] = "/usr/sbin/sendmail";
+	static const char wtxt[] = "\
+The scheduled task reached its maximum number of simultaneous tasks\n\
+and hence will not be run.\n\
+";
+	int mpip[2] = {-1, -1};
+	posix_spawn_file_actions_t fa;
+	int mfd = -1;
+	int rc = 0;
+
+	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
+		/* no mail */
+		mfd = STDOUT_FILENO;
+		goto mail;
+	} else if (pipe(mpip) < 0) {
+		ECHS_ERR_LOG("\
+cannot set up pipe to mailer: %s", STRERR);
+		return -1;
+	}
+
+	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		ECHS_ERR_LOG("\
+cannot initialise file actions: %s", STRERR);
+		rc = -1;
+	} else {
+		/* we're all set for the big forking */
+		posix_spawn_file_actions_adddup2(&fa, mpip[0U], STDIN_FILENO);
+		posix_spawn_file_actions_addclose(&fa, mpip[0U]);
+
+		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
+			ECHS_ERR_LOG("\
+cannot spawn `sendmail': %s", STRERR);
+			rc = -1;
+		}
+
+		/* parent */
+		posix_spawn_file_actions_destroy(&fa);
+	}
+	/* we're not interested in the read end of the descriptor */
+	close(mpip[0U]);
+
+	if (chld > 0) {
+		char tstmp[32U];
+		struct timespec now;
+
+	mail:
+		/* get ourselves a time stamp */
+		clock_gettime(CLOCK_REALTIME, &now);
+
+		/* now it's time to send the actual mail */
+		strfts(tstmp, sizeof(tstmp), now);
+
+		fdbang(mfd);
+		if (argi->mailfrom_arg) {
+			fdprintf("From: %s\n", argi->mailfrom_arg);
+		}
+		for (size_t i = 0U; i < argi->mailto_nargs; i++) {
+			fdprintf("To: %s\n", argi->mailto_args[i]);
+		}
+		if (argi->mailfrom_arg) {
+			fdprintf("Content-Type: text/plain\n");
+			fdprintf("User-Agent: " USER_AGENT "\n");
+		}
+		fdprintf("Subject: [NOT-RUN] %s\n", argi->command_arg);
+
+		fdprintf("\
+X-Job-Start: %s\n\
+X-Job-End: %s\n",
+			 tstmp, tstmp);
+		fdputc('\n');
+		fdflush();
+
+		write(mfd, wtxt, strlenof(wtxt));
+	}
+
+	/* send off the mail by closing the in-pipe */
+	close(mfd);
+
+	if (chld > 0) {
+		int mailrc;
+
+		while (waitpid(chld, &mailrc, 0) != chld);
+		if (mailrc) {
+			rc = -1;
+		}
+	}
+	/* we're not monitoring anything anymore */
+	chld = 0;
+	return rc;
+}
+
 static void
 free_task(echs_task_t t)
 {
@@ -1030,8 +1126,10 @@ cannot set timeout, job execution will be unbounded");
 		}
 	}
 
-	/* main loop */
-	with (struct echs_task_s t = {argi->command_arg}) {
+	/* main `loop' */
+	if (!argi->no_run_flag) {
+		struct echs_task_s t = {argi->command_arg};
+
 		/* prepare */
 		if (prep_task(&t) < 0) {
 			rc = 127;
@@ -1058,6 +1156,12 @@ cannot set timeout, job execution will be unbounded");
 
 	clean_up:
 		free_task(&t);
+	} else {
+		/* jsut mail a warning and come back */
+		if (mail_warn() < 0) {
+			rc = 127;
+			goto clean_up;
+		}
 	}
 
 	/* stop them log files */
