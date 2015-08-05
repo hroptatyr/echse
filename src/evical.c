@@ -1588,6 +1588,9 @@ send_task(int whither, echs_task_t t)
 	if (t->run_as.wd) {
 		dprintf(whither, "LOCATION:%s\n", t->run_as.wd);
 	}
+	if (t->max_simul) {
+		dprintf(whither, "X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+	}
 	return;
 }
 
