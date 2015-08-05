@@ -1246,8 +1246,8 @@ static void
 taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
 /* B tasks always run under supervision of our event loop, should the task
- * be scheduled again while it's still running, cancel the execution and
- * reschedule for the next time. */
+ * be scheduled again while max_simul other tasks are still running, cancel
+ * the execution and reschedule for the next time. */
 	_task_t t = (void*)w;
 
 	/* the task context holds the number of currently running children
@@ -1500,7 +1500,7 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static void
-_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
+_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u)
 {
 	_task_t res;
 	EV_P = ctx->loop;
@@ -1524,13 +1524,13 @@ _inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
 	res->dflt_cred.wd = strdup(c.wd);
 	res->dflt_cred.sh = strdup(c.sh);
 
-	ev_periodic_init(&res->w, cb, 0./*ignored*/, 0., resched);
+	ev_periodic_init(&res->w, taskB_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
 	return;
 }
 
 static void
-_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
+_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -1566,7 +1566,7 @@ more:
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx, ins.t, run_as, cb);
+			_inject_task1(ctx, ins.t, run_as);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -1607,7 +1607,6 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 			long unsigned int xu;
 			char *on;
 			unsigned char qi;
-			void(*cb)();
 
 			/* check if it's the right prefix */
 			if (strncmp(fn, prfx, strlenof(prfx))) {
@@ -1626,10 +1625,8 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 			qi = (unsigned char)*on++;
 			switch (qi | 0x20U) {
 			case 'a':
-				cb = taskA_cb;
 				break;
 			case 'b':
-				cb = taskB_cb;
 				break;
 			default:
 				continue;
@@ -1640,7 +1637,7 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				continue;
 			}
 			/* otherwise, try and load it */
-			_inject_file(ctx, fn, xu, cb);
+			_inject_file(ctx, fn, xu);
 		}
 		closedir(d);
 	}
