@@ -1061,6 +1061,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
 			/* yep, rinse our bucket */
 			memset(&p->ve, 0, sizeof(p->ve));
+			/* copy global task properties */
+			p->ve.t = p->globve.t;
 			/* and set state to vevent */
 			p->st = ST_VEVENT;
 		}
