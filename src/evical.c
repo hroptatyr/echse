@@ -781,7 +781,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_UID:
-		ve->t.oid = intern(vp, ep - vp);
+		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
 		if (ve->t.cmd != NULL) {
