@@ -728,6 +728,7 @@ free_task(_task_t t)
 	if (LIKELY(t->dflt_cred.sh != NULL)) {
 		free(deconst(t->dflt_cred.sh));
 	}
+	free_echs_task(t->t);
 
 	t->next = free_pers;
 	free_pers = t;
