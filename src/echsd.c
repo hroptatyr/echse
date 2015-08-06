@@ -1085,6 +1085,27 @@ HTTP/1.1 200 Ok\r\n\r\n";
 	return nwr;
 }
 
+static ssize_t
+cmd_ical(EV_P_ int fd, ical_parser_t cmd[static 1U], ncred_t cred)
+{
+	/* forward decl */
+	static int _inject_task1();
+	static void taskB_cb();
+
+	do {
+		echs_instruc_t ins = echs_evical_pull(cmd);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t == NULL)) {
+			continue;
+		}
+		/* and otherwise inject him */
+		_inject_task1(EV_A_ ins.t, cred.u, taskB_cb);
+	} while (1);
+	return 0;
+}
+
 static echs_cmd_t
 guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
@@ -1343,7 +1364,7 @@ static void
 sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
 	struct echs_conn_s *c = (void*)w;
-	const int fd = c->r.fd;
+	const int fd = w->fd;
 	ssize_t nrd;
 
 	/* just have a peek at what's there */
@@ -1358,19 +1379,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 
 	case ECHS_CMD_ICAL:
-		/* forward decl */
-		do {
-			static int _inject_task1();
-			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
-
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
-				break;
-			} else if (UNLIKELY(ins.t == NULL)) {
-				continue;
-			}
-			/* and otherwise inject him */
-			_inject_task1(EV_A_ ins.t, c->cred.u, taskB_cb);
-		} while (1);
+		(void)cmd_ical(EV_A_ fd, &c->cmd->ical, c->cred);
 		if (UNLIKELY(nrd == 0)) {
 			goto shut;
 		}
