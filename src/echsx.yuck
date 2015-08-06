@@ -16,3 +16,4 @@ Execute job.
   --gid=GID             Run as user GID.
   --cwd=PATH            Run in PATH.
   --shell=SH            Run using shell SH.
+  --no-run              Instead of running issue a warning.

@@ -8,7 +8,7 @@ Control echse queues.
 
 Usage: echsq add [FILE]...
 
-Add FILEs to the queue.
+Add tasks from FILEs to the queue.
 
 
 Usage: echsq list

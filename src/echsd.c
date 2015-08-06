@@ -49,7 +49,6 @@
 #include <limits.h>
 #include <time.h>
 #include <fcntl.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -101,14 +100,14 @@ struct _task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	_task_t next;
-	ev_child c;
 
 	/* this is the task as understood by libechse */
-	echs_task_t task;
-	echs_evstrm_t strm;
+	echs_task_t t;
 
 	/* number of runs */
 	size_t nrun;
+	/* number of concurrent runs */
+	size_t nsim;
 
 	ncred_t dflt_cred;
 };
@@ -531,7 +530,7 @@ free_socket(int s, const char *sdir)
 }
 
 static int
-get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
+get_peereuid(ncred_t *restrict cred, int s)
 {
 /* return UID/GID pair of connected peer in S. */
 #if defined SO_PEERCRED
@@ -544,8 +543,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		errno = EINVAL;
 		return -1;
 	}
-	*uid = c.uid;
-	*gid = c.gid;
+	*cred = (ncred_t){c.uid, c.gid};
 	return 0;
 #elif defined LOCAL_PEERCRED
 	struct xucred c;
@@ -558,8 +556,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 	} else if (c.cr_version != XUCRED_VERSION) {
 		return -1;
 	}
-	*uid = c.cr_uid;
-	*gid = c.cr_gid;
+	*cred = (ncred_t){c.c.cr_uid, c.cr_gid};
 	return 0;
 #elif defined HAVE_GETPEERUCRED
 	ucred_t *c = NULL;
@@ -568,8 +565,8 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		return -1;
 	}
 
-	*uid = ucred_geteuid(c);
-	*gid = ucred_getegid(c);
+	cred->uid = ucred_geteuid(c);
+	cred->gid = ucred_getegid(c);
 	ucred_free(c);
 
 	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
@@ -645,24 +642,87 @@ cred_to_ncred(cred_t c)
 
 /* task pool */
 #define ECHS_TASK_POOL_INIZ	(256U)
-static _task_t free_pers;
-static size_t nfree_pers;
-static size_t zfree_pers;
+static _task_t free_tasks;
+static size_t nfree_tasks;
+static size_t zfree_tasks;
 
 /* pool list */
-struct plst_s {
+struct tlst_s {
 	_task_t _1st;
 	size_t size;
 };
 
-static struct plst_s *pools;
-static size_t npools;
-static size_t zpools;
+static struct tlst_s *tpools;
+static size_t ntpools;
+static size_t ztpools;
+
+static struct {
+	echs_toid_t oid;
+	_task_t t;
+} *task_ht;
+static size_t ztask_ht;
+
+static size_t
+put_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for putting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (LIKELY(!task_ht[slot].oid)) {
+			return slot;
+		} else if (task_ht[slot].oid != oid) {
+			/* collision, retry */
+		        ;
+		} else {
+			/* huh? that's very inconsistent */
+			abort();
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static size_t
+get_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for getting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (task_ht[slot].oid == oid) {
+			return slot;
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static int
+resz_task_ht(void)
+{
+	const size_t olz = ztask_ht;
+	const typeof(*task_ht) *olt = task_ht;
+
+again:
+	/* buy the shiny new house */
+	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
+	if (UNLIKELY(task_ht == NULL)) {
+		return -1;
+	}
+	/* and now move */
+	for (size_t i = 0U; i < olz; i++) {
+		if (olt[i].oid) {
+			size_t j = put_task_slot(olt[i].oid);
+
+			if (UNLIKELY(j >= ztask_ht)) {
+				free(task_ht);
+				goto again;
+			}
+			task_ht[j] = olt[i];
+		}
+	}
+	return 0;
+}
 
 static _task_t
 make_task_pool(size_t n)
 {
-/* generate a pile of ev_periodics and chain them up */
+/* generate a pile of _task_t's and chain them up */
 	_task_t res;
 
 	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
@@ -674,48 +734,70 @@ make_task_pool(size_t n)
 		res[i - 1U].next = res + i;
 	}
 	/* also add res to the list of pools (for freeing them later) */
-	if (npools >= zpools) {
-		if (!(zpools *= 2U)) {
-			zpools = 16U;
+	if (ntpools >= ztpools) {
+		if (!(ztpools *= 2U)) {
+			ztpools = 16U;
 		}
-		pools = realloc(pools, zpools * sizeof(*pools));
+		tpools = realloc(tpools, ztpools * sizeof(*tpools));
 	}
-	pools[npools]._1st = res;
-	pools[npools].size = n;
-	npools++;
+	tpools[ntpools]._1st = res;
+	tpools[ntpools].size = n;
+	ntpools++;
 	return res;
 }
 
 static void
-free_task_pool(void)
+free_task_pools(void)
 {
-	for (size_t i = 0U; i < npools; i++) {
-		free(pools[i]._1st);
+	for (size_t i = 0U; i < ntpools; i++) {
+		free(tpools[i]._1st);
 	}
+	if (tpools) {
+		free(tpools);
+	}
+	tpools = NULL;
+	ntpools = ztpools = 0UL;
 	return;
 }
 
 static _task_t
-make_task(void)
+make_task(echs_toid_t oid)
 {
 /* create one task */
 	_task_t res;
 
-	if (UNLIKELY(!nfree_pers)) {
+	if (UNLIKELY(!nfree_tasks)) {
 		/* put some more task objects in the task pool */
-		free_pers = make_task_pool(nfree_pers = zfree_pers ?: 256U);
-		if (UNLIKELY(free_pers == NULL)) {
+		free_tasks = make_task_pool(
+			nfree_tasks = zfree_tasks ?: ECHS_TASK_POOL_INIZ);
+		if (UNLIKELY(free_tasks == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_pers *= 2U))) {
-			zfree_pers = 256U;
+		if (UNLIKELY(!(zfree_tasks *= 2U))) {
+			zfree_tasks = ECHS_TASK_POOL_INIZ;
 		}
 	}
 	/* pop off the free list */
-	res = free_pers;
-	free_pers = free_pers->next;
-	nfree_pers--;
+	res = free_tasks;
+	free_tasks = free_tasks->next;
+	nfree_tasks--;
+
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
+	}
+again:
+	with (size_t slot = put_task_slot(oid)) {
+		if (UNLIKELY(slot >= ztask_ht)) {
+			/* resize */
+			resz_task_ht();
+			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
+			goto again;
+		}
+		task_ht[slot] = (typeof(*task_ht)){oid, res};
+	}
+	memset(res, 0, sizeof(*res));
 	return res;
 }
 
@@ -723,49 +805,92 @@ static void
 free_task(_task_t t)
 {
 /* hand task T over to free list */
+	/* free from our task hash table */
+	with (size_t i = get_task_slot(t->t->oid)) {
+		if (UNLIKELY(i >= ztask_ht || task_ht[i].oid != t->t->oid)) {
+			/* that's no good :O */
+			ECHS_NOTI_LOG("inconsistent table of tasks");
+			break;
+		}
+		task_ht[i] = (typeof(*task_ht)){0U, NULL};
+	}
+
 	if (LIKELY(t->dflt_cred.wd != NULL)) {
 		free(deconst(t->dflt_cred.wd));
 	}
 	if (LIKELY(t->dflt_cred.sh != NULL)) {
 		free(deconst(t->dflt_cred.sh));
 	}
+	free_echs_task(t->t);
 
-	t->next = free_pers;
-	free_pers = t;
-	nfree_pers++;
+	t->next = free_tasks;
+	free_tasks = t;
+	nfree_tasks++;
+	return;
+}
+
+static _task_t
+get_task(echs_toid_t oid)
+{
+/* find the task with oid OID. */
+	size_t slot;
+
+	if (UNLIKELY(!ztask_ht)) {
+		return NULL;
+	} else if (UNLIKELY((slot = get_task_slot(oid)) >= ztask_ht)) {
+		/* not resizing now */
+		return NULL;
+	} else if (!task_ht[slot].oid) {
+		/* not found */
+		return NULL;
+	}
+	return task_ht[slot].t;
+}
+
+static void
+free_task_ht(void)
+{
+	if (LIKELY(task_ht != NULL)) {
+		free(task_ht);
+		task_ht = NULL;
+	}
 	return;
 }
 
 static pid_t
-run_task(_task_t t, bool dtchp)
+run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
-	static char fileX[] = "/tmp/foo";
 	static char uid[16U], gid[16U];
 	static char *args_proto[] = {
 		[0] = "echsx",
-		[1] = "-c", NULL,
-		[3] = "--stdout", fileX,
-		[5] = "--stderr", fileX,
-		[7] = "--uid", uid,
-		[9] = "--gid", gid,
-		[11] = "--cwd", NULL,
-		[13] = "--shell", NULL,
-		[15] = "--mailout",
-		[16] = "--mailerr",
-		[17] = "--mailfrom",
-		[20] = "-n",
+		[1] = "-n",
+		[2] = "-c", NULL,
+		[4] = "--uid", uid,
+		[6] = "--gid", gid,
+		[8] = "--cwd", NULL,
+		[10] = "--shell", NULL,
+		[12] = "--mailfrom", NULL,
+		[14] = "--mailout",
+		[15] = "--mailerr",
+		[16] = "--stdin", NULL,
+		[18] = "--stdout", NULL,
+		[20] = "--stderr", NULL,
 		NULL
 	};
 	/* use a VLA for the real args */
-	const size_t natt = t->task->att ? t->task->att->nl : 0U;
+	const size_t natt = t->t->att ? t->t->att->nl : 0U;
 	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->task->env);
+	char *const *env = deconst(t->t->env);
 	pid_t r;
 
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
-	with (ncred_t run_as = cred_to_ncred(t->task->run_as)) {
+	if (no_run) {
+		args[1U] = "--no-run";
+	}
+	args[3U] = deconst(t->t->cmd);
+	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
 		}
@@ -781,24 +906,38 @@ run_task(_task_t t, bool dtchp)
 		if (!run_as.sh) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[12U] = deconst(run_as.wd);
-		args[14U] = deconst(run_as.sh);
+		args[9U] = deconst(run_as.wd);
+		args[11U] = deconst(run_as.sh);
 	}
-	args[2U] = deconst(t->task->cmd);
-	if (t->task->org) {
-		args[18U] = deconst(t->task->org);
+	if (t->t->org) {
+		args[13U] = deconst(t->t->org);
 	} else if (natt) {
-		args[18U] = t->task->att->l[0U];
+		args[13U] = t->t->att->l[0U];
 	} else {
-		args[18U] = "echse";
+		args[13U] = "echse";
 	}
-	with (size_t i = 19U) {
+	with (size_t i = 14U) {
+		if (t->t->mailout) {
+			args[i++] = "--mailout";
+		}
+		if (t->t->mailerr) {
+			args[i++] = "--mailerr";
+		}
+		if (t->t->in) {
+			args[i++] = args[16];
+			args[i++] = deconst(t->t->in);
+		}
+		if (t->t->out) {
+			args[i++] = args[18];
+			args[i++] = deconst(t->t->out);
+		}
+		if (t->t->err) {
+			args[i++] = args[20];
+			args[i++] = deconst(t->t->err);
+		}
 		for (size_t j = 0U; j < natt; j++) {
 			args[i++] = "--mailto";
-			args[i++] = t->task->att->l[j];
-		}
-		if (!dtchp) {
-			args[i++] = "-n";
+			args[i++] = t->t->att->l[j];
 		}
 		/* finalise args array */
 		args[i++] = NULL;
@@ -807,9 +946,6 @@ run_task(_task_t t, bool dtchp)
 	/* finally fork out our child */
 	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
-	} else if (dtchp) {
-		int rc;
-		while (waitpid(r, &rc, 0) != r);
 	}
 	return r;
 }
@@ -855,10 +991,104 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 }
 
 
+/* child pool */
+#define ECHS_CHLD_POOL_INIZ	(256U)
+static ev_child *free_chlds;
+static size_t nfree_chlds;
+static size_t zfree_chlds;
+
+/* pool list */
+struct clst_s {
+	ev_child *_1st;
+	size_t size;
+};
+
+static struct clst_s *cpools;
+static size_t ncpools;
+static size_t zcpools;
+
+static ev_child*
+make_chld_pool(size_t n)
+{
+/* generate a pile of ev_childs and chain them up */
+	ev_child *res;
+
+	if (UNLIKELY((res = malloc(sizeof(*res) * n)) == NULL)) {
+		return NULL;
+	}
+	/* chain them up */
+	res[n - 1U].data = NULL;
+	for (size_t i = n - 1U; i > 0; i--) {
+		res[i - 1U].data = res + i;
+	}
+	/* also add res to the list of pools (for freeing them later) */
+	if (ncpools >= zcpools) {
+		if (!(zcpools *= 2U)) {
+			zcpools = 16U;
+		}
+		cpools = realloc(cpools, zcpools * sizeof(*cpools));
+	}
+	cpools[ncpools]._1st = res;
+	cpools[ncpools].size = n;
+	ncpools++;
+	return res;
+}
+
+static void
+free_chld_pools(void)
+{
+	for (size_t i = 0U; i < ncpools; i++) {
+		free(cpools[i]._1st);
+	}
+	if (cpools) {
+		free(cpools);
+	}
+	cpools = NULL;
+	ncpools = zcpools = 0UL;
+	return;
+}
+
+static ev_child*
+make_chld(void)
+{
+/* create one child */
+	ev_child *res;
+
+	if (UNLIKELY(!nfree_chlds)) {
+		/* put some more ev_child objects into the pool */
+		free_chlds = make_chld_pool(
+			nfree_chlds = zfree_chlds ?: ECHS_CHLD_POOL_INIZ);
+		if (UNLIKELY(free_chlds == NULL)) {
+			/* grrrr */
+			return NULL;
+		}
+		if (UNLIKELY(!(zfree_chlds *= 2U))) {
+			zfree_chlds = ECHS_CHLD_POOL_INIZ;
+		}
+	}
+	/* pop off the free list */
+	res = free_chlds;
+	free_chlds = free_chlds->data;
+	nfree_chlds--;
+	return res;
+}
+
+static void
+free_chld(ev_child *c)
+{
+/* hand chld C over to free list */
+	c->data = free_chlds;
+	free_chlds = c;
+	nfree_chlds++;
+	return;
+}
+
+
 /* s2c communication */
 typedef enum {
 	ECHS_CMD_UNK,
 	ECHS_CMD_LIST,
+	ECHS_CMD_ICAL,
 
 	/* to indicate that we need more data to finish the command */
 	ECHS_CMD_MORE = -1
@@ -873,6 +1103,7 @@ struct echs_cmdparam_s {
 	echs_cmd_t cmd;
 	union {
 		struct echs_cmd_list_s list;
+		ical_parser_t ical;
 	};
 };
 
@@ -896,6 +1127,18 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 			? ECHS_CMD_LIST : ECHS_CMD_MORE;
 	}
 	return ECHS_CMD_UNK;
+}
+
+static echs_cmd_t
+cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+{
+	if (echs_evical_push(&param->ical, buf, bsz) < 0) {
+		/* pushing won't help */
+		return ECHS_CMD_UNK;
+	}
+	/* aaaah ical stuff, just hand back control and let the pull parser
+	 * do its job, he's more magnificent than us anyway */
+	return ECHS_CMD_ICAL;
 }
 
 static ssize_t
@@ -938,41 +1181,165 @@ HTTP/1.1 200 Ok\r\n\r\n";
 	return nwr;
 }
 
+static ssize_t
+cmd_ical_rpl(int ofd, echs_task_t t, unsigned int code)
+{
+	static const char rpl_hdr[] = "\
+BEGIN:VCALENDAR\n\
+";
+	static const char rpl_rpl[] = "\
+METHOD:REPLY\n\
+";
+	static const char rpl_ftr[] = "\
+END:VCALENDAR\n\
+";
+	static const char rpl_veh[] = "\
+BEGIN:VEVENT\n\
+";
+	static const char rpl_vef[] = "\
+END:VEVENT\n\
+";
+	static const char succ[] = "\
+REQUEST-STATUS:2.0;Success\n\
+";
+	static const char fail[] = "\
+REQUEST-STATUS:5.1;Service unavailable\n\
+";
+	static time_t now;
+	static char stmp[32U];
+	static size_t nrpl = 0U;
+	struct tm tm;
+	time_t tmp;
+	ssize_t nwr = 0;
+
+	if (UNLIKELY(t == NULL)) {
+		if (nrpl) {
+			nwr += write(ofd, rpl_ftr, strlenof(rpl_ftr));
+			nrpl = 0U;
+		}
+		return nwr;
+	} else if (!nrpl) {
+		/* we haven't sent the VCALENDAR thingie yet */
+		nwr += write(ofd, rpl_hdr, strlenof(rpl_hdr));
+		nwr += write(ofd, rpl_rpl, strlenof(rpl_rpl));
+	}
+
+	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
+		echs_instant_t nowi;
+
+		nowi.y = tm.tm_year + 1900,
+		nowi.m = tm.tm_mon + 1,
+		nowi.d = tm.tm_mday,
+		nowi.H = tm.tm_hour,
+		nowi.M = tm.tm_min,
+		nowi.S = tm.tm_sec,
+		nowi.ms = ECHS_ALL_SEC,
+
+		dt_strf_ical(stmp, sizeof(stmp), nowi);
+		now = tmp;
+	}
+
+	nwr += write(ofd, rpl_veh, strlenof(rpl_veh));
+
+	nwr += dprintf(ofd, "UID:%s\n", obint_name(t->oid));
+	nwr += dprintf(ofd, "DTSTAMP:%s\n", stmp);
+	nwr += dprintf(ofd, "ORGANIZER:%s\n", t->org);
+	nwr += dprintf(ofd, "ATTENDEE:echse\n");
+	switch (code) {
+	case 0:
+		nwr += write(ofd, succ, strlenof(succ));
+		break;
+	default:
+		nwr += write(ofd, fail, strlenof(fail));
+		break;
+	}
+	nwr += write(ofd, rpl_vef, strlenof(rpl_vef));
+
+	/* just for the next iteration */
+	nrpl++;
+	return nwr;
+}
+
+static ssize_t
+cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
+{
+	/* forward decl */
+	static int _inject_task1();
+	ssize_t nwr = 0;
+
+	do {
+		echs_instruc_t ins = echs_evical_pull(cmd);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t == NULL)) {
+			continue;
+		}
+		/* and otherwise inject him */
+		if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
+			/* reply with REQUEST-STATUS:x */
+			cmd_ical_rpl(ofd, ins.t, 1U);
+		} else {
+			/* reply with REQUEST-STATUS:2.0;Success */
+			cmd_ical_rpl(ofd, ins.t, 0U);
+		}
+	} while (1);
+
+	cmd_ical_rpl(ofd, NULL, 0U);
+	return nwr;
+}
+
 static echs_cmd_t
 guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r = ECHS_CMD_UNK;
 
-	if ((r = cmd_list_p(param, buf, bsz))) {
+	if ((r = cmd_ical_p(param, buf, bsz))) {
 		;
-	} else if (0) {
+	} else if ((r = cmd_list_p(param, buf, bsz))) {
 		;
 	}
 	return r;
 }
 
-static ssize_t
-handle_cmd(int fd, const struct echs_cmdparam_s param[static 1U])
+static void
+shut_cmd(struct echs_cmdparam_s param[static 1U])
 {
-	ssize_t nwr = 0;
-
 	switch (param->cmd) {
-	case ECHS_CMD_LIST:
-		nwr = cmd_list(fd, &param->list);
+	default:
 		break;
 
-	case ECHS_CMD_MORE:
-	default:
-		/* just do fuckall */
+	case ECHS_CMD_ICAL:
+		if (LIKELY(param->ical == NULL)) {
+			break;
+		}
+		/* ical needs a special massage */
+		echs_instruc_t ins;
+
+		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
+		case INSVERB_CREA:
+			if (LIKELY(ins.t == NULL)) {
+				break;
+			}
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+			break;
+		default:
+			break;
+		}
 		break;
 	}
-	return nwr;
+	return;
 }
 
 
 /* libev conn handling */
 #define MAX_CONNS	(sizeof(free_conns) * 8U)
 #define MAX_QUEUE	MAX_CONNS
+typedef char echs_iobuf_t[4096U];
 static uint64_t free_conns = -1;
 static struct echs_conn_s {
 	ev_io r;
@@ -980,10 +1347,15 @@ static struct echs_conn_s {
 	char *buf;
 	size_t bsz;
 	off_t bix;
+
+	/* socket credentials, established upon accepting() */
+	ncred_t cred;
+
 	/* the command we're building up
 	 * this contains a partial or full parse of all parameters */
 	struct echs_cmdparam_s cmd[1U];
 } conns[MAX_CONNS];
+static echs_iobuf_t bufs[MAX_CONNS];
 
 static struct echs_conn_s*
 make_conn(void)
@@ -995,14 +1367,10 @@ make_conn(void)
 		/* toggle bit in free conns */
 		free_conns ^= 1ULL << i;
 
-		conns[i].buf = malloc(conns[i].bsz = 4096U);
+		conns[i].buf = bufs[i];
+		conns[i].bsz = sizeof(bufs[i]);
 		conns[i].bix = 0;
-
-		memset(conns[i].cmd, 0, sizeof(*conns[i].cmd));
-
-		if (LIKELY(conns[i].buf != NULL)) {
-			return conns + i;
-		}
+		return conns + i;
 	}
 	return NULL;
 }
@@ -1020,10 +1388,6 @@ free_conn(struct echs_conn_s *c)
 	/* toggle C-th bit */
 	free_conns ^= 1ULL << i;
 	memset(c, 0, sizeof(*c));
-	/* also free buffer resources */
-	if (LIKELY(c->buf != NULL)) {
-		free(c->buf);
-	}
 	return;
 }
 
@@ -1063,65 +1427,55 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 }
 
 static void
-chld_cb(EV_P_ ev_child *w, int UNUSED(revents))
+chld_cb(EV_P_ ev_child *c, int UNUSED(revents))
 {
-	_task_t t = (void*)((char*)w - offsetof(struct _task_s, c));
+	_task_t t = c->data;
 
-	ECHS_NOTI_LOG("chld %d coughed: %d", w->rpid, w->rstatus);
-	ev_child_stop(EV_A_ w);
-	w->rpid = w->pid = 0;
+	ECHS_NOTI_LOG("chld %d coughed: %d", c->rpid, c->rstatus);
+	ev_child_stop(EV_A_ c);
+	c->rpid = c->pid = 0;
+	t->nsim--;
 
 	if (UNLIKELY(t->w.reschedule_cb == NULL)) {
 		/* we promised taskB_cb to kill this guy */
 		unsched(EV_A_ &t->w, 0);
 	}
+	free_chld(c);
 	return;
 }
 
 static void
-taskA_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
-{
-/* A tasks always run asynchronously, echsx decouples itself from echsd
- * and manages the job with no further interaction */
-	_task_t t = (void*)w;
-
-	/* indicate that we might want to reuse the loop */
-	ev_loop_fork(EV_A);
-
-	/* these are completely asynchronous with no further monitoring
-	 * so fire and forget */
-	(void)run_task(t, true);
-
-	/* prepare for rescheduling */
-	if (UNLIKELY(w->reschedule_cb == NULL)) {
-		/* that's the end of our streak */
-		unsched(EV_A_ w, 0);
-	}
-	return;
-}
-
-static void
-taskB_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
+task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 {
 /* B tasks always run under supervision of our event loop, should the task
- * be scheduled again while it's still running, cancel the execution and
- * reschedule for the next time. */
+ * be scheduled again while max_simul other tasks are still running, cancel
+ * the execution and reschedule for the next time. */
 	_task_t t = (void*)w;
 
-	/* the global context holds the currently running child
-	 * if there is one running, defer the execution of this task */
-	if (!t->c.pid) {
+	/* the task context holds the number of currently running children
+	 * as well as the maximum number of simultaneous children
+	 * if the maximum is running, defer the execution of this task */
+	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
+		ev_child *c = make_chld();
+
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		/* unlike A tasks these will run only once
-		 * keep track of the spawned child pid and register
+		/* consider us running already */
+		t->nsim++;
+		c->data = t;
+
+		/* keep track of the spawned child pid and register
 		 * a watcher for status changes */
 		with (pid_t p = run_task(t, false)) {
 			ECHS_NOTI_LOG("supervising pid %d", p);
-			ev_child_init(&t->c, chld_cb, p, false);
-			ev_child_start(EV_A_ &t->c);
+			ev_child_init(c, chld_cb, p, false);
+			ev_child_start(EV_A_ c);
 		}
+	} else {
+		/* ooooh, we can't run, call run task with the warning
+		 * flag and use fire and forget */
+		(void)run_task(t, true);
 	}
 
 	/* prepare for rescheduling */
@@ -1140,7 +1494,7 @@ resched(ev_periodic *w, ev_tstamp now)
  * This will be called BEFORE the actual callback is called so we have
  * to defer unschedule operations by one. */
 	_task_t t = (void*)w;
-	echs_evstrm_t s = t->strm;
+	echs_evstrm_t s = t->t->strm;
 	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
 
@@ -1158,7 +1512,6 @@ resched(ev_periodic *w, ev_tstamp now)
 	}
 
 	soon = instant_to_tstamp(e.from);
-	t->task = e.task;
 	t->nrun++;
 
 	ECHS_NOTI_LOG("next run %f", soon);
@@ -1184,32 +1537,42 @@ static void
 sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
 	struct echs_conn_s *c = (void*)w;
-	const int fd = c->r.fd;
+	const int fd = w->fd;
 	ssize_t nrd;
 
-	if (UNLIKELY((nrd = read(fd, c->buf + c->bix, c->bsz - c->bix)) < 0)) {
+	/* just have a peek at what's there */
+	if (UNLIKELY((nrd = recv(fd, c->buf, c->bsz, 0)) < 0)) {
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, c->bix += nrd)) {
-	default:
-		handle_cmd(fd, c->cmd);
+	switch (guess_cmd(c->cmd, c->buf, nrd)) {
+	case ECHS_CMD_LIST:
+		(void)cmd_list(fd, &c->cmd->list);
+		/* always shut him down */
 		goto shut;
 
-	case ECHS_CMD_MORE:
-		/* don't close the connection, prepare for more */
-		if ((size_t)c->bix >= c->bsz) {
-			c->buf = realloc(c->buf, c->bsz *= 2U);
-			if (UNLIKELY(c->buf == NULL)) {
-				goto shut;
-			}
+	case ECHS_CMD_ICAL:
+		(void)cmd_ical(EV_A_ fd, &c->cmd->ical, c->cred);
+		if (UNLIKELY(nrd == 0)) {
+			goto shut;
 		}
 		break;
+
+	case ECHS_CMD_MORE:
+		break;
+
+	default:
+	case ECHS_CMD_UNK:
+		/* just shut him down */
+		ECHS_NOTI_LOG("unknown command");
+		goto shut;
 	}
 	return;
 
 shut:
+	shut_cmd(c->cmd);
 	ev_io_stop(EV_A_ w);
+	ECHS_NOTI_LOG("freeing connection %d", w->fd);
 	shut_conn((struct echs_conn_s*)w);
 	return;
 }
@@ -1217,14 +1580,13 @@ shut:
 static void
 sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
-	struct echs_conn_s *ec;
+	struct echs_conn_s *c;
 	struct sockaddr_un sa;
 	socklen_t z = sizeof(sa);
-	uid_t u;
-	gid_t g;
+	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
+	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
 		ECHS_ERR_LOG("\
 authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 		return;
@@ -1234,14 +1596,17 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 	}
 
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection from %u/%u", u, g);
-	if (UNLIKELY((ec = make_conn()) == NULL)) {
+	ECHS_NOTI_LOG("connection %d from %u/%u", s, cred.u, cred.g);
+	if (UNLIKELY((c = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
 		return;
 	}
-	ev_io_init(&ec->r, sock_data_cb, s, EV_READ);
-	ev_io_start(EV_A_ &ec->r);
+	/* pass on our findings about the connection credentials */
+	c->cred = cred;
+
+	ev_io_init(&c->r, sock_data_cb, s, EV_READ);
+	ev_io_start(EV_A_ &c->r);
 	return;
 }
 
@@ -1326,58 +1691,51 @@ free_echsd(struct _echsd_s *ctx)
 		ev_break(ctx->loop, EVBREAK_ALL);
 		ev_loop_destroy(ctx->loop);
 	}
-	free_task_pool();
+	free_task_pools();
+	free_chld_pools();
+	free_task_ht();
 	free(ctx);
 	return;
 }
 
-static void
-_inject_evstrm1(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
+static int
+_inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
-	_task_t t;
-	EV_P = ctx->loop;
+	_task_t res;
+	ncred_t c = compl_uid(u);
 
-	if (UNLIKELY((t = make_task()) == NULL)) {
+	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
+		/* user doesn't exist, do they */
+		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
+		return -1;
+	} else if ((res = get_task(t->oid)) != NULL) {
+		ECHS_NOTI_LOG("task update, unscheduling old task");
+		ev_periodic_stop(EV_A_ &res->w);
+		free(deconst(res->dflt_cred.wd));
+		free(deconst(res->dflt_cred.sh));
+		free_echs_task(res->t);
+	} else if (UNLIKELY((res = make_task(t->oid)) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
-		return;
+		return -1;
 	}
 
-	/* store the stream */
-	t->strm = s;
+	/* bang libechse task into our _task */
+	res->t = t;
 	/* run all tasks as U and the default group of U */
-	t->dflt_cred = compl_uid(u);
+	res->dflt_cred.u = c.u;
+	res->dflt_cred.g = c.g;
 	/* also, by default, in U's home dir using U's shell */
-	t->dflt_cred.wd = strdup(t->dflt_cred.wd);
-	t->dflt_cred.sh = strdup(t->dflt_cred.sh);
+	res->dflt_cred.wd = strdup(c.wd);
+	res->dflt_cred.sh = strdup(c.sh);
 
-	ev_periodic_init(&t->w, cb, 0./*ignored*/, 0., resched);
-	ev_periodic_start(EV_A_ &t->w);
-	return;
+	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
+	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
+	ev_periodic_start(EV_A_ &res->w);
+	return 0;
 }
 
 static void
-_inject_evstrm(struct _echsd_s *ctx, echs_evstrm_t s, uid_t u, void(*cb)())
-{
-	echs_evstrm_t strm[64U];
-
-	for (size_t tots = 0U, nstrm;
-	     (nstrm = echs_evstrm_demux(strm, countof(strm), s, tots)) > 0U ||
-		     tots == 0U; tots += nstrm) {
-		/* we've either got some streams or our stream S isn't muxed */
-		if (nstrm == 0) {
-			/* put original stream as task */
-			_inject_evstrm1(ctx, s, u, cb);
-			break;
-		}
-		for (size_t i = 0U; i < nstrm; i++) {
-			_inject_evstrm1(ctx, strm[i], u, cb);
-		}
-	}
-	return;
-}
-
-static void
-_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
+_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -1396,7 +1754,7 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as, void(*cb)())
 
 more:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		echs_evstrm_t s;
+		echs_instruc_t ins;
 
 	default:
 		if (echs_evical_push(&pp, buf, nrd) < 0) {
@@ -1404,17 +1762,33 @@ more:
 			break;
 		}
 	case 0:
-		while ((s = echs_evical_pull(&pp)) != NULL) {
-			_inject_evstrm(ctx, s, run_as, cb);
-		}
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			_inject_task1(ctx->loop, ins.t, run_as);
+		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
 		break;
 	case -1:
-		if (UNLIKELY((s = echs_evical_last_pull(&pp)) != NULL)) {
-			/* close right away */
-			free_echs_evstrm(s);
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
 		}
 		break;
 	}
@@ -1438,7 +1812,6 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 			long unsigned int xu;
 			char *on;
 			unsigned char qi;
-			void(*cb)();
 
 			/* check if it's the right prefix */
 			if (strncmp(fn, prfx, strlenof(prfx))) {
@@ -1457,10 +1830,8 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 			qi = (unsigned char)*on++;
 			switch (qi | 0x20U) {
 			case 'a':
-				cb = taskA_cb;
 				break;
 			case 'b':
-				cb = taskB_cb;
 				break;
 			default:
 				continue;
@@ -1471,7 +1842,7 @@ echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 				continue;
 			}
 			/* otherwise, try and load it */
-			_inject_file(ctx, fn, xu, cb);
+			_inject_file(ctx, fn, xu);
 		}
 		closedir(d);
 	}

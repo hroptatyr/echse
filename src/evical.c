@@ -1,4 +1,4 @@
-/*** evical.c -- simple icalendar parser for echse
+/*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
  * Copyright (C) 2013-2015 Sebastian Freundt
  *
@@ -59,6 +59,7 @@
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 #include "evmrul-gp.c"
+#include "evmeth-gp.c"
 
 #if !defined assert
 # define assert(x)
@@ -103,6 +104,11 @@ struct ical_vevent_s {
 
 	/* proto typical task */
 	struct echs_task_s t;
+
+	/* just to transport the method specified */
+	ical_meth_t m;
+	/* request status or other status info */
+	unsigned int rs;
 
 	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
@@ -249,7 +255,6 @@ make_proto_task(struct ical_vevent_s *restrict ve)
 	}
 	/* copy the proto task over */
 	*res = ve->t;
-	ve->e.task = res;
 	return;
 }
 
@@ -777,7 +782,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_UID:
-		ve->t.uid = intern(vp, ep - vp);
+		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
 		if (ve->t.cmd != NULL) {
@@ -799,6 +804,41 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		/* bang straight into the proto task */
 		ve->t.run_as.wd = strndup(vp, ep - vp);
+		break;
+
+	case FLD_IFILE:
+		if (ve->t.in != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.in = strndup(vp, ep - vp);
+		break;
+
+	case FLD_OFILE:
+		if (ve->t.out != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.out = strndup(vp, ep - vp);
+		break;
+
+	case FLD_EFILE:
+		if (ve->t.err != NULL) {
+			/* only the first location wins */
+			break;
+		}
+		/* bang straight into the proto task */
+		ve->t.err = strndup(vp, ep - vp);
+		break;
+
+	case FLD_MOUT:
+		ve->t.mailout = 1U;
+		break;
+
+	case FLD_MERR:
+		ve->t.mailerr = 1U;
 		break;
 
 	case FLD_SHELL:
@@ -830,6 +870,23 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			ve->t.org = strndup(a.s, a.z);
 		}
 		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(vp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
+	case FLD_RSTAT:
+		/* aaah we're reading a response (reply) */
+		if (vp < ep) {
+			ve->rs = *vp ^ '0';
+		}
+		break;
 	}
 	return 0;
 }
@@ -858,6 +915,29 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			add1_to_urlst(&ve->mf, u);
 		}
 		break;
+
+	case FLD_METH:;
+		/* oooh, they've been so kind as to give us precise
+		 * instructions ... */
+		const struct ical_meth_cell_s *m;
+
+		if ((lp++, m = __evical_meth(lp, llen - (lp - line))) == NULL) {
+			/* nope, no methods given */
+			break;
+		}
+		ve->m = m->meth;
+		break;
+
+	case FLD_MAX_SIMUL:
+		with (long int i = strtol(lp, NULL, 0)) {
+			if (UNLIKELY(i < 0 || i >= 63)) {
+				ve->t.max_simul = 0U;
+			} else {
+				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
 	default:
 		break;
 	}
@@ -874,6 +954,8 @@ struct ical_parser_s {
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
+
+	echs_instruc_t protoi;
 
 	/* the input buffer we're currently working on */
 	const char *buf;
@@ -980,14 +1062,16 @@ _ical_proc(struct ical_parser_s p[static 1U])
 
 	default:
 	case ST_UNK:
-		/* check if it's a X-GA-* line, we like those */
-		snarf_pro(&p->globve, sp, sz);
 		/*@fallthrough@*/
 	case ST_BODY:
+		/* check for globals */
+		snarf_pro(&p->globve, sp, sz);
 		/* check if line is a new vevent */
 		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
 			/* yep, rinse our bucket */
 			memset(&p->ve, 0, sizeof(p->ve));
+			/* copy global task properties */
+			p->ve.t = p->globve.t;
 			/* and set state to vevent */
 			p->st = ST_VEVENT;
 		}
@@ -1032,6 +1116,22 @@ _ical_pull(struct ical_parser_s p[static 1U])
 #define BP	(p->buf + p->bix)
 #define BZ	(p->bsz - p->bix)
 #define BI	(p->bix)
+	/* before delving into the current buffer check the stash,
+	 * we might have put a multiline there and only now it
+	 * becomes apparent that it's indeed a valid line when
+	 * examinging the new bytes in the parser buffer */
+	if (p->six && p->stash[p->six] == '\001') {
+		/* go back to 0 termination */
+		p->stash[p->six] = '\0';
+		/* now check if the stuff in the buffer happens
+		 * to start with a single allowed whitespace in
+		 * which case we enter the normal chop_more
+		 * procedure */
+		if (LIKELY(*BP != ' ' && *BP != '\t')) {
+			goto proc;
+		}
+		/* just get on with it */
+	}
 chop_more:
 	/* chop _p->buf into lines (possibly multilines) */
 	for (const char *tmp = BP, *const ep = BP + BZ;
@@ -1049,6 +1149,14 @@ chop_more:
 		size_t sz = sizeof(p->stash) - p->six;
 
 		p->six += esccpy(sp, sz, BP, BZ);
+		if (eol != NULL) {
+			/* means at least we've seen a \n up there
+			 * leave a mark in the stash buffer so the
+			 * pre-examination in the next iteration can
+			 * rule whether this was a multi-line or in
+			 * fact a complete line */
+			p->stash[p->six] = '\001';
+		}
 	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
 			    !strncmp(BP, ftr, strlenof(ftr)))) {
 		/* oooh it's the end of the whole shebang,
@@ -1068,6 +1176,7 @@ chop_more:
 		/* store new stash pointer */
 		p->six += slen;
 
+	proc:
 		if (p->six && (res = _ical_proc(p)) == NULL) {
 			goto chop_more;
 		}
@@ -1206,7 +1315,6 @@ prnt_ical_hdr(void)
 	static time_t now;
 	static char stmp[32U];
 
-	puts("BEGIN:VEVENT");
 	if (LIKELY(now)) {
 		;
 	} else {
@@ -1416,33 +1524,8 @@ prnt_stset(echs_stset_t sts)
 }
 
 static void
-prnt_mrul(mrulsp_t mr)
-{
-	static const char *const mdirs[] = {
-		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
-	};
-
-	if (mr.mdir) {
-		fputs("DIR=", stdout);
-		fputs(mdirs[mr.mdir], stdout);
-	}
-	if (mr.from) {
-		fputs(";MOVEFROM=", stdout);
-		prnt_stset(mr.from);
-	}
-	if (mr.into) {
-		fputs(";MOVEINTO=", stdout);
-		prnt_stset(mr.into);
-	}
-
-	fputc('\n', stdout);
-	return;
-}
-
-static void
 prnt_ev(echs_event_t e)
 {
-	static unsigned int auto_uid;
 	char stmp[32U] = {':'};
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
@@ -1465,35 +1548,273 @@ prnt_ev(echs_event_t e)
 		fputs(";VALUE=DATE", stdout);
 	}
 	puts(stmp);
-
-	/* fill in a missing uid? */
-	auto_uid++;
-	if (e.task->uid) {
-		fputs("UID:", stdout);
-		puts(obint_name(e.task->uid));
-	} else {
-		/* it's mandatory, so generate one */
-		fprintf(stdout, "UID:echse_merged_vevent_%u\n", auto_uid);
-	}
-	if (e.task->cmd) {
-		fputs("SUMMARY:", stdout);
-		puts(e.task->cmd);
-	}
-	if (e.task->org) {
-		fputs("ORGANIZER:", stdout);
-		puts(e.task->org);
-	}
-	if (e.task->att) {
-		for (const char *const *ap = e.task->att->l; *ap; ap++) {
-			fputs("ATTENDEE:", stdout);
-			puts(*ap);
-		}
-	}
 	if (e.sts) {
 		fputs("X-GA-STATE:", stdout);
 		prnt_stset(e.sts);
 		fputc('\n', stdout);
 	}
+	return;
+}
+
+
+/* sending is like printing but into a file descriptor of choice */
+static void
+send_task(int whither, echs_task_t t)
+{
+	static unsigned int auto_uid;
+
+	/* fill in a missing uid? */
+	auto_uid++;
+	if (t->oid) {
+		dprintf(whither, "UID:%s\n", obint_name(t->oid));
+	} else {
+		/* it's mandatory, so generate one */
+		dprintf(whither, "UID:echse_merged_vevent_%u\n", auto_uid);
+	}
+	if (t->cmd) {
+		dprintf(whither, "SUMMARY:%s\n", t->cmd);
+	}
+	if (t->org) {
+		dprintf(whither, "ORGANIZER:%s\n", t->org);
+	}
+	if (t->att) {
+		for (const char *const *ap = t->att->l; *ap; ap++) {
+			dprintf(whither, "ATTENDEE:%s\n", *ap);
+		}
+	}
+	if (t->in) {
+		dprintf(whither, "X-ECHS-IFILE:%s\n", t->in);
+	}
+	if (t->out) {
+		dprintf(whither, "X-ECHS-OFILE:%s\n", t->out);
+	}
+	if (t->err) {
+		dprintf(whither, "X-ECHS-EFILE:%s\n", t->err);
+	}
+	if (t->run_as.sh) {
+		dprintf(whither, "X-ECHS-SHELL:%s\n", t->run_as.sh);
+	}
+	if (t->run_as.wd) {
+		dprintf(whither, "LOCATION:%s\n", t->run_as.wd);
+	}
+	if (t->max_simul) {
+		dprintf(whither, "X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+	}
+	return;
+}
+
+static void
+send_ical_hdr(int whither)
+{
+	static const char beg[] = "BEGIN:VEVENT\n";
+	static char stmp[32U] = "DTSTAMP:";
+	static size_t ztmp = strlenof("DTSTAMP:");
+	/* singleton, there's only one now */
+	static time_t now;
+
+	write(whither, beg, strlenof(beg));
+	if (LIKELY(now)) {
+		;
+	} else {
+		struct tm tm;
+		echs_instant_t nowi;
+
+		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) == NULL))) {
+			/* screw up the singleton */
+			now = 0;
+			return;
+		}
+		/* otherwise fill in now and materialise */
+		nowi.y = tm.tm_year + 1900,
+			nowi.m = tm.tm_mon + 1,
+			nowi.d = tm.tm_mday,
+			nowi.H = tm.tm_hour,
+			nowi.M = tm.tm_min,
+			nowi.S = tm.tm_sec,
+			nowi.ms = ECHS_ALL_SEC;
+
+		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
+		stmp[ztmp++] = '\n';
+	}
+	write(whither, stmp, ztmp);
+	return;
+}
+
+static void
+send_ical_ftr(int whither)
+{
+	static const char end[] = "END:VEVENT\n";
+	write(whither, end, strlenof(end));
+	return;
+}
+
+static void
+send_ev(int whither, echs_event_t e)
+{
+	char stmp[32U] = {':'};
+	size_t ztmp = 1U;
+
+	if (UNLIKELY(echs_nul_instant_p(e.from))) {
+		return;
+	}
+	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
+	dprintf(whither, "DTSTART");
+	if (echs_instant_all_day_p(e.from)) {
+		dprintf(whither, ";VALUE=DATE");
+	}
+	stmp[ztmp++ + 1U] = '\n';
+	write(whither, stmp, ztmp + 1U);
+
+	if (LIKELY(!echs_nul_instant_p(e.till))) {
+		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
+	} else {
+		e.till = e.from;
+	}
+	dprintf(whither, "DTEND");
+	if (echs_instant_all_day_p(e.till)) {
+		dprintf(whither, ";VALUE=DATE");
+	}
+	stmp[ztmp++ + 1U] = '\n';
+	write(whither, stmp, ztmp + 1U);
+	return;
+}
+
+static void
+send_rrul(int whither, rrulsp_t rr)
+{
+	static const char *const f[] = {
+		[FREQ_NONE] = "FREQ=NONE",
+		[FREQ_YEARLY] = "FREQ=YEARLY",
+		[FREQ_MONTHLY] = "FREQ=MONTHLY",
+		[FREQ_WEEKLY] = "FREQ=WEEKLY",
+		[FREQ_DAILY] = "FREQ=DAILY",
+		[FREQ_HOURLY] = "FREQ=HOURLY",
+		[FREQ_MINUTELY] = "FREQ=MINUTELY",
+		[FREQ_SECONDLY] = "FREQ=SECONDLY",
+	};
+
+	dprintf(whither, "RRULE:%s", f[rr->freq]);
+
+	if (rr->inter > 1U) {
+		dprintf(whither, ";INTERVAL=%u", rr->inter);
+	}
+	with (unsigned int m) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->mon)) {
+			break;
+		}
+		m = bui31_next(&i, rr->mon);
+		dprintf(whither, ";BYMONTH=%u", m);
+		while (m = bui31_next(&i, rr->mon), i) {
+			dprintf(whither, ",%u", m);
+		}
+	}
+
+	with (int yw) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi63_has_bits_p(rr->wk)) {
+			break;
+		}
+		yw = bi63_next(&i, rr->wk);
+		dprintf(whither, ";BYWEEKNO=%d", yw);
+		while (yw = bi63_next(&i, rr->wk), i) {
+			dprintf(whither, ",%d", yw);
+		}
+	}
+
+	with (int yd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->doy)) {
+			break;
+		}
+		yd = bi383_next(&i, &rr->doy);
+		dprintf(whither, ";BYYEARDAY=%d", yd);
+		while (yd = bi383_next(&i, &rr->doy), i) {
+			dprintf(whither, ",%d", yd);
+		}
+	}
+
+	with (int d) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi31_has_bits_p(rr->dom)) {
+			break;
+		}
+		d = bi31_next(&i, rr->dom);
+		dprintf(whither, ";BYMONTHDAY=%d", d);
+		while (d = bi31_next(&i, rr->dom), i) {
+			dprintf(whither, ",%d", d);
+		}
+	}
+
+	with (int e) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->easter)) {
+			break;
+		}
+		e = bi383_next(&i, &rr->easter);
+		dprintf(whither, ";BYEASTER=%d", e);
+		while (e = bi383_next(&i, &rr->easter), i) {
+			dprintf(whither, ",%d", e);
+		}
+	}
+
+	with (struct cd_s cd) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi447_has_bits_p(&rr->dow)) {
+			break;
+		}
+		cd = unpack_cd(bi447_next(&i, &rr->dow));
+		fputs(";BYDAY=", stdout);
+		prnt_cd(cd);
+		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
+			fputc(',', stdout);
+			prnt_cd(cd);
+		}
+	}
+
+	with (int a) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->add)) {
+			break;
+		}
+		a = bi383_next(&i, &rr->add);
+		dprintf(whither, ";BYADD=%d", a);
+		while (a = bi383_next(&i, &rr->add), i) {
+			dprintf(whither, ",%d", a);
+		}
+	}
+
+	with (int p) {
+		bitint_iter_t i = 0UL;
+
+		if (!bi383_has_bits_p(&rr->pos)) {
+			break;
+		}
+		p = bi383_next(&i, &rr->pos);
+		dprintf(whither, ";BYPOS=%d", p);
+		while (p = bi383_next(&i, &rr->pos), i) {
+			dprintf(whither, ",%d", p);
+		}
+	}
+
+	if ((int)rr->count > 0) {
+		dprintf(whither, ";COUNT=%u", rr->count);
+	}
+	if (rr->until.u < -1ULL) {
+		char until[32U];
+
+		dt_strf_ical(until, sizeof(until), rr->until);
+		dprintf(whither, ";UNTIL=%s", until);
+	}
+
+	write(whither, "\n", 1U);
 	return;
 }
 
@@ -1541,11 +1862,6 @@ free_evical_vevent(echs_evstrm_t s)
 {
 	struct evical_s *this = (struct evical_s*)s;
 
-	for (size_t i = 0U; i < this->nev; i++) {
-		if (this->ev[i].task) {
-			free_echs_task(this->ev[i].task);
-		}
-	}
 	free(this);
 	return;
 }
@@ -1558,10 +1874,6 @@ clone_evical_vevent(echs_const_evstrm_t s)
 
 	res = (struct evical_s*)make_evical_vevent(
 		this->ev + this->i, this->nev - this->i);
-	for (size_t i = 0U; i < this->nev - this->i; i++) {
-		/* increment task ref-counter */
-		res->ev[i].task = echs_task_clone(res->ev[i].task);
-	}
 	return (echs_evstrm_t)res;
 }
 
@@ -1589,9 +1901,20 @@ prnt_evical_vevent(echs_const_evstrm_t s)
 	return;
 }
 
+static void
+send_vevent(int whither, echs_const_evstrm_t s)
+{
+	const struct evical_s *this = (const struct evical_s*)s;
+
+	send_ev(whither, this->ev[0U]);
+	return;
+}
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
+
+	/* proto method */
+	echs_instruc_t i;
 
 	/* proto-event */
 	echs_event_t e;
@@ -1730,9 +2053,6 @@ free_evrrul(echs_evstrm_t s)
 		return;
 	}
 
-	if (this->e.task) {
-		free_echs_task(this->e.task);
-	}
 	if (this->xr.nr) {
 		free(this->xr.r);
 	}
@@ -1754,9 +2074,6 @@ clone_evrrul(echs_const_evstrm_t s)
 
 	*clon = *this;
 	/* clone lists if applicable */
-	if (this->e.task) {
-		clon->e.task = echs_task_clone(this->e.task);
-	}
 	if (this->xr.nr) {
 		clon->xr = clon_rrlst(this->xr);
 	}
@@ -1932,6 +2249,16 @@ one_by_one:
 	return;
 }
 
+static void
+send_evrrul(int whither, echs_const_evstrm_t s)
+{
+	const struct evrrul_s *this = (const struct evrrul_s*)s;
+
+	send_ev(whither, this->e);
+	send_rrul(whither, &this->rr);
+	return;
+}
+
 
 echs_evstrm_t
 make_echs_evical(const char *fn)
@@ -2044,6 +2371,53 @@ echs_read_rrul(const char *s, size_t z)
 	return snarf_rrule(s, z);
 }
 
+static echs_task_t
+make_task(struct ical_vevent_s *ve)
+{
+	struct echs_task_s *res;
+	echs_evstrm_t s;
+
+	if (UNLIKELY((res = malloc(sizeof(*res))) == NULL)) {
+		return NULL;
+	}
+
+	if (!ve->rr.nr && !ve->rd.ndt) {
+		/* not an rrule but a normal vevent */
+
+		/* free all the bits and bobs that
+		 * might have been added */
+		if (ve->xr.nr) {
+			free(ve->xr.r);
+		}
+		if (ve->xd.ndt) {
+			free(ve->xd.dt);
+		}
+		if (ve->mr.nr) {
+			free(ve->mr.r);
+		}
+		if (ve->mf.nu) {
+			free(ve->mf.u);
+		}
+		assert(ve->rr.r == NULL);
+		s = make_evical_vevent(&ve->e, 1U);
+	} else {
+		/* it's an rrule */
+		echs_instant_t *xd;
+
+		/* check for exdates here, and sort them */
+		if (UNLIKELY(ve->xd.ndt > 1UL &&
+			     (xd = ve->xd.dt) != NULL)) {
+			echs_instant_sort(xd, ve->xd.ndt);
+		}
+
+		s = make_evrrul(*ve);
+	}
+	/* now massage the task specific fields in VE into an echs_task_t */
+	*res = ve->t;
+	res->strm = s;
+	return res;
+}
+
 
 /* the push parser,
  * one day the file parser will be implemented in terms of this */
@@ -2067,11 +2441,11 @@ echs_evical_push(ical_parser_t p[static 1U], const char *buf, size_t bsz)
 	return 0;
 }
 
-echs_evstrm_t
+echs_instruc_t
 echs_evical_pull(ical_parser_t p[static 1U])
 {
 	struct ical_vevent_s *ve;
-	echs_evstrm_t res = NULL;
+	echs_instruc_t i = {INSVERB_UNK};
 
 	/* just let _ical_pull do the yakka and we split everything
 	 * into evical vevents and evrruls */
@@ -2086,50 +2460,76 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		_ical_fini(*p);
 		free(*p);
 		*p = NULL;
-	} else if (!ve->rr.nr && !ve->rd.ndt) {
-		/* not an rrule but a normal vevent */
-
-		/* free all the bits and bobs that
-		 * might have been added */
-		if (ve->xr.nr) {
-			free(ve->xr.r);
-		}
-		if (ve->xd.ndt) {
-			free(ve->xd.dt);
-		}
-		if (ve->mr.nr) {
-			free(ve->mr.r);
-		}
-		if (ve->mf.nu) {
-			free(ve->mf.u);
-		}
-		assert(ve->rr.r == NULL);
-		res = make_evical_vevent(&ve->e, 1U);
 	} else {
-		/* it's an rrule */
-		echs_instant_t *xd;
+		struct ical_parser_s *_p = *p;
 
-		/* check for exdates here, and sort them */
-		if (UNLIKELY(ve->xd.ndt > 1UL &&
-			     (xd = ve->xd.dt) != NULL)) {
-			echs_instant_sort(xd, ve->xd.ndt);
+		switch (_p->globve.m) {
+		case METH_UNK:
+		case METH_PUBLISH:
+		case METH_REQUEST:
+			i.v = INSVERB_CREA;
+			i.t = make_task(ve);
+			break;
+		case METH_REPLY:
+			i.o = ve->t.oid;
+			switch (ve->rs) {
+			case 2U:
+				i.v = INSVERB_RESC;
+				break;
+			case 5U:
+				i.v = INSVERB_UNSC;
+				break;
+			default:
+				break;
+			}
+			break;
+		default:
+		case METH_CANCEL:
+		case METH_ADD:
+		case METH_REFRESH:
+		case METH_COUNTER:
+		case METH_DECLINECOUNTER:
+			break;
 		}
-
-		res = make_evrrul(*ve);
 	}
-	return res;
+	return i;
 }
 
-echs_evstrm_t
+echs_instruc_t
 echs_evical_last_pull(ical_parser_t p[static 1U])
 {
-	echs_evstrm_t res = echs_evical_pull(p);
+	echs_instruc_t res = echs_evical_pull(p);
 
 	if (LIKELY(*p != NULL)) {
 		_ical_fini(*p);
 		free(*p);
 	}
 	return res;
+}
+
+
+/* seria/deseria helpers */
+static void
+echs_strm_icalify(int whither, echs_evstrm_t s)
+{
+	if (s->class == &evrrul_cls) {
+		send_evrrul(whither, s);
+	} else if (s->class == &evical_cls) {
+		send_vevent(whither, s);
+	}
+	return;
+}
+
+void
+echs_task_icalify(int whither, echs_task_t t)
+{
+	send_ical_hdr(whither);
+	send_task(whither, t);
+	if (LIKELY(t->strm != NULL)) {
+		echs_strm_icalify(whither, t->strm);
+	}
+	send_ical_ftr(whither);
+	return;
 }
 
 /* evical.c ends here */
