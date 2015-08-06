@@ -107,6 +107,8 @@ struct ical_vevent_s {
 
 	/* just to transport the method specified */
 	ical_meth_t m;
+	/* request status or other status info */
+	unsigned int rs;
 
 	/* pointers into the rrul/xrul array */
 	struct rrlst_s rr;
@@ -876,6 +878,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			} else {
 				ve->t.max_simul = i + 1;
 			}
+		}
+		break;
+
+	case FLD_RSTAT:
+		/* aaah we're reading a response (reply) */
+		if (vp < ep) {
+			ve->rs = *vp ^ '0';
 		}
 		break;
 	}
@@ -2461,10 +2470,22 @@ echs_evical_pull(ical_parser_t p[static 1U])
 			i.v = INSVERB_CREA;
 			i.t = make_task(ve);
 			break;
+		case METH_REPLY:
+			i.o = ve->t.oid;
+			switch (ve->rs) {
+			case 2U:
+				i.v = INSVERB_RESC;
+				break;
+			case 5U:
+				i.v = INSVERB_UNSC;
+				break;
+			default:
+				break;
+			}
+			break;
 		default:
 		case METH_CANCEL:
 		case METH_ADD:
-		case METH_REPLY:
 		case METH_REFRESH:
 		case METH_COUNTER:
 		case METH_DECLINECOUNTER:

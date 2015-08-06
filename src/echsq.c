@@ -55,6 +55,8 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <assert.h>
 #if defined HAVE_PATHS_H
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
@@ -188,10 +190,80 @@ free_conn(int s)
 }
 
 
+/* counter for outstanding requests */
+static size_t nout;
+
+static int
+poll1(int fd, int timeo)
+{
+	static ical_parser_t rp;
+	struct pollfd rfd[] = {{.fd = fd, .events = POLLIN}};
+	echs_instruc_t ins;
+	char buf[4096U];
+	ssize_t nrd;
+
+	if (fd < 0) {
+		/* secret message to clear up the reader */
+		goto clear;
+	}
+	/* just read them replies */
+	if (poll(rfd, countof(rfd), timeo) <= 0) {
+		return -1;
+	}
+
+	/* it MUST be our fd */
+	assert(rfd[0U].revents);
+
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+	default:
+		if (echs_evical_push(&rp, buf, nrd) < 0) {
+			/* pushing more is insane */
+			break;
+		}
+	case 0:
+		do {
+			ins = echs_evical_pull(&rp);
+			switch (ins.v) {
+			case INSVERB_RESC:
+				/* that means success */
+				nout--;
+				puts("SUCCESS");
+				break;
+			case INSVERB_UNSC:
+				nout--;
+				puts("FAILURE");
+				break;
+			default:
+				break;
+			}
+			break;
+		} while (1);
+		break;
+	case -1:
+	clear:
+		ins = echs_evical_last_pull(&rp);
+		switch (ins.v) {
+		case INSVERB_RESC:
+			/* that means success */
+			nout--;
+			puts("SUCCESS");
+			break;
+		case INSVERB_UNSC:
+			nout--;
+			puts("FAILURE");
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+	return 0;
+}
+
 static void
 proc1(int tgt_fd, int src_fd)
 {
-	char buf[65536U];
+	char buf[32768U];
 	ical_parser_t pp = NULL;
 	size_t nrd;
 
@@ -215,6 +287,9 @@ more:
 			}
 			/* and otherwise inject him */
 			echs_task_icalify(tgt_fd, ins.t);
+			nout++;
+
+			poll1(tgt_fd, 0);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -233,6 +308,8 @@ more:
 			 * want no half-finished things */
 			free_echs_task(ins.t);
 		}
+
+		poll1(tgt_fd, 0);
 		break;
 	}
 	return;
@@ -355,8 +432,9 @@ Error: cannot open file `%s'", argi->args[i]);
 		close(fd);
 	}
 	write(s, ftr, strlenof(ftr));
+	while (nout && !(poll1(s, 5000) < 0));
 
-	close(s);
+	free_conn(s);
 	return 0;
 }
 

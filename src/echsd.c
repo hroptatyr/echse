@@ -530,7 +530,7 @@ free_socket(int s, const char *sdir)
 }
 
 static int
-get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
+get_peereuid(ncred_t *restrict cred, int s)
 {
 /* return UID/GID pair of connected peer in S. */
 #if defined SO_PEERCRED
@@ -543,8 +543,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		errno = EINVAL;
 		return -1;
 	}
-	*uid = c.uid;
-	*gid = c.gid;
+	*cred = (ncred_t){c.uid, c.gid};
 	return 0;
 #elif defined LOCAL_PEERCRED
 	struct xucred c;
@@ -557,8 +556,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 	} else if (c.cr_version != XUCRED_VERSION) {
 		return -1;
 	}
-	*uid = c.cr_uid;
-	*gid = c.cr_gid;
+	*cred = (ncred_t){c.c.cr_uid, c.cr_gid};
 	return 0;
 #elif defined HAVE_GETPEERUCRED
 	ucred_t *c = NULL;
@@ -567,8 +565,8 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		return -1;
 	}
 
-	*uid = ucred_geteuid(c);
-	*gid = ucred_getegid(c);
+	cred->uid = ucred_geteuid(c);
+	cred->gid = ucred_getegid(c);
 	ucred_free(c);
 
 	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
@@ -658,6 +656,69 @@ static struct tlst_s *tpools;
 static size_t ntpools;
 static size_t ztpools;
 
+static struct {
+	echs_toid_t oid;
+	_task_t t;
+} *task_ht;
+static size_t ztask_ht;
+
+static size_t
+put_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for putting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (LIKELY(!task_ht[slot].oid)) {
+			return slot;
+		} else if (task_ht[slot].oid != oid) {
+			/* collision, retry */
+		        ;
+		} else {
+			/* huh? that's very inconsistent */
+			abort();
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static size_t
+get_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for getting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (task_ht[slot].oid == oid) {
+			return slot;
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static int
+resz_task_ht(void)
+{
+	const size_t olz = ztask_ht;
+	const typeof(*task_ht) *olt = task_ht;
+
+again:
+	/* buy the shiny new house */
+	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
+	if (UNLIKELY(task_ht == NULL)) {
+		return -1;
+	}
+	/* and now move */
+	for (size_t i = 0U; i < olz; i++) {
+		if (olt[i].oid) {
+			size_t j = put_task_slot(olt[i].oid);
+
+			if (UNLIKELY(j >= ztask_ht)) {
+				free(task_ht);
+				goto again;
+			}
+			task_ht[j] = olt[i];
+		}
+	}
+	return 0;
+}
+
 static _task_t
 make_task_pool(size_t n)
 {
@@ -700,7 +761,7 @@ free_task_pools(void)
 }
 
 static _task_t
-make_task(void)
+make_task(echs_toid_t oid)
 {
 /* create one task */
 	_task_t res;
@@ -721,6 +782,22 @@ make_task(void)
 	res = free_tasks;
 	free_tasks = free_tasks->next;
 	nfree_tasks--;
+
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
+	}
+again:
+	with (size_t slot = put_task_slot(oid)) {
+		if (UNLIKELY(slot >= ztask_ht)) {
+			/* resize */
+			resz_task_ht();
+			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
+			goto again;
+		}
+		task_ht[slot] = (typeof(*task_ht)){oid, res};
+	}
+	memset(res, 0, sizeof(*res));
 	return res;
 }
 
@@ -728,16 +805,55 @@ static void
 free_task(_task_t t)
 {
 /* hand task T over to free list */
+	/* free from our task hash table */
+	with (size_t i = get_task_slot(t->t->oid)) {
+		if (UNLIKELY(i >= ztask_ht || task_ht[i].oid != t->t->oid)) {
+			/* that's no good :O */
+			ECHS_NOTI_LOG("inconsistent table of tasks");
+			break;
+		}
+		task_ht[i] = (typeof(*task_ht)){0U, NULL};
+	}
+
 	if (LIKELY(t->dflt_cred.wd != NULL)) {
 		free(deconst(t->dflt_cred.wd));
 	}
 	if (LIKELY(t->dflt_cred.sh != NULL)) {
 		free(deconst(t->dflt_cred.sh));
 	}
+	free_echs_task(t->t);
 
 	t->next = free_tasks;
 	free_tasks = t;
 	nfree_tasks++;
+	return;
+}
+
+static _task_t
+get_task(echs_toid_t oid)
+{
+/* find the task with oid OID. */
+	size_t slot;
+
+	if (UNLIKELY(!ztask_ht)) {
+		return NULL;
+	} else if (UNLIKELY((slot = get_task_slot(oid)) >= ztask_ht)) {
+		/* not resizing now */
+		return NULL;
+	} else if (!task_ht[slot].oid) {
+		/* not found */
+		return NULL;
+	}
+	return task_ht[slot].t;
+}
+
+static void
+free_task_ht(void)
+{
+	if (LIKELY(task_ht != NULL)) {
+		free(task_ht);
+		task_ht = NULL;
+	}
 	return;
 }
 
@@ -1065,6 +1181,114 @@ HTTP/1.1 200 Ok\r\n\r\n";
 	return nwr;
 }
 
+static ssize_t
+cmd_ical_rpl(int ofd, echs_task_t t, unsigned int code)
+{
+	static const char rpl_hdr[] = "\
+BEGIN:VCALENDAR\n\
+";
+	static const char rpl_rpl[] = "\
+METHOD:REPLY\n\
+";
+	static const char rpl_ftr[] = "\
+END:VCALENDAR\n\
+";
+	static const char rpl_veh[] = "\
+BEGIN:VEVENT\n\
+";
+	static const char rpl_vef[] = "\
+END:VEVENT\n\
+";
+	static const char succ[] = "\
+REQUEST-STATUS:2.0;Success\n\
+";
+	static const char fail[] = "\
+REQUEST-STATUS:5.1;Service unavailable\n\
+";
+	static time_t now;
+	static char stmp[32U];
+	static size_t nrpl = 0U;
+	struct tm tm;
+	time_t tmp;
+	ssize_t nwr = 0;
+
+	if (UNLIKELY(t == NULL)) {
+		if (nrpl) {
+			nwr += write(ofd, rpl_ftr, strlenof(rpl_ftr));
+			nrpl = 0U;
+		}
+		return nwr;
+	} else if (!nrpl) {
+		/* we haven't sent the VCALENDAR thingie yet */
+		nwr += write(ofd, rpl_hdr, strlenof(rpl_hdr));
+		nwr += write(ofd, rpl_rpl, strlenof(rpl_rpl));
+	}
+
+	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
+		echs_instant_t nowi;
+
+		nowi.y = tm.tm_year + 1900,
+		nowi.m = tm.tm_mon + 1,
+		nowi.d = tm.tm_mday,
+		nowi.H = tm.tm_hour,
+		nowi.M = tm.tm_min,
+		nowi.S = tm.tm_sec,
+		nowi.ms = ECHS_ALL_SEC,
+
+		dt_strf_ical(stmp, sizeof(stmp), nowi);
+		now = tmp;
+	}
+
+	nwr += write(ofd, rpl_veh, strlenof(rpl_veh));
+
+	nwr += dprintf(ofd, "UID:%s\n", obint_name(t->oid));
+	nwr += dprintf(ofd, "DTSTAMP:%s\n", stmp);
+	nwr += dprintf(ofd, "ORGANIZER:%s\n", t->org);
+	nwr += dprintf(ofd, "ATTENDEE:echse\n");
+	switch (code) {
+	case 0:
+		nwr += write(ofd, succ, strlenof(succ));
+		break;
+	default:
+		nwr += write(ofd, fail, strlenof(fail));
+		break;
+	}
+	nwr += write(ofd, rpl_vef, strlenof(rpl_vef));
+
+	/* just for the next iteration */
+	nrpl++;
+	return nwr;
+}
+
+static ssize_t
+cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
+{
+	/* forward decl */
+	static int _inject_task1();
+	ssize_t nwr = 0;
+
+	do {
+		echs_instruc_t ins = echs_evical_pull(cmd);
+
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t == NULL)) {
+			continue;
+		}
+		/* and otherwise inject him */
+		if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
+			/* reply with REQUEST-STATUS:x */
+			cmd_ical_rpl(ofd, ins.t, 1U);
+		} else {
+			/* reply with REQUEST-STATUS:2.0;Success */
+			cmd_ical_rpl(ofd, ins.t, 0U);
+		}
+	} while (1);
+
+	cmd_ical_rpl(ofd, NULL, 0U);
+	return nwr;
+}
+
 static echs_cmd_t
 guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
@@ -1123,6 +1347,10 @@ static struct echs_conn_s {
 	char *buf;
 	size_t bsz;
 	off_t bix;
+
+	/* socket credentials, established upon accepting() */
+	ncred_t cred;
+
 	/* the command we're building up
 	 * this contains a partial or full parse of all parameters */
 	struct echs_cmdparam_s cmd[1U];
@@ -1309,7 +1537,7 @@ static void
 sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
 	struct echs_conn_s *c = (void*)w;
-	const int fd = c->r.fd;
+	const int fd = w->fd;
 	ssize_t nrd;
 
 	/* just have a peek at what's there */
@@ -1324,17 +1552,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 
 	case ECHS_CMD_ICAL:
-		do {
-			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
-
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
-				break;
-			} else if (UNLIKELY(ins.t == NULL)) {
-				continue;
-			}
-			/* and otherwise inject him */
-			ECHS_NOTI_LOG("INJ %p", ins.t);
-		} while (1);
+		(void)cmd_ical(EV_A_ fd, &c->cmd->ical, c->cred);
 		if (UNLIKELY(nrd == 0)) {
 			goto shut;
 		}
@@ -1362,14 +1580,13 @@ shut:
 static void
 sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
-	struct echs_conn_s *ec;
+	struct echs_conn_s *c;
 	struct sockaddr_un sa;
 	socklen_t z = sizeof(sa);
-	uid_t u;
-	gid_t g;
+	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
+	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
 		ECHS_ERR_LOG("\
 authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 		return;
@@ -1379,14 +1596,17 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 	}
 
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection %d from %u/%u", s, u, g);
-	if (UNLIKELY((ec = make_conn()) == NULL)) {
+	ECHS_NOTI_LOG("connection %d from %u/%u", s, cred.u, cred.g);
+	if (UNLIKELY((c = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
 		return;
 	}
-	ev_io_init(&ec->r, sock_data_cb, s, EV_READ);
-	ev_io_start(EV_A_ &ec->r);
+	/* pass on our findings about the connection credentials */
+	c->cred = cred;
+
+	ev_io_init(&c->r, sock_data_cb, s, EV_READ);
+	ev_io_start(EV_A_ &c->r);
 	return;
 }
 
@@ -1473,24 +1693,30 @@ free_echsd(struct _echsd_s *ctx)
 	}
 	free_task_pools();
 	free_chld_pools();
+	free_task_ht();
 	free(ctx);
 	return;
 }
 
-static void
-_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u)
+static int
+_inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
 	_task_t res;
-	EV_P = ctx->loop;
 	ncred_t c = compl_uid(u);
 
 	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
-		return;
-	} else if (UNLIKELY((res = make_task()) == NULL)) {
+		return -1;
+	} else if ((res = get_task(t->oid)) != NULL) {
+		ECHS_NOTI_LOG("task update, unscheduling old task");
+		ev_periodic_stop(EV_A_ &res->w);
+		free(deconst(res->dflt_cred.wd));
+		free(deconst(res->dflt_cred.sh));
+		free_echs_task(res->t);
+	} else if (UNLIKELY((res = make_task(t->oid)) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
-		return;
+		return -1;
 	}
 
 	/* bang libechse task into our _task */
@@ -1502,9 +1728,10 @@ _inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u)
 	res->dflt_cred.wd = strdup(c.wd);
 	res->dflt_cred.sh = strdup(c.sh);
 
+	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
 	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
-	return;
+	return 0;
 }
 
 static void
@@ -1544,7 +1771,7 @@ more:
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx, ins.t, run_as);
+			_inject_task1(ctx->loop, ins.t, run_as);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;

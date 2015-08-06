@@ -45,23 +45,27 @@ typedef struct echs_instruc_s echs_instruc_t;
 typedef enum {
 	INSVERB_UNK,
 	/**
-	 * Create task T with oid O.
-	 * If O == 0 generate a oid on the fly. */
-	INSVERB_CREA,
-	/**
 	 * List all tasks (O == 0) or task with oid O.
 	 * T or S and I are unused. */
 	INSVERB_LIST,
+	/**
+	 * Create task T with oid O.
+	 * If O == 0 generate a oid on the fly. */
+	INSVERB_CREA,
 	/**
 	 * Update task with oid O to specifics in T. */
 	INSVERB_UPDT,
 	/**
 	 * Reschedule task with oid O to S.
-	 * To reschedule one recurrence instance in O specify I. */
+	 * To reschedule one recurrence instance in O specify I.
+	 * This verb is also used to denote a successful CREA or UPDT,
+	 * in that case the oid is set but the stream is not. */
 	INSVERB_RESC,
 	/**
 	 * Unschedule (cancel) task with oid O.
-	 * To unschedule one recurrence instance in O specify I. */
+	 * To unschedule one recurrence instance in O specify I.
+	 * This verb is also used to denote a failed CREA or UPDT,
+	 * in that case the oid is set. */
 	INSVERB_UNSC,
 } echs_insverb_t;
 
