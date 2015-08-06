@@ -658,6 +658,69 @@ static struct plst_s *pools;
 static size_t npools;
 static size_t zpools;
 
+static struct {
+	echs_toid_t oid;
+	_task_t t;
+} *task_ht;
+static size_t ztask_ht;
+
+static size_t
+put_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for putting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (LIKELY(!task_ht[slot].oid)) {
+			return slot;
+		} else if (task_ht[slot].oid != oid) {
+			/* collision, retry */
+		        ;
+		} else {
+			/* huh? that's very inconsistent */
+			abort();
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static size_t
+get_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for getting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (task_ht[slot].oid == oid) {
+			return slot;
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static int
+resz_task_ht(void)
+{
+	const size_t olz = ztask_ht;
+	const typeof(*task_ht) *olt = task_ht;
+
+again:
+	/* buy the shiny new house */
+	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
+	if (UNLIKELY(task_ht == NULL)) {
+		return -1;
+	}
+	/* and now move */
+	for (size_t i = 0U; i < olz; i++) {
+		if (olt[i].oid) {
+			size_t j = put_task_slot(olt[i].oid);
+
+			if (UNLIKELY(j >= ztask_ht)) {
+				free(task_ht);
+				goto again;
+			}
+			task_ht[j] = olt[i];
+		}
+	}
+	return 0;
+}
+
 static _task_t
 make_task_pool(size_t n)
 {
@@ -695,7 +758,7 @@ free_task_pool(void)
 }
 
 static _task_t
-make_task(void)
+make_task(echs_toid_t oid)
 {
 /* create one task */
 	_task_t res;
@@ -715,6 +778,22 @@ make_task(void)
 	res = free_pers;
 	free_pers = free_pers->next;
 	nfree_pers--;
+
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
+	}
+again:
+	with (size_t slot = put_task_slot(oid)) {
+		if (UNLIKELY(slot >= ztask_ht)) {
+			/* resize */
+			resz_task_ht();
+			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
+			goto again;
+		}
+		task_ht[slot] = (typeof(*task_ht)){oid, res};
+	}
+	memset(res, 0, sizeof(*res));
 	return res;
 }
 
@@ -722,6 +801,16 @@ static void
 free_task(_task_t t)
 {
 /* hand task T over to free list */
+	/* free from our task hash table */
+	with (size_t i = get_task_slot(t->t->oid)) {
+		if (UNLIKELY(i >= ztask_ht || task_ht[i].oid != t->t->oid)) {
+			/* that's no good :O */
+			ECHS_NOTI_LOG("inconsistent table of tasks");
+			break;
+		}
+		task_ht[i] = (typeof(*task_ht)){0U, NULL};
+	}
+
 	if (LIKELY(t->dflt_cred.wd != NULL)) {
 		free(deconst(t->dflt_cred.wd));
 	}
@@ -733,6 +822,34 @@ free_task(_task_t t)
 	t->next = free_pers;
 	free_pers = t;
 	nfree_pers++;
+	return;
+}
+
+static _task_t
+get_task(echs_toid_t oid)
+{
+/* find the task with oid OID. */
+	size_t slot;
+
+	if (UNLIKELY(!ztask_ht)) {
+		return NULL;
+	} else if (UNLIKELY((slot = get_task_slot(oid)) >= ztask_ht)) {
+		/* not resizing now */
+		return NULL;
+	} else if (!task_ht[slot].oid) {
+		/* not found */
+		return NULL;
+	}
+	return task_ht[slot].t;
+}
+
+static void
+free_tasks(void)
+{
+	if (LIKELY(task_ht != NULL)) {
+		free(task_ht);
+		task_ht = NULL;
+	}
 	return;
 }
 
@@ -1387,6 +1504,7 @@ free_echsd(struct _echsd_s *ctx)
 		ev_loop_destroy(ctx->loop);
 	}
 	free_task_pool();
+	free_tasks();
 	free(ctx);
 	return;
 }
@@ -1402,7 +1520,13 @@ _inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
 		return;
-	} else if (UNLIKELY((res = make_task()) == NULL)) {
+	} else if ((res = get_task(t->oid)) != NULL) {
+		ECHS_NOTI_LOG("unscheduling old task");
+		ev_periodic_stop(EV_A_ &res->w);
+		free(deconst(res->dflt_cred.wd));
+		free(deconst(res->dflt_cred.sh));
+		free_echs_task(res->t);
+	} else if (UNLIKELY((res = make_task(t->oid)) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
 		return;
 	}
