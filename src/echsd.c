@@ -1360,7 +1360,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	case ECHS_CMD_ICAL:
 		/* forward decl */
 		do {
-			static int _inject_task1(EV_P_ echs_task_t t, uid_t u, void(*cb)());
+			static int _inject_task1();
 			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
 
 			if (UNLIKELY(ins.v != INSVERB_CREA)) {
