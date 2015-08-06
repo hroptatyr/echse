@@ -1086,11 +1086,91 @@ HTTP/1.1 200 Ok\r\n\r\n";
 }
 
 static ssize_t
-cmd_ical(EV_P_ int fd, ical_parser_t cmd[static 1U], ncred_t cred)
+cmd_ical_rpl(int ofd, echs_task_t t, unsigned int code)
+{
+	static const char rpl_hdr[] = "\
+BEGIN:VCALENDAR\n\
+";
+	static const char rpl_rpl[] = "\
+METHOD:REPLY\n\
+";
+	static const char rpl_ftr[] = "\
+END:VCALENDAR\n\
+";
+	static const char rpl_veh[] = "\
+BEGIN:VEVENT\n\
+";
+	static const char rpl_vef[] = "\
+END:VEVENT\n\
+";
+	static const char succ[] = "\
+REQUEST-STATUS:2.0;Success\n\
+";
+	static const char fail[] = "\
+REQUEST-STATUS:5.1;Service unavailable\n\
+";
+	static time_t now;
+	static char stmp[32U];
+	static size_t nrpl = 0U;
+	struct tm tm;
+	time_t tmp;
+	ssize_t nwr = 0;
+
+	if (UNLIKELY(t == NULL)) {
+		if (nrpl) {
+			nwr += write(ofd, rpl_ftr, strlenof(rpl_ftr));
+			nrpl = 0U;
+		}
+		return nwr;
+	} else if (!nrpl) {
+		/* we haven't sent the VCALENDAR thingie yet */
+		nwr += write(ofd, rpl_hdr, strlenof(rpl_hdr));
+		nwr += write(ofd, rpl_rpl, strlenof(rpl_rpl));
+	}
+
+	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
+		echs_instant_t nowi;
+
+		nowi.y = tm.tm_year + 1900,
+		nowi.m = tm.tm_mon + 1,
+		nowi.d = tm.tm_mday,
+		nowi.H = tm.tm_hour,
+		nowi.M = tm.tm_min,
+		nowi.S = tm.tm_sec,
+		nowi.ms = ECHS_ALL_SEC,
+
+		dt_strf_ical(stmp, sizeof(stmp), nowi);
+		now = tmp;
+	}
+
+	nwr += write(ofd, rpl_veh, strlenof(rpl_veh));
+
+	nwr += dprintf(ofd, "UID:%s\n", obint_name(t->oid));
+	nwr += dprintf(ofd, "DTSTAMP:%s\n", stmp);
+	nwr += dprintf(ofd, "ORGANIZER:%s\n", t->org);
+	nwr += dprintf(ofd, "ATTENDEE:echse\n");
+	switch (code) {
+	case 0:
+		nwr += write(ofd, succ, strlenof(succ));
+		break;
+	default:
+		nwr += write(ofd, fail, strlenof(fail));
+		break;
+	}
+	nwr += write(ofd, rpl_vef, strlenof(rpl_vef));
+
+	/* just for the next iteration */
+	nrpl++;
+	return nwr;
+}
+
+static ssize_t
+cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
 	/* forward decl */
 	static int _inject_task1();
 	static void taskB_cb();
+	ssize_t nwr = 0;
 
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
@@ -1101,9 +1181,17 @@ cmd_ical(EV_P_ int fd, ical_parser_t cmd[static 1U], ncred_t cred)
 			continue;
 		}
 		/* and otherwise inject him */
-		_inject_task1(EV_A_ ins.t, cred.u, taskB_cb);
+		if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u, taskB_cb) < 0)) {
+			/* reply with REQUEST-STATUS:x */
+			cmd_ical_rpl(ofd, ins.t, 1U);
+		} else {
+			/* reply with REQUEST-STATUS:2.0;Success */
+			cmd_ical_rpl(ofd, ins.t, 0U);
+		}
 	} while (1);
-	return 0;
+
+	cmd_ical_rpl(ofd, NULL, 0U);
+	return nwr;
 }
 
 static echs_cmd_t
