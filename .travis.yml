@@ -1,3 +1,4 @@
+
 language: c
 
 env:
@@ -42,4 +43,4 @@ addons:
     notification_email: devel@fresse.org
     build_command_prepend: "./configure"
     build_command: "make all check"
-    branch_pattern: coverity_scan
+    branch_pattern: coverity-scan
