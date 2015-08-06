@@ -223,14 +223,38 @@ poll1(int fd, int timeo)
 	case 0:
 		do {
 			ins = echs_evical_pull(&rp);
-			printf("got %u\n", ins.v);
+			switch (ins.v) {
+			case INSVERB_RESC:
+				/* that means success */
+				nout--;
+				puts("SUCCESS");
+				break;
+			case INSVERB_UNSC:
+				nout--;
+				puts("FAILURE");
+				break;
+			default:
+				break;
+			}
 			break;
 		} while (1);
 		break;
 	case -1:
 	clear:
 		ins = echs_evical_last_pull(&rp);
-		printf("got last %u\n", ins.v);
+		switch (ins.v) {
+		case INSVERB_RESC:
+			/* that means success */
+			nout--;
+			puts("SUCCESS");
+			break;
+		case INSVERB_UNSC:
+			nout--;
+			puts("FAILURE");
+			break;
+		default:
+			break;
+		}
 		break;
 	}
 	return 0;
