@@ -198,9 +198,14 @@ poll1(int fd, int timeo)
 {
 	static ical_parser_t rp;
 	struct pollfd rfd[] = {{.fd = fd, .events = POLLIN}};
+	echs_instruc_t ins;
 	char buf[4096U];
 	ssize_t nrd;
 
+	if (fd < 0) {
+		/* secret message to clear up the reader */
+		goto clear;
+	}
 	/* just read them replies */
 	if (poll(rfd, countof(rfd), timeo) <= 0) {
 		return -1;
@@ -210,8 +215,6 @@ poll1(int fd, int timeo)
 	assert(rfd[0U].revents);
 
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		echs_instruc_t ins;
-
 	default:
 		if (echs_evical_push(&rp, buf, nrd) < 0) {
 			/* pushing more is insane */
@@ -225,6 +228,7 @@ poll1(int fd, int timeo)
 		} while (1);
 		break;
 	case -1:
+	clear:
 		ins = echs_evical_last_pull(&rp);
 		printf("got last %u\n", ins.v);
 		break;
