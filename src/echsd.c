@@ -530,7 +530,7 @@ free_socket(int s, const char *sdir)
 }
 
 static int
-get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
+get_peereuid(ncred_t *restrict cred, int s)
 {
 /* return UID/GID pair of connected peer in S. */
 #if defined SO_PEERCRED
@@ -543,8 +543,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		errno = EINVAL;
 		return -1;
 	}
-	*uid = c.uid;
-	*gid = c.gid;
+	*cred = (ncred_t){c.uid, c.gid};
 	return 0;
 #elif defined LOCAL_PEERCRED
 	struct xucred c;
@@ -557,8 +556,7 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 	} else if (c.cr_version != XUCRED_VERSION) {
 		return -1;
 	}
-	*uid = c.cr_uid;
-	*gid = c.cr_gid;
+	*cred = (ncred_t){c.c.cr_uid, c.cr_gid};
 	return 0;
 #elif defined HAVE_GETPEERUCRED
 	ucred_t *c = NULL;
@@ -567,8 +565,8 @@ get_peereuid(uid_t *restrict uid, gid_t *restrict gid, int s)
 		return -1;
 	}
 
-	*uid = ucred_geteuid(c);
-	*gid = ucred_getegid(c);
+	cred->uid = ucred_geteuid(c);
+	cred->gid = ucred_getegid(c);
 	ucred_free(c);
 
 	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
@@ -1400,14 +1398,13 @@ shut:
 static void
 sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 {
-	struct echs_conn_s *ec;
+	struct echs_conn_s *c;
 	struct sockaddr_un sa;
 	socklen_t z = sizeof(sa);
-	uid_t u;
-	gid_t g;
+	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&u, &g, w->fd) < 0)) {
+	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
 		ECHS_ERR_LOG("\
 authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 		return;
@@ -1417,14 +1414,17 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 	}
 
 	/* very good, get us an io watcher */
-	ECHS_NOTI_LOG("connection %d from %u/%u", s, u, g);
-	if (UNLIKELY((ec = make_conn()) == NULL)) {
+	ECHS_NOTI_LOG("connection %d from %u/%u", s, cred.u, cred.g);
+	if (UNLIKELY((c = make_conn()) == NULL)) {
 		ECHS_ERR_LOG("too many concurrent connections");
 		close(s);
 		return;
 	}
-	ev_io_init(&ec->r, sock_data_cb, s, EV_READ);
-	ev_io_start(EV_A_ &ec->r);
+	/* pass on our findings about the connection credentials */
+	c->cred = cred;
+
+	ev_io_init(&c->r, sock_data_cb, s, EV_READ);
+	ev_io_start(EV_A_ &c->r);
 	return;
 }
 
@@ -1545,6 +1545,7 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u, void(*cb)())
 	res->dflt_cred.wd = strdup(c.wd);
 	res->dflt_cred.sh = strdup(c.sh);
 
+	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
 	ev_periodic_init(&res->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
 	return 0;
