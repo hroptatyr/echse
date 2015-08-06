@@ -1145,6 +1145,10 @@ static struct echs_conn_s {
 	char *buf;
 	size_t bsz;
 	off_t bix;
+
+	/* socket credentials, established upon accepting() */
+	ncred_t cred;
+
 	/* the command we're building up
 	 * this contains a partial or full parse of all parameters */
 	struct echs_cmdparam_s cmd[1U];
@@ -1356,7 +1360,9 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 
 	case ECHS_CMD_ICAL:
+		/* forward decl */
 		do {
+			static int _inject_task1(EV_P_ echs_task_t t, uid_t u, void(*cb)());
 			echs_instruc_t ins = echs_evical_pull(&c->cmd->ical);
 
 			if (UNLIKELY(ins.v != INSVERB_CREA)) {
@@ -1365,7 +1371,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 				continue;
 			}
 			/* and otherwise inject him */
-			ECHS_NOTI_LOG("INJ %p", ins.t);
+			_inject_task1(EV_A_ ins.t, c->cred.u, taskB_cb);
 		} while (1);
 		if (UNLIKELY(nrd == 0)) {
 			goto shut;
@@ -1509,26 +1515,25 @@ free_echsd(struct _echsd_s *ctx)
 	return;
 }
 
-static void
-_inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
+static int
+_inject_task1(EV_P_ echs_task_t t, uid_t u, void(*cb)())
 {
 	_task_t res;
-	EV_P = ctx->loop;
 	ncred_t c = compl_uid(u);
 
 	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
-		return;
+		return -1;
 	} else if ((res = get_task(t->oid)) != NULL) {
-		ECHS_NOTI_LOG("unscheduling old task");
+		ECHS_NOTI_LOG("task update, unscheduling old task");
 		ev_periodic_stop(EV_A_ &res->w);
 		free(deconst(res->dflt_cred.wd));
 		free(deconst(res->dflt_cred.sh));
 		free_echs_task(res->t);
 	} else if (UNLIKELY((res = make_task(t->oid)) == NULL)) {
 		ECHS_ERR_LOG("cannot submit new task");
-		return;
+		return -1;
 	}
 
 	/* bang libechse task into our _task */
@@ -1542,7 +1547,7 @@ _inject_task1(struct _echsd_s *ctx, echs_task_t t, uid_t u, void(*cb)())
 
 	ev_periodic_init(&res->w, cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
-	return;
+	return 0;
 }
 
 static void
@@ -1582,7 +1587,7 @@ more:
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx, ins.t, run_as, cb);
+			_inject_task1(ctx->loop, ins.t, run_as, cb);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
