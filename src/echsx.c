@@ -59,6 +59,7 @@
 #include <assert.h>
 #include "logger.h"
 #include "nifty.h"
+#include "fdprnt.h"
 #include "echsx.yucc"
 
 #if defined __INTEL_COMPILER
@@ -122,74 +123,6 @@ static char *const _mcmd[] = {
 };
 
 
-static struct {
-	char buf[4096U];
-	size_t bi;
-	int fd;
-} fd_aux;
-
-static int
-fdbang(int fd)
-{
-	fd_aux.fd = fd;
-	return 0;
-}
-
-static ssize_t
-fdflush(void)
-{
-	ssize_t twr = 0;
-
-	for (ssize_t nwr, tot = fd_aux.bi;
-	     twr < tot &&
-		     (nwr = write(fd_aux.fd, fd_aux.buf + twr, tot - twr)) > 0;
-	     twr += nwr);
-	fd_aux.bi = 0U;
-	return twr;
-}
-
-static int
-fdputc(int c)
-{
-	if (UNLIKELY(fd_aux.bi >= sizeof(fd_aux.buf))) {
-		fdflush();
-	}
-	fd_aux.buf[fd_aux.bi++] = (char)c;
-	return 0;
-}
-
-static __attribute__((format(printf, 1, 2))) int
-fdprintf(const char *fmt, ...)
-{
-/* like fprintf() (i.e. buffering) but write to FD. */
-	int tp;
-
-	va_list vap;
-	va_start(vap, fmt);
-
-	/* try and write */
-	tp = vsnprintf(
-		fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
-		fmt, vap);
-	if (UNLIKELY((size_t)tp >= sizeof(fd_aux.buf) - fd_aux.bi)) {
-		/* yay, finally some write()ing */
-		fdflush();
-		/* ... try the formatting again */
-		tp = vsnprintf(
-			fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
-			fmt, vap);
-	}
-	va_end(vap);
-
-	/* reassign and out */
-	if (UNLIKELY(tp < 0 || sizeof(fd_aux.buf) - tp < fd_aux.bi)) {
-		/* we're fucked */
-		return -1;
-	}
-	fd_aux.bi += tp;
-	return 0;
-}
-
 static void
 block_sigs(void)
 {
