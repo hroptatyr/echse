@@ -1602,6 +1602,8 @@ send_task(int whither, echs_task_t t)
 	if (t->run_as.wd) {
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
+	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
+	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	if (t->max_simul) {
 		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
 	}
