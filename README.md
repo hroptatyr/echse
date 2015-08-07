@@ -99,16 +99,16 @@ following month).
 For that matter, we decided to extend RFC 5545 by additional RRULE
 parts:
 
-+ BYEASTER=N[,...]  for N in 0 to 366 or -1 to -366, denotes the N-th
++ `BYEASTER=N[,...]`  for N in 0 to 366 or -1 to -366, denotes the N-th
   day after/before easter
-+ BYADD=N[,...]  for N in 0 to 366 or -1 to -366, denotes to add N days
-  to all dates in the current set
++ `BYADD=N[,...]`  for N in 0 to 366 or -1 to -366, denotes to add N
+  days to all dates in the current set
 
 
 Pronunciation
 -------------
 
-echse rhymes with hexe, however that is pronounced in your language.
+echse rhymes with *hexe*, however that is pronounced in your language.
 
 
 Similar Projects
