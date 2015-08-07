@@ -114,13 +114,8 @@ echse rhymes with *hexe*, however that is pronounced in your language.
 Similar Projects
 ================
 
-A project focussing on the holiday problem as well is [jollyday][3].
-However, their holiday files are quite inaccurate (as of 2015).
-Also, they use a non-standard XML-based format that I found to be too
-inflexible, especially when it comes to single exceptional holidays or
-exceptional observance/omittance of holidays.
+None.
 
 
   [1]: http://tools.ietf.org/html/rfc5545
   [2]: https://github.com/hroptatyr/echse/tree/beef
-  [3]: http://jollyday.sourceforge.net/
