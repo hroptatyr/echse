@@ -1503,6 +1503,7 @@ resched(ev_periodic *w, ev_tstamp now)
 	echs_evstrm_t s = t->t->strm;
 	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
+	char stmp[32];
 
 	if (UNLIKELY(echs_event_0_p(e) && !t->nrun)) {
 		/* this has never been run in the first place */
@@ -1520,7 +1521,9 @@ resched(ev_periodic *w, ev_tstamp now)
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
-	ECHS_NOTI_LOG("next run %f", soon);
+	(void)dt_strf(stmp, sizeof(stmp), e.from);
+
+	ECHS_NOTI_LOG("next run %f (%s)", soon, stmp);
 	return soon;
 }
 
