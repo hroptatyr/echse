@@ -835,11 +835,33 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_MOUT:
-		ve->t.mailout = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailout = 0U;
+				break;
+			default:
+				ve->t.mailout = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_MERR:
-		ve->t.mailerr = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailerr = 0U;
+				break;
+			default:
+				ve->t.mailerr = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_SHELL:
