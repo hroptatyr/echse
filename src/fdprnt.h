@@ -102,6 +102,21 @@ fdprintf(const char *fmt, ...)
 	return 0;
 }
 
+static ssize_t
+fdwrite(const char *str, size_t len)
+{
+	if (UNLIKELY(len > sizeof(fd_aux.buf))) {
+		/* that's never going to work */
+		return -1;
+	} else if (UNLIKELY(fd_aux.bi + len >= sizeof(fd_aux.buf))) {
+		/* yay, finally some write()ing */
+		fdflush();
+	}
+	/* just memcpy the string */
+	memcpy(fd_aux.buf + fd_aux.bi, str, len);
+	return len;
+}
+
 static int
 fdbang(int fd)
 {
