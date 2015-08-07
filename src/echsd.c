@@ -652,14 +652,17 @@ struct tlst_s {
 	size_t size;
 };
 
+/* mapping from oid to task */
+struct tmap_s {
+	echs_toid_t oid;
+	_task_t t;
+};
+
 static struct tlst_s *tpools;
 static size_t ntpools;
 static size_t ztpools;
 
-static struct {
-	echs_toid_t oid;
-	_task_t t;
-} *task_ht;
+static struct tmap_s *task_ht;
 static size_t ztask_ht;
 
 static size_t
@@ -696,7 +699,7 @@ static int
 resz_task_ht(void)
 {
 	const size_t olz = ztask_ht;
-	const typeof(*task_ht) *olt = task_ht;
+	const struct tmap_s *olt = task_ht;
 
 again:
 	/* buy the shiny new house */
@@ -795,7 +798,7 @@ again:
 			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
 			goto again;
 		}
-		task_ht[slot] = (typeof(*task_ht)){oid, res};
+		task_ht[slot] = (struct tmap_s){oid, res};
 	}
 	memset(res, 0, sizeof(*res));
 	return res;
@@ -812,7 +815,7 @@ free_task(_task_t t)
 			ECHS_NOTI_LOG("inconsistent table of tasks");
 			break;
 		}
-		task_ht[i] = (typeof(*task_ht)){0U, NULL};
+		task_ht[i] = (struct tmap_s){0U, NULL};
 	}
 
 	if (LIKELY(t->dflt_cred.wd != NULL)) {
@@ -1107,6 +1110,8 @@ struct echs_cmdparam_s {
 	};
 };
 
+static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
+
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
@@ -1263,8 +1268,6 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 static ssize_t
 cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
-	/* forward decl */
-	static int _inject_task1();
 	ssize_t nwr = 0;
 
 	do {
