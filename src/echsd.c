@@ -1460,18 +1460,20 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	 * as well as the maximum number of simultaneous children
 	 * if the maximum is running, defer the execution of this task */
 	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
-		ev_child *c = make_chld();
+		pid_t p;
 
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		/* consider us running already */
-		t->nsim++;
-		c->data = t;
+		if (LIKELY((p = run_task(t, false)) > 0)) {
+			ev_child *c = make_chld();
 
-		/* keep track of the spawned child pid and register
-		 * a watcher for status changes */
-		with (pid_t p = run_task(t, false)) {
+			/* consider us running already */
+			t->nsim++;
+			c->data = t;
+
+			/* keep track of the spawned child pid and register
+			 * a watcher for status changes */
 			ECHS_NOTI_LOG("supervising pid %d", p);
 			ev_child_init(c, chld_cb, p, false);
 			ev_child_start(EV_A_ c);
