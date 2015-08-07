@@ -45,12 +45,62 @@ iCalendar extensions
 While one of echse' objectives is to define recurring events in a
 widely-adopted format (for obvious reasons of interoperability),
 another, even more important objective is to concisely and accurately
-define recurring events.
+express a task's surroundings.
 
-[RFC 5545][1] RRULEs are powerful but yet not powerful enough to capture
-common recurrences such as Easter, or too verbose to capture recurrences
-like the weekday after the fourth Sunday every month (which is either
-the fourth or fifth Monday or the first Monday of the following month).
+[RFC 5545][1] comes preloaded with oodles of fields and syntax to
+describe calendar events, how to display them in a PIM application, who
+they affect and how and when and whatnot.  Needless to say that's not
+enough for an automated task executor.
+
+The following list maps RFC 5545 fields into our problem domain:
+
+SUMMARY
+: Conveys the command line to execute.
+
+ORGANIZER
+: Specifies from whom sent mails appear to be.
+
+ATTENDEE
+: Specifies to whom mail output is sent.
+
+DTSTART
+: Start date/time of the job.
+
+DTEND
+: If the job is still running by then kill it.
+
+DURATION
+: Another way to express the time limit on a job.
+
+LOCATION
+: Run the job with the working directory set to this.
+
+X-ECHS-SHELL
+: Execute the command line through this shell (must support `-c CMD`).
+
+X-ECHS-IFILE
+: Pass this file to the command as stdin.
+
+X-ECHS-OFILE
+: Write any output on stdout into this file.
+
+X-ECHS-EFILE
+: Write any output on stderr into this file.
+
+X-ECHS-MAIL-OUT
+: If set to non-0 any output written on stdout is included in the mail.
+
+X-ECHS-MAIL-ERR
+: If set to non-0 any output written on stderr is included in the mail.
+
+X-ECHS-MAX-SIMUL
+: A job is only run this many times simultaneously.
+
+Also, [RFC 5545][1] RRULEs are powerful but yet not powerful enough to
+capture common recurrences such as Easter, or too verbose to capture
+recurrences like the weekday after the fourth Sunday every month (which
+is either the fourth or fifth Monday or the first Monday of the
+following month).
 
 For that matter, we decided to extend RFC 5545 by additional RRULE
 parts:
