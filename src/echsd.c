@@ -1285,21 +1285,43 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		switch (ins.v) {
+		case INSVERB_CREA:
+		case INSVERB_UPDT:
+			if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
+				/* reply with REQUEST-STATUS:x */
+				cmd_ical_rpl(ofd, ins.t, 1U);
+			} else {
+				/* reply with REQUEST-STATUS:2.0;Success */
+				cmd_ical_rpl(ofd, ins.t, 0U);
+			}
 			break;
-		} else if (UNLIKELY(ins.t == NULL)) {
-			continue;
-		}
-		/* and otherwise inject him */
-		if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
-			/* reply with REQUEST-STATUS:x */
-			cmd_ical_rpl(ofd, ins.t, 1U);
-		} else {
-			/* reply with REQUEST-STATUS:2.0;Success */
-			cmd_ical_rpl(ofd, ins.t, 0U);
+
+		case INSVERB_RESC:
+			/* cancel request */
+			break;
+
+		case INSVERB_RES1:
+			/* cancel request */
+			break;
+
+		case INSVERB_UNSC:
+			/* cancel request */
+			break;
+
+		default:
+		case INSVERB_UNK:
+			ECHS_NOTI_LOG("\
+unknown instruction received from %d", ofd);
+			goto fini;
 		}
 	} while (1);
 
+fini:
 	cmd_ical_rpl(ofd, NULL, 0U);
 	return nwr;
 }
