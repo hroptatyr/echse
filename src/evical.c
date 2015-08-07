@@ -910,6 +910,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			ve->rs = *vp ^ '0';
 		}
 		break;
+
+	case FLD_RECURID:
+		ve->e.from = snarf_value(lp);
+		if (ep[-1] == '+') {
+			/* oh, they want to cancel all from then on */
+			ve->e.till = echs_max_instant();
+		} else {
+			ve->e.till = ve->e.from;
+		}
+		break;
 	}
 	return 0;
 }
