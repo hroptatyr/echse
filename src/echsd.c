@@ -860,6 +860,7 @@ free_task_ht(void)
 	return;
 }
 
+static bool mockp;
 static pid_t
 run_task(_task_t t, bool no_run)
 {
@@ -1915,8 +1916,9 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (argi->foreground_flag) {
+	if (argi->dry_run_flag) {
 		echs_log = echs_errlog;
+		mockp = true;
 	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;
