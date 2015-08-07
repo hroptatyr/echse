@@ -2556,8 +2556,13 @@ echs_evical_pull(ical_parser_t p[static 1U])
 				break;
 			}
 			break;
-		default:
 		case METH_CANCEL:
+			i.v = INSVERB_UNSC;
+			i.o = ve->t.oid;
+			i.from = ve->e.from;
+			i.to = ve->e.till;
+			break;
+		default:
 		case METH_ADD:
 		case METH_REFRESH:
 		case METH_COUNTER:
