@@ -63,6 +63,7 @@
 #include <pwd.h>
 #include "nifty.h"
 #include "evical.h"
+#include "fdprnt.h"
 
 extern char **environ;
 
@@ -221,23 +222,23 @@ poll1(int fd, int timeo)
 			break;
 		}
 	case 0:
-		do {
-			ins = echs_evical_pull(&rp);
-			switch (ins.v) {
-			case INSVERB_RESC:
-				/* that means success */
-				nout--;
-				puts("SUCCESS");
-				break;
-			case INSVERB_UNSC:
-				nout--;
-				puts("FAILURE");
-				break;
-			default:
-				break;
-			}
+	drain:
+		ins = echs_evical_pull(&rp);
+		switch (ins.v) {
+		case INSVERB_RESC:
+			/* that means success */
+			nout--;
+			puts("SUCCESS");
+			/* I'm sure there's more */
+			goto drain;
+		case INSVERB_UNSC:
+			nout--;
+			puts("FAILURE");
+			/* there might be more */
+			goto drain;
+		default:
 			break;
-		} while (1);
+		}
 		break;
 	case -1:
 	clear:
@@ -438,6 +439,64 @@ Error: cannot open file `%s'", argi->args[i]);
 	return 0;
 }
 
+static int
+cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
+{
+/* scan for BEGIN:VEVENT/END:VEVENT pairs */
+	static const char hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+METHOD:CANCEL\n\
+CALSCALE:GREGORIAN\n";
+	static const char ftr[] = "\
+END:VCALENDAR\n";
+	static const char beg[] = "BEGIN:VEVENT\n";
+	static const char end[] = "END:VEVENT\n";
+	static const char sta[] = "STATUS:CANCELLED\n";
+	const char *e;
+	const char *tuid;
+	int s = -1;
+
+	/* let's try the local echsd and then the system-wide one */
+	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		return 1;
+	} else if ((s = make_conn(e)) < 0) {
+		serror("Error: cannot connect to `%s'", e);
+		return 1;
+	}
+	/* otherwise it's time for a `yay' */
+	errno = 0, serror("connected to %s ...", e);
+	/* we'll be writing to S, better believe it */
+	fdbang(s);
+
+	if ((tuid = argi->args[0U]) != NULL) {
+		fdwrite(hdr, strlenof(hdr));
+
+		if (argi->nargs == 1U) {
+			fdwrite(beg, strlenof(beg));
+			fdprintf("UID:%s\n", tuid);
+			fdwrite(sta, strlenof(sta));
+			fdwrite(end, strlenof(end));
+		}
+		for (size_t i = 1U; i < argi->nargs; i++) {
+			fdwrite(beg, strlenof(beg));
+			fdprintf("UID:%s\n", tuid);
+			fdprintf("RECURRENCE-ID:%s\n", argi->args[i]);
+			fdwrite(sta, strlenof(sta));
+			fdwrite(end, strlenof(end));
+		}
+
+		fdwrite(ftr, strlenof(ftr));
+	}
+	(void)fdputc;
+	fdflush();
+
+	free_conn(s);
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -460,6 +519,10 @@ main(int argc, char *argv[])
 
 	case ECHSQ_CMD_ADD:
 		rc = cmd_add((struct yuck_cmd_add_s*)argi);;
+		break;
+
+	case ECHSQ_CMD_CANCEL:
+		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);;
 		break;
 
 	default:

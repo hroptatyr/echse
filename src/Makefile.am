@@ -37,6 +37,7 @@ libechse_la_SOURCES += bufpool.c bufpool.h
 libechse_la_SOURCES += event.c event.h
 libechse_la_SOURCES += oid.h
 libechse_la_SOURCES += instruc.h
+libechse_la_SOURCES += fdprnt.h
 libechse_la_SOURCES += evstrm.c evstrm.h
 libechse_la_SOURCES += evical.c evical.h
 libechse_la_SOURCES += evrrul.c evrrul.h

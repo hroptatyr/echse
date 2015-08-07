@@ -60,6 +60,7 @@
 #include "evrrul-gp.c"
 #include "evmrul-gp.c"
 #include "evmeth-gp.c"
+#include "fdprnt.h"
 
 #if !defined assert
 # define assert(x)
@@ -834,11 +835,33 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_MOUT:
-		ve->t.mailout = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailout = 0U;
+				break;
+			default:
+				ve->t.mailout = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_MERR:
-		ve->t.mailerr = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailerr = 0U;
+				break;
+			default:
+				ve->t.mailerr = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_SHELL:
@@ -885,6 +908,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* aaah we're reading a response (reply) */
 		if (vp < ep) {
 			ve->rs = *vp ^ '0';
+		}
+		break;
+
+	case FLD_RECURID:
+		ve->e.from = snarf_value(lp);
+		if (ep[-1] == '+') {
+			/* oh, they want to cancel all from then on */
+			ve->e.till = echs_max_instant();
+		} else {
+			ve->e.till = ve->e.from;
 		}
 		break;
 	}
@@ -1565,40 +1598,46 @@ send_task(int whither, echs_task_t t)
 
 	/* fill in a missing uid? */
 	auto_uid++;
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+
 	if (t->oid) {
-		dprintf(whither, "UID:%s\n", obint_name(t->oid));
+		fdprintf("UID:%s\n", obint_name(t->oid));
 	} else {
 		/* it's mandatory, so generate one */
-		dprintf(whither, "UID:echse_merged_vevent_%u\n", auto_uid);
+		fdprintf("UID:echse_merged_vevent_%u\n", auto_uid);
 	}
 	if (t->cmd) {
-		dprintf(whither, "SUMMARY:%s\n", t->cmd);
+		fdprintf("SUMMARY:%s\n", t->cmd);
 	}
 	if (t->org) {
-		dprintf(whither, "ORGANIZER:%s\n", t->org);
+		fdprintf("ORGANIZER:%s\n", t->org);
 	}
 	if (t->att) {
 		for (const char *const *ap = t->att->l; *ap; ap++) {
-			dprintf(whither, "ATTENDEE:%s\n", *ap);
+			fdprintf("ATTENDEE:%s\n", *ap);
 		}
 	}
 	if (t->in) {
-		dprintf(whither, "X-ECHS-IFILE:%s\n", t->in);
+		fdprintf("X-ECHS-IFILE:%s\n", t->in);
 	}
 	if (t->out) {
-		dprintf(whither, "X-ECHS-OFILE:%s\n", t->out);
+		fdprintf("X-ECHS-OFILE:%s\n", t->out);
 	}
 	if (t->err) {
-		dprintf(whither, "X-ECHS-EFILE:%s\n", t->err);
+		fdprintf("X-ECHS-EFILE:%s\n", t->err);
 	}
 	if (t->run_as.sh) {
-		dprintf(whither, "X-ECHS-SHELL:%s\n", t->run_as.sh);
+		fdprintf("X-ECHS-SHELL:%s\n", t->run_as.sh);
 	}
 	if (t->run_as.wd) {
-		dprintf(whither, "LOCATION:%s\n", t->run_as.wd);
+		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
+	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
+	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	if (t->max_simul) {
-		dprintf(whither, "X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
 	}
 	return;
 }
@@ -1612,7 +1651,10 @@ send_ical_hdr(int whither)
 	/* singleton, there's only one now */
 	static time_t now;
 
-	write(whither, beg, strlenof(beg));
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+
+	fdwrite(beg, strlenof(beg));
 	if (LIKELY(now)) {
 		;
 	} else {
@@ -1636,7 +1678,7 @@ send_ical_hdr(int whither)
 		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
 		stmp[ztmp++] = '\n';
 	}
-	write(whither, stmp, ztmp);
+	fdwrite(stmp, ztmp);
 	return;
 }
 
@@ -1644,7 +1686,12 @@ static void
 send_ical_ftr(int whither)
 {
 	static const char end[] = "END:VEVENT\n";
-	write(whither, end, strlenof(end));
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+	fdwrite(end, strlenof(end));
+	/* that's the last thing in line, just send it off */
+	fdflush();
 	return;
 }
 
@@ -1657,25 +1704,46 @@ send_ev(int whither, echs_event_t e)
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
 		return;
 	}
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+
 	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
-	dprintf(whither, "DTSTART");
-	if (echs_instant_all_day_p(e.from)) {
-		dprintf(whither, ";VALUE=DATE");
-	}
 	stmp[ztmp++ + 1U] = '\n';
-	write(whither, stmp, ztmp + 1U);
+	fdwrite("DTSTART", strlenof("DTSTART"));
+	if (echs_instant_all_day_p(e.from)) {
+		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
+	}
+	fdwrite(stmp, ztmp + 1U);
 
 	if (LIKELY(!echs_nul_instant_p(e.till))) {
 		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
+		stmp[ztmp++ + 1U] = '\n';
 	} else {
 		e.till = e.from;
 	}
-	dprintf(whither, "DTEND");
+	fdwrite("DTEND", strlenof("DTEND"));
 	if (echs_instant_all_day_p(e.till)) {
-		dprintf(whither, ";VALUE=DATE");
+		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
 	}
-	stmp[ztmp++ + 1U] = '\n';
-	write(whither, stmp, ztmp + 1U);
+	fdwrite(stmp, ztmp + 1U);
+	return;
+}
+
+static void
+send_cd(int whither, struct cd_s cd)
+{
+	static const char *w[] = {
+		"MI", "MO", "TU", "WE", "TH", "FR", "SA", "SU"
+	};
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+
+	if (cd.cnt) {
+		fdprintf("%d", cd.cnt);
+	}
+	fdwrite(w[cd.dow], 2U);
 	return;
 }
 
@@ -1693,10 +1761,13 @@ send_rrul(int whither, rrulsp_t rr)
 		[FREQ_SECONDLY] = "FREQ=SECONDLY",
 	};
 
-	dprintf(whither, "RRULE:%s", f[rr->freq]);
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+
+	fdprintf("RRULE:%s", f[rr->freq]);
 
 	if (rr->inter > 1U) {
-		dprintf(whither, ";INTERVAL=%u", rr->inter);
+		fdprintf(";INTERVAL=%u", rr->inter);
 	}
 	with (unsigned int m) {
 		bitint_iter_t i = 0UL;
@@ -1705,9 +1776,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		m = bui31_next(&i, rr->mon);
-		dprintf(whither, ";BYMONTH=%u", m);
+		fdprintf(";BYMONTH=%u", m);
 		while (m = bui31_next(&i, rr->mon), i) {
-			dprintf(whither, ",%u", m);
+			fdprintf(",%u", m);
 		}
 	}
 
@@ -1718,9 +1789,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		yw = bi63_next(&i, rr->wk);
-		dprintf(whither, ";BYWEEKNO=%d", yw);
+		fdprintf(";BYWEEKNO=%d", yw);
 		while (yw = bi63_next(&i, rr->wk), i) {
-			dprintf(whither, ",%d", yw);
+			fdprintf(",%d", yw);
 		}
 	}
 
@@ -1731,9 +1802,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		yd = bi383_next(&i, &rr->doy);
-		dprintf(whither, ";BYYEARDAY=%d", yd);
+		fdprintf(";BYYEARDAY=%d", yd);
 		while (yd = bi383_next(&i, &rr->doy), i) {
-			dprintf(whither, ",%d", yd);
+			fdprintf(",%d", yd);
 		}
 	}
 
@@ -1744,9 +1815,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		d = bi31_next(&i, rr->dom);
-		dprintf(whither, ";BYMONTHDAY=%d", d);
+		fdprintf(";BYMONTHDAY=%d", d);
 		while (d = bi31_next(&i, rr->dom), i) {
-			dprintf(whither, ",%d", d);
+			fdprintf(",%d", d);
 		}
 	}
 
@@ -1757,9 +1828,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		e = bi383_next(&i, &rr->easter);
-		dprintf(whither, ";BYEASTER=%d", e);
+		fdprintf(";BYEASTER=%d", e);
 		while (e = bi383_next(&i, &rr->easter), i) {
-			dprintf(whither, ",%d", e);
+			fdprintf(",%d", e);
 		}
 	}
 
@@ -1770,11 +1841,11 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		cd = unpack_cd(bi447_next(&i, &rr->dow));
-		fputs(";BYDAY=", stdout);
-		prnt_cd(cd);
+		fdwrite(";BYDAY=", strlenof(";BYDAY="));
+		send_cd(whither, cd);
 		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
-			fputc(',', stdout);
-			prnt_cd(cd);
+			fdputc(',');
+			send_cd(whither, cd);
 		}
 	}
 
@@ -1785,9 +1856,9 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		a = bi383_next(&i, &rr->add);
-		dprintf(whither, ";BYADD=%d", a);
+		fdprintf(";BYADD=%d", a);
 		while (a = bi383_next(&i, &rr->add), i) {
-			dprintf(whither, ",%d", a);
+			fdprintf(",%d", a);
 		}
 	}
 
@@ -1798,23 +1869,25 @@ send_rrul(int whither, rrulsp_t rr)
 			break;
 		}
 		p = bi383_next(&i, &rr->pos);
-		dprintf(whither, ";BYPOS=%d", p);
+		fdprintf(";BYPOS=%d", p);
 		while (p = bi383_next(&i, &rr->pos), i) {
-			dprintf(whither, ",%d", p);
+			fdprintf(",%d", p);
 		}
 	}
 
 	if ((int)rr->count > 0) {
-		dprintf(whither, ";COUNT=%u", rr->count);
+		fdprintf(";COUNT=%u", rr->count);
 	}
 	if (rr->until.u < -1ULL) {
 		char until[32U];
+		size_t n;
 
-		dt_strf_ical(until, sizeof(until), rr->until);
-		dprintf(whither, ";UNTIL=%s", until);
+		n = dt_strf_ical(until, sizeof(until), rr->until);
+		fdwrite(";UNTIL=", strlenof(";UNTIL="));
+		fdwrite(until, n);
 	}
 
-	write(whither, "\n", 1U);
+	fdputc('\n');
 	return;
 }
 
@@ -2483,8 +2556,13 @@ echs_evical_pull(ical_parser_t p[static 1U])
 				break;
 			}
 			break;
-		default:
 		case METH_CANCEL:
+			i.v = INSVERB_UNSC;
+			i.o = ve->t.oid;
+			i.from = ve->e.from;
+			i.to = ve->e.till;
+			break;
+		default:
 		case METH_ADD:
 		case METH_REFRESH:
 		case METH_COUNTER:
