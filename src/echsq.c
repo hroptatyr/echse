@@ -221,23 +221,23 @@ poll1(int fd, int timeo)
 			break;
 		}
 	case 0:
-		do {
-			ins = echs_evical_pull(&rp);
-			switch (ins.v) {
-			case INSVERB_RESC:
-				/* that means success */
-				nout--;
-				puts("SUCCESS");
-				break;
-			case INSVERB_UNSC:
-				nout--;
-				puts("FAILURE");
-				break;
-			default:
-				break;
-			}
+	drain:
+		ins = echs_evical_pull(&rp);
+		switch (ins.v) {
+		case INSVERB_RESC:
+			/* that means success */
+			nout--;
+			puts("SUCCESS");
+			/* I'm sure there's more */
+			goto drain;
+		case INSVERB_UNSC:
+			nout--;
+			puts("FAILURE");
+			/* there might be more */
+			goto drain;
+		default:
 			break;
-		} while (1);
+		}
 		break;
 	case -1:
 	clear:
