@@ -860,6 +860,7 @@ free_task_ht(void)
 	return;
 }
 
+static bool mockp;
 static pid_t
 run_task(_task_t t, bool no_run)
 {
@@ -947,8 +948,19 @@ run_task(_task_t t, bool no_run)
 	}
 
 	/* finally fork out our child */
-	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
+	if (UNLIKELY(mockp)) {
+		r = -1;
+		fputs(echsx, stdout);
+		for (const char *const *ap = args + 1U; *ap; ap++) {
+			fputc(' ', stdout);
+			fputc('\'', stdout);
+			fputs(*ap, stdout);
+			fputc('\'', stdout);
+		}
+		fputc('\n', stdout);
+	} else if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
+		r = -1;
 	}
 	return r;
 }
@@ -1273,21 +1285,43 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		switch (ins.v) {
+		case INSVERB_CREA:
+		case INSVERB_UPDT:
+			if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
+				/* reply with REQUEST-STATUS:x */
+				cmd_ical_rpl(ofd, ins.t, 1U);
+			} else {
+				/* reply with REQUEST-STATUS:2.0;Success */
+				cmd_ical_rpl(ofd, ins.t, 0U);
+			}
 			break;
-		} else if (UNLIKELY(ins.t == NULL)) {
-			continue;
-		}
-		/* and otherwise inject him */
-		if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
-			/* reply with REQUEST-STATUS:x */
-			cmd_ical_rpl(ofd, ins.t, 1U);
-		} else {
-			/* reply with REQUEST-STATUS:2.0;Success */
-			cmd_ical_rpl(ofd, ins.t, 0U);
+
+		case INSVERB_RESC:
+			/* cancel request */
+			break;
+
+		case INSVERB_RES1:
+			/* cancel request */
+			break;
+
+		case INSVERB_UNSC:
+			/* cancel request */
+			break;
+
+		default:
+		case INSVERB_UNK:
+			ECHS_NOTI_LOG("\
+unknown instruction received from %d", ofd);
+			goto fini;
 		}
 	} while (1);
 
+fini:
 	cmd_ical_rpl(ofd, NULL, 0U);
 	return nwr;
 }
@@ -1459,18 +1493,20 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	 * as well as the maximum number of simultaneous children
 	 * if the maximum is running, defer the execution of this task */
 	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
-		ev_child *c = make_chld();
+		pid_t p;
 
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		/* consider us running already */
-		t->nsim++;
-		c->data = t;
+		if (LIKELY((p = run_task(t, false)) > 0)) {
+			ev_child *c = make_chld();
 
-		/* keep track of the spawned child pid and register
-		 * a watcher for status changes */
-		with (pid_t p = run_task(t, false)) {
+			/* consider us running already */
+			t->nsim++;
+			c->data = t;
+
+			/* keep track of the spawned child pid and register
+			 * a watcher for status changes */
 			ECHS_NOTI_LOG("supervising pid %d", p);
 			ev_child_init(c, chld_cb, p, false);
 			ev_child_start(EV_A_ c);
@@ -1500,6 +1536,7 @@ resched(ev_periodic *w, ev_tstamp now)
 	echs_evstrm_t s = t->t->strm;
 	echs_event_t e = unwind_till(s, now);
 	ev_tstamp soon;
+	char stmp[32];
 
 	if (UNLIKELY(echs_event_0_p(e) && !t->nrun)) {
 		/* this has never been run in the first place */
@@ -1517,7 +1554,9 @@ resched(ev_periodic *w, ev_tstamp now)
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
-	ECHS_NOTI_LOG("next run %f", soon);
+	(void)dt_strf(stmp, sizeof(stmp), e.from);
+
+	ECHS_NOTI_LOG("next run %f (%s)", soon, stmp);
 	return soon;
 }
 
@@ -1915,8 +1954,9 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (argi->foreground_flag) {
+	if (argi->dry_run_flag) {
 		echs_log = echs_errlog;
+		mockp = true;
 	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;
