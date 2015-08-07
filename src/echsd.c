@@ -1107,6 +1107,8 @@ struct echs_cmdparam_s {
 	};
 };
 
+static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
+
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
@@ -1263,8 +1265,6 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 static ssize_t
 cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
-	/* forward decl */
-	static int _inject_task1();
 	ssize_t nwr = 0;
 
 	do {
