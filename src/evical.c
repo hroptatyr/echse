@@ -835,11 +835,33 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_MOUT:
-		ve->t.mailout = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailout = 0U;
+				break;
+			default:
+				ve->t.mailout = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_MERR:
-		ve->t.mailerr = 1U;
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailerr = 0U;
+				break;
+			default:
+				ve->t.mailerr = 1U;
+				break;
+			}
+		}
 		break;
 
 	case FLD_SHELL:
@@ -1602,6 +1624,8 @@ send_task(int whither, echs_task_t t)
 	if (t->run_as.wd) {
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
+	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
+	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	if (t->max_simul) {
 		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
 	}
