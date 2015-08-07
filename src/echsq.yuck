@@ -11,6 +11,16 @@ Usage: echsq add [FILE]...
 Add tasks from FILEs to the queue.
 
 
+Usage: echsq cancel [TUID [INSTANCE]...]
+
+Cancel INSTANCEs from task with uid TUID, or all runs
+if no instance is specified.
+
+With no arguments but in the presence of a file on stdin, read this file
+line by line and cancel tasks in bulk.  Each line should contain a TUID,
+optionally followed by whitespace and INSTANCEs.
+
+
 Usage: echsq list
 
 List jobs in the queue.
