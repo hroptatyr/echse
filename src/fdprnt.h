@@ -47,13 +47,6 @@ static struct {
 	int fd;
 } fd_aux;
 
-static int
-fdbang(int fd)
-{
-	fd_aux.fd = fd;
-	return 0;
-}
-
 static ssize_t
 fdflush(void)
 {
@@ -106,6 +99,17 @@ fdprintf(const char *fmt, ...)
 		return -1;
 	}
 	fd_aux.bi += tp;
+	return 0;
+}
+
+static int
+fdbang(int fd)
+{
+	if (fd_aux.bi && fd_aux.fd != fd) {
+		/* flush what we've got to the old fd */
+		fdflush();
+	}
+	fd_aux.fd = fd;
 	return 0;
 }
 
