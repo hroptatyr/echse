@@ -56,11 +56,16 @@ typedef enum {
 	 * Update task with oid O to specifics in T. */
 	INSVERB_UPDT,
 	/**
-	 * Reschedule task with oid O to S.
-	 * To reschedule one recurrence instance in O specify I.
+	 * Reschedule task with oid O to events in stream S.
 	 * This verb is also used to denote a successful CREA or UPDT,
 	 * in that case the oid is set but the stream is not. */
 	INSVERB_RESC,
+	/**
+	 * Reschedule one event in task with oid O, cancel the event at
+	 * date/time FROM and instead move it to data/time TO.
+	 * If FROM is the nul instant, simply add an extra recurrence
+	 * of the task at date/time TO. */
+	INSVERB_RES1,
 	/**
 	 * Unschedule (cancel) task with oid O.
 	 * To unschedule one recurrence instance in O specify I.
@@ -74,9 +79,10 @@ struct echs_instruc_s {
 	echs_toid_t o;
 	union {
 		echs_task_t t;
+		echs_evstrm_t s;
 		struct {
-			echs_evstrm_t s;
-			echs_instant_t i;
+			echs_instant_t from;
+			echs_instant_t to;
 		};
 	};
 };
