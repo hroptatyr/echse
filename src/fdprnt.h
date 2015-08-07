@@ -114,6 +114,7 @@ fdwrite(const char *str, size_t len)
 	}
 	/* just memcpy the string */
 	memcpy(fd_aux.buf + fd_aux.bi, str, len);
+	fd_aux.bi += len;
 	return len;
 }
 
