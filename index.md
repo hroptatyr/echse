@@ -28,15 +28,15 @@ iCalendar format (see [echse beef][2] page for further information).
 Features
 --------
 
-* [X] Tasks can be run with second precision
-* [X] More flexible recurrence (anything ical RRULEs can express)
-* [X] Per-task configuration of mail
-* [X] Per-task configuration of working directory and shell
-* [X] Per-task configuration of simultaneity
-* [X] Automatic and shell-independent capture of timing information
-* [ ] Per-task configuration of timezones
-* [ ] Per-task configuration of the environment
-* [ ] Built-in timeouts by constraining a task through DTEND/DURATION
+* Tasks can be run with second precision
+* More flexible recurrence (anything ical RRULEs can express)
+* Per-task configuration of mail
+* Per-task configuration of working directory and shell
+* Per-task configuration of simultaneity
+* Automatic and shell-independent capture of timing information
+* Per-task configuration of timezones
+* Per-task configuration of the environment
+* Built-in timeouts by constraining a task through DTEND/DURATION
 
 
 iCalendar extensions
