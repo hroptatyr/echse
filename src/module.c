@@ -87,11 +87,12 @@ add_myself(void)
 	EDEBUG("adding %s\n", wd);
 	lt_dladdsearchdir(wd);
 
-#define MEMCMPLIT(a, b)	memcmp((a), (b), sizeof(b) - 1)
 	if (moddir[0] == '/') {
-		/* absolute libdir, add him */
+		/* absolute libdir, add him unconditionally*/
 		lt_dladdsearchdir(moddir);
-	} else if (moddir[0] == '.') {
+	}
+
+	if (moddir[0] == '.') {
 		/* relative libdir? relative to what? */
 		return;
 	} else if (memcmp(moddir, eprefix, sizeof(eprefix) - 1) == 0) {
