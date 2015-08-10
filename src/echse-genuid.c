@@ -44,17 +44,10 @@
 #include <stdio.h>
 #include "intern.h"
 #include "echse-genuid.h"
-#include "blake2/blake2.h"
 #include "nifty.h"
-
-#define BL2_HASH_LEN	(8U)
 
 static char *line;
 static size_t llen;
-
-struct bl2_hash_s {
-	uint8_t hash[BL2_HASH_LEN];
-};
 
 
 static char
@@ -69,21 +62,6 @@ u2h(uint8_t c)
 		break;
 	}
 	return (char)'?';
-}
-
-static int
-blakify(struct bl2_hash_s *restrict tgt, const char *s, size_t z)
-{
-	static blake2b_state st[1U];
-
-	if (blake2b_init(st, sizeof(tgt->hash)) < 0) {
-		return -1;
-	} else if (blake2b_update(st, (const uint8_t*)s, z) < 0) {
-		return -1;
-	} else if (blake2b_final(st, tgt->hash, sizeof(tgt->hash)) < 0) {
-		return -1;
-	}
-	return 0;
 }
 
 
@@ -107,7 +85,7 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 {
 	size_t fmtz = strlen(fmt);
 	size_t fz = strlen(fn);
-	char buf[4U/*UID:*/ + fmtz + fz + 2U * BL2_HASH_LEN + 2U/*\n\0*/];
+	char buf[4U/*UID:*/ + fmtz + fz + 8U/*sizeof(obint_t)*/ + 2U/*\n\0*/];
 	bool seen_uid_p = true;
 	char *bp = buf;
 	char *hp = NULL;
@@ -143,7 +121,7 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 				/* hash in hex */
 				if (LIKELY(hp == NULL)) {
 					hp = bp;
-					bp += 2 * BL2_HASH_LEN;
+					bp += 8U/*sizeof(obint_t)*/;
 				}
 				break;
 			default:
@@ -165,7 +143,7 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 				continue;
 			}
 		} else if (!seen_uid_p && !strncmp(line, "SUMMARY:", 8U)) {
-			struct bl2_hash_s tgt[1U];
+			obint_t ob;
 
 			if (LIKELY(line[nrd - 1] == '\n')) {
 				nrd--;
@@ -174,19 +152,13 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 				nrd--;
 			}
 			/* run the uid-ifier */
-			if (LIKELY(hp != NULL && 
-				   blakify(tgt, line + 8U, nrd - 8U) >= 0)) {
-				char *p = hp;
-
-				for (const uint8_t *tp = tgt->hash,
-					     *const ep = tp + sizeof(tgt->hash);
-				     tp < ep; tp++) {
-					*p++ = u2h((uint8_t)(*tp & 0xfU));
-					*p++ = u2h((uint8_t)(*tp >> 4U));
-				}
-				/* and output the line */
-				fputs(buf, stdout);
+			ob = obint(line + 8U, nrd - 8U);
+			/* obint_name() should give us a proper line */
+			for (char *restrict p = hp + 8U; p > hp; ob >>= 4U) {
+				*--p = u2h((uint8_t)(ob & 0xfU));
 			}
+			/* and output the line */
+			fputs(buf, stdout);
 			seen_uid_p = true;
 		}
 		fputs(line, stdout);
