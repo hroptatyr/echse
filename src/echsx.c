@@ -956,6 +956,7 @@ daemonise(void)
 	static char nulfn[] = "/dev/null";
 	int nulfd;
 	pid_t pid;
+	int rc = 0;
 
 	switch (pid = fork()) {
 	case -1:
@@ -978,7 +979,7 @@ daemonise(void)
 		return -1;
 	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
 		/* yay, just what we need right now */
-		return -1;
+		rc = -1;
 	}
 	/* make sure nobody sees what we've been doing */
 	close(nulfd);
@@ -988,14 +989,14 @@ daemonise(void)
 		return -1;
 	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
 		/* nah, that's just not good enough */
-		return -1;
+		rc = -1;
 	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
 		/* still shit */
-		return -1;
+		rc = -1;
 	}
 	/* make sure we only have the copies around */
 	close(nulfd);
-	return 0;
+	return rc;
 }
 
 int
