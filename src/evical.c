@@ -503,7 +503,7 @@ snarf_rrule(const char *s, size_t z)
 				echs_wday_t w;
 
 				tmp = strtol(++kv, &on, 10);
-				if ((w = snarf_wday(on)) == MIR) {
+				if (on == NULL || (w = snarf_wday(on)) == MIR) {
 					continue;
 				}
 				/* otherwise assign */
@@ -515,6 +515,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_MIN:
 		case BY_SEC:
 			do {
+				on = NULL;
 				tmp = strtoul(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MON:
@@ -530,7 +531,7 @@ snarf_rrule(const char *s, size_t z)
 					rr.S = ass_bui63(rr.S, tmp);
 					break;
 				}
-			} while (*(kv = on) == ',');
+			} while (on && *(kv = on) == ',');
 			break;
 
 		case BY_MDAY:
@@ -541,6 +542,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_ADD:
 			/* these ones take +/- values */
 			do {
+				on = NULL;
 				tmp = strtol(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MDAY:
@@ -562,7 +564,7 @@ snarf_rrule(const char *s, size_t z)
 					ass_bi383(&rr.add, tmp);
 					break;
 				}
-			} while (*(kv = on) == ',');
+			} while (on && *(kv = on) == ',');
 			break;
 
 		default:
