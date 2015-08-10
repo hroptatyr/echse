@@ -61,6 +61,7 @@
 #include "evmrul-gp.c"
 #include "evmeth-gp.c"
 #include "fdprnt.h"
+#include "echse-genuid.h"
 
 #if !defined assert
 # define assert(x)
@@ -2442,6 +2443,11 @@ make_task(struct ical_vevent_s *ve)
 
 	if (UNLIKELY((res = malloc(sizeof(*res))) == NULL)) {
 		return NULL;
+	}
+
+	/* generate a uid on the fly */
+	if (UNLIKELY(!ve->t.oid)) {
+		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
 	}
 
 	if (!ve->rr.nr && !ve->rd.ndt) {
