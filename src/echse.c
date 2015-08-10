@@ -355,9 +355,8 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 		cpy_obint:
 			{
 				const char *nm = obint_name(x);
-				const size_t nz = obint_len(x);
 
-				bp += xstrlncpy(bp, ebp - bp, nm, nz);
+				bp += xstrlcpy(bp, nm, ebp - bp);
 			}
 			continue;
 		} else {
