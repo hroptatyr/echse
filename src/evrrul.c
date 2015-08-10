@@ -1314,7 +1314,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi31_next(&domi, rr->dom), domi);) {
 			if (tmp > 0) {
 				posd_mask |= 1U << tmp;
-			} else {
+			} else if (tmp < 0) {
 				negd_mask |= 1U << (unsigned int)(-++tmp);
 			}
 		}
@@ -1449,7 +1449,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi31_next(&domi, rr->dom), domi);) {
 			if (tmp > 0) {
 				posd_mask |= 1U << tmp;
-			} else {
+			} else if (tmp < 0) {
 				negd_mask |= 1U << (unsigned int)(-++tmp);
 			}
 		}
@@ -1621,7 +1621,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi31_next(&domi, rr->dom), domi);) {
 			if (tmp > 0) {
 				posd_mask |= 1U << tmp;
-			} else {
+			} else if (tmp < 0) {
 				negd_mask |= 1U << (unsigned int)(-++tmp);
 			}
 		}
@@ -1793,7 +1793,7 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     (tmp = bi31_next(&domi, rr->dom), domi);) {
 			if (tmp > 0) {
 				posd_mask |= 1U << tmp;
-			} else {
+			} else if (tmp < 0) {
 				negd_mask |= 1U << (unsigned int)(-++tmp);
 			}
 		}

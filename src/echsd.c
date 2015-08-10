@@ -241,31 +241,42 @@ get_exewd(void)
 #if defined __linux__
 	static const char myself[] = "/proc/self/exe";
 	static char wd[PATH_MAX];
+	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __NetBSD__
 	static const char myself[] = "/proc/curproc/exe";
 	static char wd[PATH_MAX];
 	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __DragonFly__
 	static const char myself[] = "/proc/curproc/file";
 	static char wd[PATH_MAX];
+	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __FreeBSD__
 	static char wd[PATH_MAX];
 	size_t z = sizeof(wd);
@@ -277,11 +288,15 @@ get_exewd(void)
 	ssize_t z;
 
 	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __APPLE__ && defined __MACH__
 	static char wd[PATH_MAX];
 	uint32_t z;
@@ -504,7 +519,7 @@ make_socket(const char *sdir)
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
 	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
-		return -1;
+		goto fail;
 	}
 	fn = pathcat(sdir, "=echsd", NULL);
 	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
@@ -1656,8 +1671,10 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 static int
 daemonise(void)
 {
-	int fd;
+	static char nulfn[] = "/dev/null";
+	int nulfd;
 	pid_t pid;
+	int rc = 0;
 
 	switch (pid = fork()) {
 	case -1:
@@ -1670,18 +1687,34 @@ daemonise(void)
 		exit(0);
 	}
 
-	if (setsid() == -1) {
+	if (UNLIKELY(setsid() < 0)) {
 		return -1;
 	}
-	if (LIKELY((fd = open("/dev/null", O_RDWR, 0)) >= 0)) {
-		(void)dup2(fd, STDIN_FILENO);
-		(void)dup2(fd, STDOUT_FILENO);
-		(void)dup2(fd, STDERR_FILENO);
-		if (fd > STDERR_FILENO) {
-			(void)close(fd);
-		}
+
+	if (UNLIKELY((nulfd = open(nulfn, O_RDONLY)) < 0)) {
+		/* nope, consider us fucked, we can't even print
+		 * the error message anymore */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
+		/* yay, just what we need right now */
+		rc = -1;
 	}
-	return 0;
+	/* make sure nobody sees what we've been doing */
+	close(nulfd);
+
+	if (UNLIKELY((nulfd = open(nulfn, O_WRONLY, 0600)) < 0)) {
+		/* bugger */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
+		/* nah, that's just not good enough */
+		rc = -1;
+	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
+		/* still shit */
+		rc = -1;
+	}
+	/* make sure we only have the copies around */
+	close(nulfd);
+	return rc;
 }
 
 static void
