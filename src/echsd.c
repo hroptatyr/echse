@@ -1814,7 +1814,7 @@ _inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
-	size_t nrd;
+	ssize_t nrd;
 	int fd;
 
 	if (UNLIKELY(run_as >= (uid_t)~0UL)) {
