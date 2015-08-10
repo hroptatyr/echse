@@ -124,15 +124,16 @@ AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside]
 
 
 ## compose build summary
-if test "${have_rt_funs}" = "yes"; then
-	echsxX="x"
-else
-	echsxX=" "
-fi
 if test "${have_libev}" = "yes"; then
 	libevX="x"
+	if test "${have_rt_funs}" = "yes"; then
+		echsxX=" "
+	else
+		echsxX=" "
+	fi
 else
 	libevX=" "
+	echsxX=" "
 fi
 
 echo
