@@ -158,6 +158,10 @@ static size_t
 get_task_slot(echs_toid_t oid)
 {
 /* find slot for OID for getting */
+	if (UNLIKELY(task_ht == NULL)) {
+		/* something must have really gone wrong */
+		return (size_t)-1ULL;
+	}
 	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
 		if (task_ht[slot].oid == oid) {
 			return slot;
@@ -222,7 +226,9 @@ again:
 	with (size_t slot = put_task_slot(oid)) {
 		if (UNLIKELY(slot >= ztask_ht)) {
 			/* resize */
-			resz_task_ht();
+			if (UNLIKELY(resz_task_ht() < 0)) {
+				return -1;
+			}
 			goto again;
 		}
 		task_ht[slot] = (struct tmap_s){oid, t, nstrms};
