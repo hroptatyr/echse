@@ -459,6 +459,9 @@ prep_task(echs_task_t t)
 	int nulfd_used = 0;
 	int rc = 0;
 
+	/* set the umask here just so we're safe throughout the whole run */
+	(void)umask(0600);
+
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
 	t->ifd = t->ofd = t->efd = t->mfd = -1;
