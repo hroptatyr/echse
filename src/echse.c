@@ -128,7 +128,6 @@ free_strms(void)
 struct tmap_s {
 	echs_toid_t oid;
 	echs_task_t t;
-	size_t strm_ix;
 };
 
 static struct tmap_s *task_ht;
@@ -147,7 +146,6 @@ put_task_slot(echs_toid_t oid)
 		} else {
 			/* free old task and stream */
 			free_echs_task(task_ht[slot].t);
-			strms[task_ht[slot].strm_ix] = NULL;
 		        return slot;
 		}
 	}
@@ -231,7 +229,7 @@ again:
 			}
 			goto again;
 		}
-		task_ht[slot] = (struct tmap_s){oid, t, nstrms};
+		task_ht[slot] = (struct tmap_s){oid, t};
 	}
 	/* also file a stream to our strms registry */
 	add_strm(t->strm);
