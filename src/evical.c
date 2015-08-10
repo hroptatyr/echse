@@ -2013,62 +2013,62 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(struct ical_vevent_s ve, size_t nref)
+__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t nref)
 {
 	struct evrrul_s *this = malloc(sizeof(*this));
 	echs_evstrm_t res;
 
 	this->class = &evrrul_cls;
-	this->e = ve.e;
-	this->rr = *ve.rr.r;
+	this->e = ve->e;
+	this->rr = *ve->rr.r;
 	this->nref = nref;
 
 	/* free the rr-list in here after materialisation */
 	if (nref <= 1U) {
-		free(ve.rr.r);
+		free(ve->rr.r);
 	}
 
-	if (ve.xr.nr) {
-		this->xr = ve.xr;
+	if (ve->xr.nr) {
+		this->xr = ve->xr;
 	} else {
 		this->xr.nr = 0U;
 	}
-	if (ve.rd.ndt) {
-		this->rd = ve.rd;
+	if (ve->rd.ndt) {
+		this->rd = ve->rd;
 	} else {
 		this->rd.ndt = 0U;
 	}
-	if (ve.xd.ndt) {
-		this->xd = ve.xd;
+	if (ve->xd.ndt) {
+		this->xd = ve->xd;
 	} else {
 		this->xd.ndt = 0U;
 	}
-	this->dur = echs_instant_diff(ve.e.till, ve.e.from);
+	this->dur = echs_instant_diff(ve->e.till, ve->e.from);
 	this->rdi = 0UL;
 	this->ncch = 0UL;
 	res = (echs_evstrm_t)this;
-	if (ve.mr.nr && ve.mf.nu) {
+	if (ve->mr.nr && ve->mf.nu) {
 		echs_evstrm_t aux;
 
-		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
-			res = make_evmrul(*ve.mr.r, res, aux);
+		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
+			res = make_evmrul(*ve->mr.r, res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
 	}
 	/* better free this guy */
 	if (nref <= 1U) {
-		if (ve.mf.nu) {
-			free(ve.mf.u);
+		if (ve->mf.nu) {
+			free(ve->mf.u);
 		}
-		if (ve.mr.nr) {
-			free(ve.mr.r);
+		if (ve->mr.nr) {
+			free(ve->mr.r);
 		}
 	}
 	return (echs_evstrm_t)res;
 }
 
 static echs_evstrm_t
-make_evrrul(struct ical_vevent_s ve)
+make_evrrul(const struct ical_vevent_s ve[static 1U])
 {
 /* here's the deal, we check how many rrules there are, and
  * if it's just one we return a normal evrrul_s object, if
@@ -2076,28 +2076,28 @@ make_evrrul(struct ical_vevent_s ve)
  * rrule and mux them together, sharing the resources in VE. */
 	echs_evstrm_t res = NULL;
 
-	switch (ve.rr.nr) {
+	switch (ve->rr.nr) {
 	case 0:
 		break;
 	case 1:
 		res = __make_evrrul(ve, 1U);
 		break;
 	default:
-		with (echs_evstrm_t s[ve.rr.nr]) {
-			struct ical_vevent_s ve_tmp = ve;
+		with (echs_evstrm_t s[ve->rr.nr]) {
+			struct ical_vevent_s ve_tmp = *ve;
 			size_t nr = 0UL;
 
-			for (size_t i = 0U; i < ve.rr.nr;
+			for (size_t i = 0U; i < ve->rr.nr;
 			     i++, nr++, ve_tmp.rr.r++) {
-				s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
+				s[nr] = __make_evrrul(&ve_tmp, ve->rr.nr);
 			}
 			/* we've materialised these */
-			free(ve.rr.r);
-			if (ve.mr.nr) {
-				free(ve.mr.r);
+			free(ve->rr.r);
+			if (ve->mr.nr) {
+				free(ve->mr.r);
 			}
-			if (ve.mf.nu) {
-				free(ve.mf.u);
+			if (ve->mf.nu) {
+				free(ve->mf.u);
 			}
 			res = make_echs_evmux(s, nr);
 		}
@@ -2373,7 +2373,7 @@ make_echs_evical(const char *fn)
 				echs_instant_sort(xd, a->ev[i].xd.ndt);
 			}
 
-			if ((tmp = make_evrrul(a->ev[i])) != NULL) {
+			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
 				s[ns++] = tmp;
 			}
 		}
@@ -2473,7 +2473,7 @@ make_task(struct ical_vevent_s *ve)
 			echs_instant_sort(xd, ve->xd.ndt);
 		}
 
-		s = make_evrrul(*ve);
+		s = make_evrrul(ve);
 	}
 	/* now massage the task specific fields in VE into an echs_task_t */
 	*res = ve->t;
