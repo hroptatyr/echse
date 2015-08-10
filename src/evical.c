@@ -247,19 +247,6 @@ get_gms(struct uri_s u)
 }
 
 static void
-make_proto_task(struct ical_vevent_s *restrict ve)
-{
-	struct echs_task_s *res = malloc(sizeof(*res));
-
-	if (UNLIKELY(res == NULL)) {
-		return;
-	}
-	/* copy the proto task over */
-	*res = ve->t;
-	return;
-}
-
-static void
 free_ical_vevent(struct ical_vevent_s *restrict ve)
 {
 	if (ve->rr.nr) {
@@ -1121,8 +1108,6 @@ _ical_proc(struct ical_parser_s p[static 1U])
 
 				add_to_urlst(&p->ve.mf, mf, nmf);
 			}
-			/* assign */
-			make_proto_task(&p->ve);
 			/* reset to unknown state */
 			p->st = ST_BODY;
 			res = &p->ve;
