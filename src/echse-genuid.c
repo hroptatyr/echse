@@ -42,7 +42,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
-
+#include "intern.h"
 #include "echse-genuid.h"
 #include "blake2/blake2.h"
 #include "nifty.h"
@@ -194,6 +194,38 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 
 	fclose(fp);
 	return 0;
+}
+
+echs_toid_t
+echs_toid_gen(echs_task_t t)
+{
+	char buf[2U * BL2_HASH_LEN + 1U/*\0*/];
+	echs_toid_t res = 0U;
+	size_t len;
+
+	if (UNLIKELY(t->cmd == NULL)) {
+		return 0U;
+	} else if (UNLIKELY((len = strlen(t->cmd)) == 0U)) {
+		return 0U;
+	}
+
+	/* run the uid-ifier */
+	with (struct bl2_hash_s tgt[1U]) {
+		char *restrict bp = buf;
+
+		if (UNLIKELY(blakify(tgt, t->cmd, len) < 0)) {
+			return 0U;
+		}
+
+		for (const uint8_t *tp = tgt->hash,
+			     *const ep = tp + sizeof(tgt->hash);
+		     tp < ep; tp++) {
+			*bp++ = u2h((uint8_t)(*tp & 0xfU));
+			*bp++ = u2h((uint8_t)(*tp >> 4U));
+		}
+		res = intern(buf, bp - buf);
+	}
+	return res;
 }
 
 /* echse-genuid.c ends here */
