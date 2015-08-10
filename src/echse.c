@@ -45,7 +45,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <time.h>
-
+#include <fcntl.h>
 #include "echse.h"
 #include "echse-genuid.h"
 #include "evical.h"
@@ -92,6 +92,157 @@ xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
+
+/* global stream map */
+static echs_evstrm_t *strms;
+static size_t nstrms;
+static size_t zstrms;
+
+static int
+add_strm(echs_evstrm_t s)
+{
+	if (UNLIKELY(nstrms >= zstrms)) {
+		const size_t nuz = (zstrms * 2U) ?: 64U;
+		strms = realloc(strms, (zstrms = nuz) * sizeof(*strms));
+		if (UNLIKELY(strms == NULL)) {
+			return -1;
+		}
+	}
+	strms[nstrms++] = s;
+	return 0;
+}
+
+static void
+free_strms(void)
+{
+	if (LIKELY(strms != NULL)) {
+		free(strms);
+	}
+	strms = NULL;
+	nstrms = zstrms = 0UL;
+	return;
+}
+
+
+/* mapping from oid to task and stream */
+struct tmap_s {
+	echs_toid_t oid;
+	echs_task_t t;
+	size_t strm_ix;
+};
+
+static struct tmap_s *task_ht;
+static size_t ztask_ht;
+
+static size_t
+put_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for putting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (LIKELY(!task_ht[slot].oid)) {
+			return slot;
+		} else if (!task_ht[slot].oid != oid) {
+			/* collision, retry */
+			;
+		} else {
+			/* free old task and stream */
+			free_echs_task(task_ht[slot].t);
+			strms[task_ht[slot].strm_ix] = NULL;
+		        return slot;
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static size_t
+get_task_slot(echs_toid_t oid)
+{
+/* find slot for OID for getting */
+	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
+		if (task_ht[slot].oid == oid) {
+			return slot;
+		}
+	}
+	return (size_t)-1ULL;
+}
+
+static int
+resz_task_ht(void)
+{
+	const size_t olz = ztask_ht;
+	const struct tmap_s *olt = task_ht;
+
+again:
+	/* buy the shiny new house */
+	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
+	if (UNLIKELY(task_ht == NULL)) {
+		return -1;
+	}
+	/* and now move */
+	for (size_t i = 0U; i < olz; i++) {
+		if (olt[i].oid) {
+			size_t j = put_task_slot(olt[i].oid);
+
+			if (UNLIKELY(j >= ztask_ht)) {
+				free(task_ht);
+				goto again;
+			}
+			task_ht[j] = olt[i];
+		}
+	}
+	return 0;
+}
+
+static echs_task_t
+get_task(echs_toid_t oid)
+{
+/* find the task with oid OID. */
+	size_t slot;
+
+	if (UNLIKELY(!ztask_ht)) {
+		return NULL;
+	} else if (UNLIKELY((slot = get_task_slot(oid)) >= ztask_ht)) {
+		/* not resizing now */
+		return NULL;
+	} else if (!task_ht[slot].oid) {
+		/* not found */
+		return NULL;
+	}
+	return task_ht[slot].t;
+}
+
+static int
+put_task(echs_toid_t oid, echs_task_t t)
+{
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
+	}
+again:
+	with (size_t slot = put_task_slot(oid)) {
+		if (UNLIKELY(slot >= ztask_ht)) {
+			/* resize */
+			resz_task_ht();
+			goto again;
+		}
+		task_ht[slot] = (struct tmap_s){oid, t, nstrms};
+	}
+	/* also file a stream to our strms registry */
+	add_strm(t->strm);
+	return 0;
+}
+
+static void
+free_task_ht(void)
+{
+	if (LIKELY(task_ht != NULL)) {
+		free(task_ht);
+		task_ht = NULL;
+	}
+	return;
+}
+
+
 static void
 chck_filt(struct rrulsp_s *restrict f)
 {
@@ -150,6 +301,8 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 			obint_t x;
 
 			switch (*++fp) {
+				echs_task_t t;
+
 			case 'b':
 				i = e.from;
 				goto cpy_inst;
@@ -157,6 +310,9 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
+				if (LIKELY((t = get_task(e.oid)) != NULL)) {
+					bp += xstrlcpy(bp, t->cmd, ebp - bp);
+				}
 				continue;
 			case 'S':
 				if (e.sts) {
@@ -237,6 +393,57 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 	return;
 }
 
+static int
+_inject_fd(int fd)
+{
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	ssize_t nrd;
+
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
+
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+	case 0:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			/* only allow PUBLISH requests for now */
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* and otherwise inject him */
+			put_task(ins.t->oid, ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+	case -1:
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		/* still only allow PUBLISH requests for now */
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return 0;
+}
+
 
 #if defined STANDALONE
 #include "echse.yucc"
@@ -247,7 +454,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	static const char dflt_fmt[] = "%b\t%s";
 	/* params that filter the output */
 	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
-	echs_evstrm_t smux;
+	echs_evstrm_t smux = NULL;
 
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg);
@@ -286,35 +493,30 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 		chck_filt(&p.filt);
 	}
 
-	with (echs_evstrm_t sarr[argi->nargs]) {
-		size_t ns = 0UL;
+	for (size_t i = 0UL; i < argi->nargs; i++) {
+		const char *fn = argi->args[i];
+		int fd;
 
-		for (size_t i = 0UL; i < argi->nargs; i++) {
-			const char *fn = argi->args[i];
-			echs_evstrm_t s = make_echs_evstrm_from_file(fn);
-
-			if (UNLIKELY(s == NULL)) {
-				serror("\
+		if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
+			serror("\
 echse: Error: cannot open file `%s'", fn);
-				continue;
-			}
-			sarr[ns++] = s;
+			continue;
 		}
-		/* now mux them all into one */
-		smux = echs_evstrm_vmux(sarr, ns);
-		/* kill the originals */
-		for (size_t i = 0UL; i < ns; i++) {
-			free_echs_evstrm(sarr[i]);
-		}
+		/* otherwise inject */
+		_inject_fd(fd);
+		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		smux = make_echs_evstrm_from_file(NULL);
+		_inject_fd(STDIN_FILENO);
 	}
-	if (UNLIKELY(smux == NULL)) {
+	if (UNLIKELY((smux = make_echs_evmux(strms, nstrms)) == NULL)) {
 		/* return early */
 		return 1;
 	}
+	/* noone needs the streams in an array anymore */
+	free_strms();
+
 	if (argi->format_arg != NULL && !strcmp(argi->format_arg, "ical")) {
 		/* special output format */
 		unroll_ical(smux, p);
@@ -324,6 +526,7 @@ echse: Error: cannot open file `%s'", fn);
 	}
 
 	free_echs_evstrm(smux);
+	free_task_ht();
 	return 0;
 }
 
