@@ -2087,33 +2087,36 @@ make_evrrul(struct ical_vevent_s ve)
  * if it's just one we return a normal evrrul_s object, if
  * it's more than one we generate one evrrul_s object per
  * rrule and mux them together, sharing the resources in VE. */
+	echs_evstrm_t res = NULL;
 
 	switch (ve.rr.nr) {
 	case 0:
-		return NULL;
+		break;
 	case 1:
-		return __make_evrrul(ve, 1U);
+		res = __make_evrrul(ve, 1U);
+		break;
 	default:
+		with (echs_evstrm_t s[ve.rr.nr]) {
+			struct ical_vevent_s ve_tmp = ve;
+			size_t nr = 0UL;
+
+			for (size_t i = 0U; i < ve.rr.nr;
+			     i++, nr++, ve_tmp.rr.r++) {
+				s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
+			}
+			/* we've materialised these */
+			free(ve.rr.r);
+			if (ve.mr.nr) {
+				free(ve.mr.r);
+			}
+			if (ve.mf.nu) {
+				free(ve.mf.u);
+			}
+			res = make_echs_evmux(s, nr);
+		}
 		break;
 	}
-	with (echs_evstrm_t s[ve.rr.nr]) {
-		struct ical_vevent_s ve_tmp = ve;
-		size_t nr = 0UL;
-
-		for (size_t i = 0U; i < ve.rr.nr; i++, nr++, ve_tmp.rr.r++) {
-			s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
-		}
-		/* we've materialised these */
-		free(ve.rr.r);
-		if (ve.mr.nr) {
-			free(ve.mr.r);
-		}
-		if (ve.mf.nu) {
-			free(ve.mf.u);
-		}
-		return make_echs_evmux(s, nr);
-	}
-	return NULL;
+	return res;
 }
 
 static void
