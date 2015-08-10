@@ -56,8 +56,8 @@
 /* check for me */
 #include <ltdl.h>
 #include <limits.h>
-
 #include "module.h"
+#include "nifty.h"
 
 #if defined DEBUG_FLAG
 # include <stdio.h>
@@ -66,7 +66,7 @@
 # define EDEBUG(args...)
 #endif	/* DEBUG_FLAG */
 
-static void
+static int
 add_myself(void)
 {
 	static const char myself[] = "/proc/self/exe";
@@ -75,12 +75,20 @@ add_myself(void)
 	static const char prefix[] = "${prefix}";
 	const char *relmoddir;
 	char wd[PATH_MAX], *dp;
-	size_t sz;
+	ssize_t sz;
 
-	sz = readlink(myself, wd, sizeof(wd));
+	if (UNLIKELY((sz = readlink(myself, wd, sizeof(wd))) < 0)) {
+		/* grrrr */
+		return -1;
+	} else if (UNLIKELY((size_t)sz >= sizeof(wd))) {
+		/* again, just get ourselves out of here */
+		return -1;
+	}
+	/* otherwise it's all good news, proceed as normal */
 	wd[sz] = '\0';
 	if ((dp = strrchr(wd, '/')) == NULL) {
-		return;
+		/* no /s in there, just bog off quickly */
+		return 0;
 	}
 	/* add the path where the binary resides */
 	*dp = '\0';
@@ -94,7 +102,7 @@ add_myself(void)
 
 	if (moddir[0] == '.') {
 		/* relative libdir? relative to what? */
-		return;
+		return 0;
 	} else if (memcmp(moddir, eprefix, sizeof(eprefix) - 1) == 0) {
 		/* take the bit after EPREFIX for catting later on */
 		relmoddir = moddir + sizeof(eprefix) - 1;
@@ -103,22 +111,22 @@ add_myself(void)
 		relmoddir = moddir + sizeof(prefix) - 1;
 	} else {
 		/* don't know, i guess i'll leave ya to it */
-		return;
+		return 0;
 	}
 
 	/* go back one level in dp */
 	if ((dp = strrchr(wd, '/')) == NULL) {
-		return;
+		return 0;
 	} else if (strcmp(dp, "/bin") && strcmp(dp, "/sbin")) {
 		/* dp doesn't end in /bin nor /sbin */
-		return;
+		return 0;
 	}
 
 	/* good, now we're ready to cat relmoddir to dp */
 	strncpy(dp, relmoddir, sizeof(wd) - (dp - wd));
 	EDEBUG("adding %s\n", wd);
 	lt_dladdsearchdir(wd);
-	return;
+	return 0;
 }
 
 static lt_dlhandle
