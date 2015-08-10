@@ -199,8 +199,6 @@ echse_genuid1(const char *fmt, const char *fn, bool forcep)
 echs_toid_t
 echs_toid_gen(echs_task_t t)
 {
-	char buf[2U * BL2_HASH_LEN + 1U/*\0*/];
-	echs_toid_t res = 0U;
 	size_t len;
 
 	if (UNLIKELY(t->cmd == NULL)) {
@@ -208,24 +206,8 @@ echs_toid_gen(echs_task_t t)
 	} else if (UNLIKELY((len = strlen(t->cmd)) == 0U)) {
 		return 0U;
 	}
-
-	/* run the uid-ifier */
-	with (struct bl2_hash_s tgt[1U]) {
-		char *restrict bp = buf;
-
-		if (UNLIKELY(blakify(tgt, t->cmd, len) < 0)) {
-			return 0U;
-		}
-
-		for (const uint8_t *tp = tgt->hash,
-			     *const ep = tp + sizeof(tgt->hash);
-		     tp < ep; tp++) {
-			*bp++ = u2h((uint8_t)(*tp & 0xfU));
-			*bp++ = u2h((uint8_t)(*tp >> 4U));
-		}
-		res = intern(buf, bp - buf);
-	}
-	return res;
+	/* avoid interning because we don't want to waste space */
+	return obint(t->cmd, len);
 }
 
 /* echse-genuid.c ends here */
