@@ -141,7 +141,7 @@ put_task_slot(echs_toid_t oid)
 	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
 		if (LIKELY(!task_ht[slot].oid)) {
 			return slot;
-		} else if (!task_ht[slot].oid != oid) {
+		} else if (task_ht[slot].oid != oid) {
 			/* collision, retry */
 			;
 		} else {
