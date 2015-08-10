@@ -238,6 +238,14 @@ unintern(obint_t UNUSED(ob))
 	return;
 }
 
+obint_t
+obint(const char *str, size_t len)
+{
+/* like `intern()' but don't actually intern the string */
+	const hash_t hx = murmur((const uint8_t*)str, len);
+	return hx;
+}
+
 const char*
 obint_name(obint_t hx)
 {

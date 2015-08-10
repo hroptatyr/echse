@@ -40,19 +40,16 @@
 #include <stdint.h>
 
 /**
- * obints are length+offset integers, at least 32 bits wide, always even.
- * They can fit short strings up to a length of 256 bytes and two
- * byte-wise equal strings will produce the same obint.
- *
- * OOOOOOOOOOOOOOOOOOOOOOOO LLLLLLLL
- * ^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^
- *        offset / 4U        length
- **/
+ * Obints are murmur3 hash values, the lowest 32bit. */
 typedef uint_fast32_t obint_t;
 
 /**
  * Return the interned representation of STR. */
 extern obint_t intern(const char *str, size_t len);
+
+/**
+ * Return the obint_t for STR of length LEN but do not intern that string. */
+extern obint_t obint(const char *str, size_t len);
 
 /**
  * Unintern the OBINT object. */
