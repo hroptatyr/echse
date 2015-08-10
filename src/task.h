@@ -89,6 +89,10 @@ struct echs_task_s {
 extern struct echs_task_s *echs_task_clone(echs_task_t);
 extern void free_echs_task(echs_task_t);
 
+/**
+ * Forcefully change oid of T to OID. */
+extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
+
 
 /* convenience */
 static inline __attribute__((const, pure)) bool
