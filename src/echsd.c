@@ -1656,8 +1656,10 @@ authenticity of connection %d cannot be established: %s", w->fd, STRERR);
 static int
 daemonise(void)
 {
-	int fd;
+	static char nulfn[] = "/dev/null";
+	int nulfd;
 	pid_t pid;
+	int rc = 0;
 
 	switch (pid = fork()) {
 	case -1:
@@ -1670,18 +1672,34 @@ daemonise(void)
 		exit(0);
 	}
 
-	if (setsid() == -1) {
+	if (UNLIKELY(setsid() < 0)) {
 		return -1;
 	}
-	if (LIKELY((fd = open("/dev/null", O_RDWR, 0)) >= 0)) {
-		(void)dup2(fd, STDIN_FILENO);
-		(void)dup2(fd, STDOUT_FILENO);
-		(void)dup2(fd, STDERR_FILENO);
-		if (fd > STDERR_FILENO) {
-			(void)close(fd);
-		}
+
+	if (UNLIKELY((nulfd = open(nulfn, O_RDONLY)) < 0)) {
+		/* nope, consider us fucked, we can't even print
+		 * the error message anymore */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
+		/* yay, just what we need right now */
+		rc = -1;
 	}
-	return 0;
+	/* make sure nobody sees what we've been doing */
+	close(nulfd);
+
+	if (UNLIKELY((nulfd = open(nulfn, O_WRONLY, 0600)) < 0)) {
+		/* bugger */
+		return -1;
+	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
+		/* nah, that's just not good enough */
+		rc = -1;
+	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
+		/* still shit */
+		rc = -1;
+	}
+	/* make sure we only have the copies around */
+	close(nulfd);
+	return rc;
 }
 
 static void
