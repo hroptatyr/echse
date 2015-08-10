@@ -641,7 +641,7 @@ cannot open /dev/null for child input: %s", STRERR);
 		}
 	}
 clo:
-	if (!nulfd_used) {
+	if (!nulfd_used && LIKELY(nulfd >= 0)) {
 		close(nulfd);
 	}
 #undef NULFD
