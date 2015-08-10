@@ -418,6 +418,9 @@ more:
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
+			} else if (UNLIKELY(!ins.t->oid)) {
+				free_echs_task(ins.t);
+				continue;
 			}
 			/* and otherwise inject him */
 			put_task(ins.t->oid, ins.t);
