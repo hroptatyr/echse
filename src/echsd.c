@@ -241,31 +241,42 @@ get_exewd(void)
 #if defined __linux__
 	static const char myself[] = "/proc/self/exe";
 	static char wd[PATH_MAX];
+	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __NetBSD__
 	static const char myself[] = "/proc/curproc/exe";
 	static char wd[PATH_MAX];
 	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __DragonFly__
 	static const char myself[] = "/proc/curproc/file";
 	static char wd[PATH_MAX];
+	ssize_t z;
 
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __FreeBSD__
 	static char wd[PATH_MAX];
 	size_t z = sizeof(wd);
@@ -277,11 +288,15 @@ get_exewd(void)
 	ssize_t z;
 
 	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
-	if_with (ssize_t z, (z = readlink(myself, wd, sizeof(wd))) >= 0) {
-		wd[z] = '\0';
-		return wd;
+
+	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+		return NULL;
+	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
+		return NULL;
 	}
-	return NULL;
+	/* otherwise we can count ourselves lucky */
+	wd[z] = '\0';
+	return wd;
 #elif defined __APPLE__ && defined __MACH__
 	static char wd[PATH_MAX];
 	uint32_t z;
