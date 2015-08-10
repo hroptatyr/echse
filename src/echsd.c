@@ -504,7 +504,7 @@ make_socket(const char *sdir)
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
 	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
-		return -1;
+		goto fail;
 	}
 	fn = pathcat(sdir, "=echsd", NULL);
 	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
