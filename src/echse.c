@@ -271,6 +271,19 @@ static void
 free_task_ht(void)
 {
 	if (LIKELY(task_ht != NULL)) {
+		for (struct tmap_s *p = task_ht, *const ep = task_ht + ztask_ht;
+		     p < ep; p++) {
+			if (p->oid) {
+				/* the streams have been freed
+				 * by the muxer already (we used evmux() i.e.
+				 * without cloning the streams)
+				 * therefore we must massage the tasks a little
+				 * before calling the task dtor */
+				struct echs_task_s *tmpt = deconst(p->t);
+				tmpt->strm = NULL;
+				free_echs_task(tmpt);
+			}
+		}
 		free(task_ht);
 		task_ht = NULL;
 	}
