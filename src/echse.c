@@ -483,6 +483,60 @@ more:
 	return 0;
 }
 
+static int
+_merge_fd(int fd)
+{
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	ssize_t nrd;
+
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
+
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+	case 0:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			/* only allow PUBLISH requests for now */
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			} else if (UNLIKELY(!ins.t->oid)) {
+				free_echs_task(ins.t);
+				continue;
+			}
+			/* and otherwise inject him */
+			echs_task_icalify(STDOUT_FILENO, ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+	case -1:
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		/* still only allow PUBLISH requests for now */
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return 0;
+}
+
 
 #if defined STANDALONE
 #include "echse.yucc"
@@ -596,20 +650,20 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
-		echs_evstrm_t s = make_echs_evstrm_from_file(fn);
+		int fd;
 
-		if (UNLIKELY(s == NULL)) {
+		if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
 			serror("\
 echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
-#if 0
-		/* print the guy */
-		echs_evstrm_prnt(s);
-#endif	/* 0 */
-
-		/* and free him */
-		free_echs_evstrm(s);
+		/* otherwise inject */
+		_merge_fd(fd);
+		close(fd);
+	}
+	if (argi->nargs == 0UL) {
+		/* read from stdin */
+		_merge_fd(STDIN_FILENO);
 	}
 	echs_prnt_ical_fini();
 	return 0;
