@@ -2380,30 +2380,38 @@ make_echs_evical(const char *fn)
 }
 
 void
-echs_prnt_ical_event(echs_event_t ev)
+echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	prnt_ical_hdr();
-	prnt_ev(ev);
-	prnt_ical_ftr();
+	send_ical_hdr(STDOUT_FILENO);
+	send_ev(STDOUT_FILENO, ev);
+	send_task(STDOUT_FILENO, t);
+	send_ical_ftr(STDOUT_FILENO);
 	return;
 }
 
 void
 echs_prnt_ical_init(void)
 {
-	fputs("\
+	static const char hdr[] = "\
 BEGIN:VCALENDAR\n\
 VERSION:2.0\n\
 PRODID:-//GA Financial Solutions//echse//EN\n\
-CALSCALE:GREGORIAN\n", stdout);
+CALSCALE:GREGORIAN\n";
+
+	fdbang(STDOUT_FILENO);
+	fdwrite(hdr, strlenof(hdr));
 	return;
 }
 
 void
 echs_prnt_ical_fini(void)
 {
-	fputs("\
-END:VCALENDAR\n", stdout);
+	static const char ftr[] = "\
+END:VCALENDAR\n";
+
+	fdbang(STDOUT_FILENO);
+	fdwrite(ftr, strlenof(ftr));
+	fdflush();
 	return;
 }
 

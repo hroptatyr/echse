@@ -306,7 +306,9 @@ unroll_ical(echs_evstrm_t smux, struct unroll_param_s p)
 			break;
 		}
 		/* otherwise print */
-		echs_prnt_ical_event(e);
+		with (echs_task_t t = get_task(e.oid)) {
+			echs_prnt_ical_event(t, e);
+		}
 	}
 	echs_prnt_ical_fini();
 	return;
