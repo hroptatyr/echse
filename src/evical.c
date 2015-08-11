@@ -1980,9 +1980,6 @@ struct evrrul_s {
 	/* proto-event */
 	echs_event_t e;
 
-	/* reference counter */
-	size_t nref;
-
 	/* rrul/xrul */
 	struct rrulsp_s rr;
 	struct rrlst_s xr;
@@ -2022,7 +2019,6 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t nref)
 	this->class = &evrrul_cls;
 	this->e = ve->e;
 	this->rr = *ve->rr.r;
-	this->nref = nref;
 
 	if (ve->xr.nr) {
 		this->xr = ve->xr;
@@ -2097,11 +2093,6 @@ static void
 free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
-
-	/* check reference counter */
-	if (--this->nref) {
-		return;
-	}
 
 	if (this->xr.nr) {
 		free(this->xr.r);
