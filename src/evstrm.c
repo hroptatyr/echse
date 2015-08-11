@@ -112,9 +112,7 @@ next_evmux(echs_evstrm_t strm)
 	}
 	/* quick check if we hit the event boundary */
 	if (UNLIKELY(i >= this->ns)) {
-		/* yep, bugger off, we assume the streams have been
-		 * freed upon __refill() previously, so just free the
-		 * stream array here */
+		/* yep, bugger off free the streams and the stream array here */
 		for (size_t j = 0U; j < this->ns; j++) {
 			free_echs_evstrm(this->s[j]);
 		}
