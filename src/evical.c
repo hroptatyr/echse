@@ -2024,11 +2024,6 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t nref)
 	this->rr = *ve->rr.r;
 	this->nref = nref;
 
-	/* free the rr-list in here after materialisation */
-	if (nref <= 1U) {
-		free(ve->rr.r);
-	}
-
 	if (ve->xr.nr) {
 		this->xr = ve->xr;
 	} else {
@@ -2056,15 +2051,6 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t nref)
 		}
 		/* otherwise display stream as is, maybe print a warning? */
 	}
-	/* better free this guy */
-	if (nref <= 1U) {
-		if (ve->mf.nu) {
-			free(ve->mf.u);
-		}
-		if (ve->mr.nr) {
-			free(ve->mr.r);
-		}
-	}
 	return (echs_evstrm_t)res;
 }
 
@@ -2075,11 +2061,11 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
  * if it's just one we return a normal evrrul_s object, if
  * it's more than one we generate one evrrul_s object per
  * rrule and mux them together, sharing the resources in VE. */
-	echs_evstrm_t res = NULL;
+	echs_evstrm_t res;
 
 	switch (ve->rr.nr) {
 	case 0:
-		break;
+		return NULL;
 	case 1:
 		res = __make_evrrul(ve, 1U);
 		break;
@@ -2092,17 +2078,17 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 			     i++, nr++, ve_tmp.rr.r++) {
 				s[nr] = __make_evrrul(&ve_tmp, ve->rr.nr);
 			}
-			/* we've materialised these */
-			free(ve->rr.r);
-			if (ve->mr.nr) {
-				free(ve->mr.r);
-			}
-			if (ve->mf.nu) {
-				free(ve->mf.u);
-			}
 			res = make_echs_evmux(s, nr);
 		}
 		break;
+	}
+	/* we've materialised these */
+	free(ve->rr.r);
+	if (ve->mr.nr) {
+		free(ve->mr.r);
+	}
+	if (ve->mf.nu) {
+		free(ve->mf.u);
 	}
 	return res;
 }
