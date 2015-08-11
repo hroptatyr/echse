@@ -2012,7 +2012,7 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t nref)
+__make_evrrul(const struct ical_vevent_s ve[static 1U])
 {
 	struct evrrul_s *this = malloc(sizeof(*this));
 	echs_evstrm_t res;
@@ -2064,7 +2064,7 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 	case 0:
 		return NULL;
 	case 1:
-		res = __make_evrrul(ve, 1U);
+		res = __make_evrrul(ve);
 		break;
 	default:
 		with (echs_evstrm_t s[ve->rr.nr]) {
@@ -2073,7 +2073,7 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 
 			for (size_t i = 0U; i < ve->rr.nr;
 			     i++, nr++, ve_tmp.rr.r++) {
-				s[nr] = __make_evrrul(&ve_tmp, ve->rr.nr);
+				s[nr] = __make_evrrul(&ve_tmp);
 			}
 			res = make_echs_evmux(s, nr);
 		}
