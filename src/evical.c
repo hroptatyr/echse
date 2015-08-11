@@ -1684,11 +1684,13 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
+static void send_evical_vevent(int whither, echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
+	.seria = send_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -1738,7 +1740,7 @@ next_evical_vevent(echs_evstrm_t s)
 }
 
 static void
-send_vevent(int whither, echs_const_evstrm_t s)
+send_evical_vevent(int whither, echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
 
@@ -1774,11 +1776,13 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
+static void send_evrrul(int whither, echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
+	.seria = send_evrrul,
 };
 
 static echs_evstrm_t
@@ -2293,24 +2297,13 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 
 
 /* seria/deseria helpers */
-static void
-echs_strm_icalify(int whither, echs_evstrm_t s)
-{
-	if (s->class == &evrrul_cls) {
-		send_evrrul(whither, s);
-	} else if (s->class == &evical_cls) {
-		send_vevent(whither, s);
-	}
-	return;
-}
-
 void
 echs_task_icalify(int whither, echs_task_t t)
 {
 	send_ical_hdr(whither);
 	send_task(whither, t);
 	if (LIKELY(t->strm != NULL)) {
-		echs_strm_icalify(whither, t->strm);
+		echs_evstrm_seria(whither, t->strm);
 	}
 	send_ical_ftr(whither);
 	return;

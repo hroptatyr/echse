@@ -58,12 +58,25 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
+static void seria_evmux(int, echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
+	.seria = seria_evmux,
 };
+
+static void
+seria_evmux(int whither, echs_const_evstrm_t strm)
+{
+	const struct evmux_s *this = (const struct evmux_s*)strm;
+
+	for (size_t i = 0UL; i < this->ns; i++) {
+		echs_evstrm_seria(whither, this->s[i]);
+	}
+	return;
+}
 
 static __attribute__((nonnull(1))) void
 __refill(struct evmux_s *this, size_t idx)

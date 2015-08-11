@@ -51,6 +51,8 @@ struct echs_evstrm_class_s {
 	echs_evstrm_t(*clone)(echs_const_evstrm_t);
 	/** dtor method */
 	void(*free)(echs_evstrm_t);
+	/** serialiser method */
+	void(*seria)(int whither, echs_const_evstrm_t);
 };
 
 struct echs_evstrm_s {
@@ -102,6 +104,15 @@ static inline echs_evstrm_t
 clone_echs_evstrm(echs_evstrm_t s)
 {
 	return s->class->clone(s);
+}
+
+static inline void
+echs_evstrm_seria(int whither, echs_evstrm_t s)
+{
+	if (s->class->seria != NULL) {
+		return s->class->seria(whither, s);
+	}
+	return;
 }
 
 #endif	/* INCLUDED_evstrm_h_ */
