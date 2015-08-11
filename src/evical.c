@@ -2030,10 +2030,38 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 {
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
+	/* we know rrules are consecutive so only print for
+	 * first stream in sequence */
 	if (!this->seq) {
 		send_ev(whither, this->e);
 	}
 	send_rrul(whither, &this->rr);
+	return;
+}
+
+/* decl'd in evmrul.h, impl'd by us */
+void
+mrulsp_icalify(int whither, const mrulsp_t *mr)
+{
+	static const char *const mdirs[] = {
+		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
+	};
+
+	fdbang(whither);
+	fdwrite("X-GA-MRULE:", 11U);
+	if (mr->mdir) {
+		fdprintf("DIR=%s", mdirs[mr->mdir]);
+	}
+	if (mr->from) {
+		fdwrite(";MOVEFROM=", 10U);
+		send_stset(whither, mr->from);
+	}
+	if (mr->into) {
+		fdwrite(";MOVEINTO=", 10U);
+		send_stset(whither, mr->into);
+	}
+
+	fdputc('\n');
 	return;
 }
 

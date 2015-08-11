@@ -66,4 +66,7 @@ struct mrulsp_s {
 extern echs_evstrm_t
 make_evmrul(const mrulsp_t*, echs_evstrm_t mov, echs_evstrm_t aux);
 
+/* serialiser */
+extern void mrulsp_icalify(int whither, const mrulsp_t*);
+
 #endif	/* INCLUDED_evmrul_h_ */
