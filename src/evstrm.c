@@ -65,12 +65,6 @@ static const struct echs_evstrm_class_s evmux_cls = {
 	.clone = clone_evmux,
 };
 
-static const struct echs_evstrm_class_s evmuxm_cls = {
-	.next = next_evmux,
-	.free = free_evmux,
-	.clone = clone_evmux,
-};
-
 static __attribute__((nonnull(1))) void
 __refill(struct evmux_s *this, size_t idx)
 {
@@ -286,7 +280,7 @@ echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
 	const struct evmux_s *this;
 	size_t res = 0U;
 
-	if (UNLIKELY(!(s->class == &evmuxm_cls || s->class == &evmux_cls))) {
+	if (UNLIKELY(!(s->class == &evmux_cls))) {
 		/* not our can of beer */
 		return 0UL;
 	}
