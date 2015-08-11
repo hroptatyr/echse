@@ -64,6 +64,6 @@ struct mrulsp_s {
 /**
  * Turn a stream with movable events into a fixed date/time stream. */
 extern echs_evstrm_t
-make_evmrul(mrulsp_t, echs_evstrm_t mov, echs_evstrm_t aux);
+make_evmrul(const mrulsp_t*, echs_evstrm_t mov, echs_evstrm_t aux);
 
 #endif	/* INCLUDED_evmrul_h_ */

@@ -293,14 +293,14 @@ clone_evmrul(echs_const_evstrm_t s)
 
 /* public funs */
 echs_evstrm_t
-make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
+make_evmrul(const mrulsp_t *mr, echs_evstrm_t mov, echs_evstrm_t aux)
 {
 /* the AUX arg is usually not available at the time of calling,
  * we happily accept NULL for it and provide a means to hand it
  * in later. */
 	struct evmrul_s *res;
 
-	switch (mr.mdir) {
+	switch (mr->mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
 	case MDIR_FUTURE:
@@ -311,7 +311,7 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	/* otherwise ... */
 	res = malloc(sizeof(*res));
-	switch (mr.mdir) {
+	switch (mr->mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
 		res->class = &evmrul_past_cls;
@@ -326,7 +326,7 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	res->movers = mov;
 	res->states = aux;
-	res->mr = mr;
+	res->mr = *mr;
 	memset(res->aux, 0, sizeof(res->aux));
 	return (echs_evstrm_t)res;
 }

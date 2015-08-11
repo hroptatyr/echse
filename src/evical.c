@@ -1824,7 +1824,7 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 		echs_evstrm_t aux;
 
 		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
-			res = make_evmrul(*ve->mr.r, res, aux);
+			res = make_evmrul(ve->mr.r, res, aux);
 		}
 		/* otherwise display stream as is, maybe print a warning? */
 	}
