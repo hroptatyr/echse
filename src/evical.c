@@ -1506,7 +1506,11 @@ send_ev(int whither, echs_event_t e)
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
 	}
 	fdwrite(stmp, ztmp + 1U);
-	send_stset(whither, e.sts);
+	if (e.sts) {
+		fdwrite("X-GA-STATE:", strlenof("X-GA-STATE:"));
+		send_stset(whither, e.sts);
+		fdputc('\n');
+	}
 	return;
 }
 
