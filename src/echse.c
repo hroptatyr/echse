@@ -112,6 +112,36 @@ add_strm(echs_evstrm_t s)
 	return 0;
 }
 
+static int
+rem_strm(echs_evstrm_t s)
+{
+	for (size_t i = 0U; i < nstrms; i++) {
+		if (strms[i] == s) {
+			/* found him */
+			strms[i] = NULL;
+			if (i + 1U == nstrms) {
+				nstrms--;
+			}
+			return 0;
+		}
+	}
+	return -1;
+}
+
+static void
+condense_strms(void)
+{
+	size_t i;
+
+	for (i = 0U; i < nstrms && strms[i] != NULL; i++);
+	for (size_t j = i++; i < nstrms; i++) {
+		if ((strms[j] = strms[i]) != NULL) {
+			j++;
+		}
+	}
+	return;
+}
+
 static void
 free_strms(void)
 {
@@ -145,6 +175,7 @@ put_task_slot(echs_toid_t oid)
 			;
 		} else {
 			/* free old task and stream */
+			rem_strm(task_ht[slot].t->strm);
 			free_echs_task(task_ht[slot].t);
 		        return slot;
 		}
@@ -516,6 +547,8 @@ echse: Error: cannot open file `%s'", fn);
 		/* read from stdin */
 		_inject_fd(STDIN_FILENO);
 	}
+	/* there might be riff raff (NULLs) in the stream array */
+	condense_strms();
 	if (UNLIKELY((smux = make_echs_evmux(strms, nstrms)) == NULL)) {
 		/* return early */
 		return 1;
