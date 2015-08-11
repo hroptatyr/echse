@@ -1445,6 +1445,34 @@ send_ical_ftr(int whither)
 }
 
 static void
+send_stset(int whither, echs_stset_t sts)
+{
+	echs_state_t st = 0U;
+
+	if (UNLIKELY(!sts)) {
+		return;
+	}
+
+	fdbang(whither);
+	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+	with (const char *sn = state_name(st)) {
+		size_t sz = strlen(sn);
+		fdwrite(sn, sz);
+	}
+	/* print list of states,
+	 * we should probably use an iter from state.h here */
+	while (st++, sts >>= 1U) {
+		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+		fdputc(',');
+		with (const char *sn = state_name(st)) {
+			size_t sz = strlen(sn);
+			fdwrite(sn, sz);
+		}
+	}
+	return;
+}
+
+static void
 send_ev(int whither, echs_event_t e)
 {
 	char stmp[32U] = {':'};
@@ -1476,6 +1504,7 @@ send_ev(int whither, echs_event_t e)
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
 	}
 	fdwrite(stmp, ztmp + 1U);
+	send_stset(whither, e.sts);
 	return;
 }
 
@@ -1637,34 +1666,6 @@ send_rrul(int whither, rrulsp_t rr)
 	}
 
 	fdputc('\n');
-	return;
-}
-
-static void
-send_stset(int whither, echs_stset_t sts)
-{
-	echs_state_t st = 0U;
-
-	if (UNLIKELY(!sts)) {
-		return;
-	}
-
-	fdbang(whither);
-	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-	with (const char *sn = state_name(st)) {
-		size_t sz = strlen(sn);
-		fdwrite(sn, sz);
-	}
-	/* print list of states,
-	 * we should probably use an iter from state.h here */
-	while (st++, sts >>= 1U) {
-		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-		fdputc(',');
-		with (const char *sn = state_name(st)) {
-			size_t sz = strlen(sn);
-			fdwrite(sn, sz);
-		}
-	}
 	return;
 }
 
