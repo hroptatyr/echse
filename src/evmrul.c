@@ -112,22 +112,17 @@ static echs_event_t next_evmrul_past(echs_evstrm_t);
 static echs_event_t next_evmrul_futu(echs_evstrm_t);
 static void free_evmrul(echs_evstrm_t);
 static echs_evstrm_t clone_evmrul(echs_const_evstrm_t);
-static void prnt_evmrul1(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmrul_past_cls = {
 	.next = next_evmrul_past,
 	.free = free_evmrul,
 	.clone = clone_evmrul,
-	.prnt1 = prnt_evmrul1,
-	.prntm = NULL,
 };
 
 static const struct echs_evstrm_class_s evmrul_futu_cls = {
 	.next = next_evmrul_futu,
 	.free = free_evmrul,
 	.clone = clone_evmrul,
-	.prnt1 = prnt_evmrul1,
-	.prntm = NULL,
 };
 
 static echs_event_t
@@ -293,15 +288,6 @@ clone_evmrul(echs_const_evstrm_t s)
 		clon->states = clone_echs_evstrm(this->states);
 	}
 	return (echs_evstrm_t)clon;
-}
-
-static void
-prnt_evmrul1(echs_const_evstrm_t s)
-{
-	const struct evmrul_s *this = (const struct evmrul_s*)s;
-
-	echs_evstrm_prnt(this->movers);
-	return;
 }
 
 

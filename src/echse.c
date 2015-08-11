@@ -603,8 +603,10 @@ cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
+#if 0
 		/* print the guy */
 		echs_evstrm_prnt(s);
+#endif	/* 0 */
 
 		/* and free him */
 		free_echs_evstrm(s);

@@ -58,21 +58,17 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
-static void prnt_evmux1(echs_const_evstrm_t);
-static void prnt_evmuxm(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
-	.prnt1 = prnt_evmux1,
 };
 
 static const struct echs_evstrm_class_s evmuxm_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
-	.prnt1 = prnt_evmuxm,
 };
 
 static __attribute__((nonnull(1))) void
@@ -139,26 +135,6 @@ next_evmux(echs_evstrm_t strm)
 	return best;
 }
 
-static void
-prnt_evmux1(echs_const_evstrm_t strm)
-{
-	const struct evmux_s *this = (const struct evmux_s*)strm;
-
-	for (size_t i = 0UL; i < this->ns; i++) {
-		echs_evstrm_prnt(this->s[i]);
-	}
-	return;
-}
-
-static void
-prnt_evmuxm(echs_const_evstrm_t strm)
-{
-	const struct evmux_s *this = (const struct evmux_s*)strm;
-
-	this->s[0]->class->prntm(this->s, this->ns);
-	return;
-}
-
 static echs_evstrm_t
 make_evmux(echs_evstrm_t s[], size_t ns)
 {
@@ -177,21 +153,6 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	res->class = &evmux_cls;
 	res->ns = ns;
 	res->s = s;
-	/* check if we can use the many-items printer */
-	if ((*s)->class->prntm != NULL) {
-		const echs_evstrm_class_t proto = (*s)->class;
-		bool same_class_p = true;
-
-		for (size_t i = 1U; i < ns; i++) {
-			if (s[i]->class != proto) {
-				same_class_p = false;
-				break;
-			}
-		}
-		if (same_class_p) {
-			res->class = &evmuxm_cls;
-		}
-	}
 	/* we used to precache events here but seeing as not every
 	 * echse command would need the unrolled stream we leave it
 	 * to next_evmux(), put an indicator into the event cache here */

@@ -1330,254 +1330,6 @@ get_aux_strm(struct urlst_s ul)
 	return echs_evstrm_vmux(aux, naux);
 }
 
-static void
-prnt_ical_hdr(void)
-{
-	static time_t now;
-	static char stmp[32U];
-
-	puts("BEGIN:VEVENT");
-	if (LIKELY(now)) {
-		;
-	} else {
-		struct tm tm;
-
-		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) != NULL))) {
-			echs_instant_t nowi;
-
-			nowi.y = tm.tm_year + 1900,
-			nowi.m = tm.tm_mon + 1,
-			nowi.d = tm.tm_mday,
-			nowi.H = tm.tm_hour,
-			nowi.M = tm.tm_min,
-			nowi.S = tm.tm_sec,
-			nowi.ms = ECHS_ALL_SEC,
-
-			dt_strf_ical(stmp, sizeof(stmp), nowi);
-		} else {
-			/* screw up the singleton */
-			now = 0;
-			return;
-		}
-	}
-	fputs("DTSTAMP:", stdout);
-	puts(stmp);
-	return;
-}
-
-static void
-prnt_ical_ftr(void)
-{
-	puts("END:VEVENT");
-	return;
-}
-
-static void
-prnt_cd(struct cd_s cd)
-{
-	static const char *w[] = {
-		"MI", "MO", "TU", "WE", "TH", "FR", "SA", "SU"
-	};
-
-	if (cd.cnt) {
-		fprintf(stdout, "%d", cd.cnt);
-	}
-	fputs(w[cd.dow], stdout);
-	return;
-}
-
-static void
-prnt_rrul(rrulsp_t rr)
-{
-	static const char *const f[] = {
-		[FREQ_NONE] = "FREQ=NONE",
-		[FREQ_YEARLY] = "FREQ=YEARLY",
-		[FREQ_MONTHLY] = "FREQ=MONTHLY",
-		[FREQ_WEEKLY] = "FREQ=WEEKLY",
-		[FREQ_DAILY] = "FREQ=DAILY",
-		[FREQ_HOURLY] = "FREQ=HOURLY",
-		[FREQ_MINUTELY] = "FREQ=MINUTELY",
-		[FREQ_SECONDLY] = "FREQ=SECONDLY",
-	};
-
-	fputs(f[rr->freq], stdout);
-
-	if (rr->inter > 1U) {
-		fprintf(stdout, ";INTERVAL=%u", rr->inter);
-	}
-	with (unsigned int m) {
-		bitint_iter_t i = 0UL;
-
-		if (!bui31_has_bits_p(rr->mon)) {
-			break;
-		}
-		m = bui31_next(&i, rr->mon);
-		fprintf(stdout, ";BYMONTH=%u", m);
-		while (m = bui31_next(&i, rr->mon), i) {
-			fprintf(stdout, ",%u", m);
-		}
-	}
-
-	with (int yw) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi63_has_bits_p(rr->wk)) {
-			break;
-		}
-		yw = bi63_next(&i, rr->wk);
-		fprintf(stdout, ";BYWEEKNO=%d", yw);
-		while (yw = bi63_next(&i, rr->wk), i) {
-			fprintf(stdout, ",%d", yw);
-		}
-	}
-
-	with (int yd) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->doy)) {
-			break;
-		}
-		yd = bi383_next(&i, &rr->doy);
-		fprintf(stdout, ";BYYEARDAY=%d", yd);
-		while (yd = bi383_next(&i, &rr->doy), i) {
-			fprintf(stdout, ",%d", yd);
-		}
-	}
-
-	with (int d) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi31_has_bits_p(rr->dom)) {
-			break;
-		}
-		d = bi31_next(&i, rr->dom);
-		fprintf(stdout, ";BYMONTHDAY=%d", d);
-		while (d = bi31_next(&i, rr->dom), i) {
-			fprintf(stdout, ",%d", d);
-		}
-	}
-
-	with (int e) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->easter)) {
-			break;
-		}
-		e = bi383_next(&i, &rr->easter);
-		fprintf(stdout, ";BYEASTER=%d", e);
-		while (e = bi383_next(&i, &rr->easter), i) {
-			fprintf(stdout, ",%d", e);
-		}
-	}
-
-	with (struct cd_s cd) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi447_has_bits_p(&rr->dow)) {
-			break;
-		}
-		cd = unpack_cd(bi447_next(&i, &rr->dow));
-		fputs(";BYDAY=", stdout);
-		prnt_cd(cd);
-		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
-			fputc(',', stdout);
-			prnt_cd(cd);
-		}
-	}
-
-	with (int a) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->add)) {
-			break;
-		}
-		a = bi383_next(&i, &rr->add);
-		fprintf(stdout, ";BYADD=%d", a);
-		while (a = bi383_next(&i, &rr->add), i) {
-			fprintf(stdout, ",%d", a);
-		}
-	}
-
-	with (int p) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->pos)) {
-			break;
-		}
-		p = bi383_next(&i, &rr->pos);
-		fprintf(stdout, ";BYPOS=%d", p);
-		while (p = bi383_next(&i, &rr->pos), i) {
-			fprintf(stdout, ",%d", p);
-		}
-	}
-
-	if ((int)rr->count > 0) {
-		fprintf(stdout, ";COUNT=%u", rr->count);
-	}
-	if (rr->until.u < -1ULL) {
-		char until[32U];
-
-		dt_strf_ical(until, sizeof(until), rr->until);
-		fprintf(stdout, ";UNTIL=%s", until);
-	}
-
-	fputc('\n', stdout);
-	return;
-}
-
-static void
-prnt_stset(echs_stset_t sts)
-{
-	echs_state_t st = 0U;
-
-	if (UNLIKELY(!sts)) {
-		return;
-	}
-	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-	fputs(state_name(st), stdout);
-	/* print list of states,
-	 * we should probably use an iter from state.h here */
-	while (st++, sts >>= 1U) {
-		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-		fputc(',', stdout);
-		fputs(state_name(st), stdout);
-	}
-	return;
-}
-
-static void
-prnt_ev(echs_event_t e)
-{
-	char stmp[32U] = {':'};
-
-	if (UNLIKELY(echs_nul_instant_p(e.from))) {
-		return;
-	}
-	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
-	fputs("DTSTART", stdout);
-	if (echs_instant_all_day_p(e.from)) {
-		fputs(";VALUE=DATE", stdout);
-	}
-	puts(stmp);
-
-	if (LIKELY(!echs_nul_instant_p(e.till))) {
-		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
-	} else {
-		e.till = e.from;
-	}
-	fputs("DTEND", stdout);
-	if (echs_instant_all_day_p(e.till)) {
-		fputs(";VALUE=DATE", stdout);
-	}
-	puts(stmp);
-	if (e.sts) {
-		fputs("X-GA-STATE:", stdout);
-		prnt_stset(e.sts);
-		fputc('\n', stdout);
-	}
-	return;
-}
-
 
 /* sending is like printing but into a file descriptor of choice */
 static void
@@ -1880,6 +1632,34 @@ send_rrul(int whither, rrulsp_t rr)
 	return;
 }
 
+static void
+send_stset(int whither, echs_stset_t sts)
+{
+	echs_state_t st = 0U;
+
+	if (UNLIKELY(!sts)) {
+		return;
+	}
+
+	fdbang(whither);
+	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+	with (const char *sn = state_name(st)) {
+		size_t sz = strlen(sn);
+		fdwrite(sn, sz);
+	}
+	/* print list of states,
+	 * we should probably use an iter from state.h here */
+	while (st++, sts >>= 1U) {
+		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+		fdputc(',');
+		with (const char *sn = state_name(st)) {
+			size_t sz = strlen(sn);
+			fdwrite(sn, sz);
+		}
+	}
+	return;
+}
+
 
 /* our event class */
 struct evical_s {
@@ -1895,13 +1675,11 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
-static void prnt_evical_vevent(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
-	.prnt1 = prnt_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -1951,19 +1729,6 @@ next_evical_vevent(echs_evstrm_t s)
 }
 
 static void
-prnt_evical_vevent(echs_const_evstrm_t s)
-{
-	const struct evical_s *this = (const struct evical_s*)s;
-
-	for (size_t i = 0UL; i < this->nev; i++) {
-		prnt_ical_hdr();
-		prnt_ev(this->ev[i]);
-		prnt_ical_ftr();
-	}
-	return;
-}
-
-static void
 send_vevent(int whither, echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
@@ -2000,15 +1765,11 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
-static void prnt_evrrul1(echs_const_evstrm_t);
-static void prnt_evrrulm(const echs_const_evstrm_t s[], size_t n);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
-	.prnt1 = prnt_evrrul1,
-	.prntm = prnt_evrrulm,
 };
 
 static echs_evstrm_t
@@ -2243,52 +2004,6 @@ next_evrrul(echs_evstrm_t s)
 	return res;
 nul:
 	return nul;
-}
-
-static void
-prnt_evrrul1(echs_const_evstrm_t s)
-{
-	const struct evrrul_s *this = (const struct evrrul_s*)s;
-
-	prnt_ical_hdr();
-	prnt_ev(this->e);
-
-	fputs("RRULE:", stdout);
-	prnt_rrul(&this->rr);
-
-	prnt_ical_ftr();
-	return;
-}
-
-static void
-prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
-{
-/* we know that they all come from one ical_event_s originally,
- * print the proto event from the first guy, then all rrules in succession */
-	const struct evrrul_s *this = (const void*)*s;
-	size_t i;
-
-	prnt_ical_hdr();
-	prnt_ev(this->e);
-
-	for (i = 0U; i < n; i++) {
-		const struct evrrul_s *that = (const void*)s[i];
-
-		if (!echs_event_eq_p(this->e, that->e)) {
-			prnt_ical_ftr();
-			goto one_by_one;
-		}
-		fputs("RRULE:", stdout);
-		prnt_rrul(&that->rr);
-	}
-	prnt_ical_ftr();
-	return;
-
-one_by_one:
-	for (; i < n; i++) {
-		prnt_evrrul1(s[i]);
-	}
-	return;
 }
 
 static void
