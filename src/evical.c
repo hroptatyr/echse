@@ -314,7 +314,9 @@ canon_fn(const char *fn, size_t fz)
 		const char *cfn = peek_fn();
 		const char *dir;
 
-		if ((dir = strrchr(cfn, '/')) != NULL) {
+		if (UNLIKELY(cfn == NULL)) {
+			;
+		} else if ((dir = strrchr(cfn, '/')) != NULL) {
 			char tmp[dir - cfn + fz + 1U/*slash*/ + 1U/*\nul*/];
 			char *tp = tmp;
 
