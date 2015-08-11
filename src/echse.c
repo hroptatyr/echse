@@ -231,6 +231,8 @@ again:
 		}
 		task_ht[slot] = (struct tmap_s){oid, t};
 	}
+	/* also file a stream to our strms registry */
+	add_strm(t->strm);
 	return 0;
 }
 
@@ -243,16 +245,6 @@ free_task_ht(void)
 	}
 	return;
 }
-
-#define _FOR(a, b)							\
-	for (struct tmap_s a,						\
-		     *paste(__p, __LINE__) = b,				\
-		     *const paste(__ep, __LINE__) = b + z##b;		\
-	     paste(__p, __LINE__) < paste(__ep, __LINE__);		\
-	     paste(__p, __LINE__)++)					\
-		if ((a = *paste(__p, __LINE__)).oid)
-#define IN		,
-#define FOR(x)		_FOR(x)
 
 
 static void
@@ -524,12 +516,6 @@ echse: Error: cannot open file `%s'", fn);
 		/* read from stdin */
 		_inject_fd(STDIN_FILENO);
 	}
-
-	/* go through the hash table and find the tasks' streams */
-	FOR (ot IN task_ht) {
-		add_strm(ot.t->strm);
-	}
-
 	if (UNLIKELY((smux = make_echs_evmux(strms, nstrms)) == NULL)) {
 		/* return early */
 		return 1;
