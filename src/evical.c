@@ -1336,6 +1336,7 @@ prnt_ical_hdr(void)
 	static time_t now;
 	static char stmp[32U];
 
+	puts("BEGIN:VEVENT");
 	if (LIKELY(now)) {
 		;
 	} else {
