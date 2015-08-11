@@ -1,0 +1,10 @@
+#!/usr/bin/clitors  ## -*- shell-script -*-
+
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_13a.ics"
+2004-02-29	Some February Leap Sunday
+2004-02-29	60th Day And Sunday
+2009-03-01	60th Day And Sunday
+2015-03-01	60th Day And Sunday
+2026-03-01	60th Day And Sunday
+2032-02-29	Some February Leap Sunday
+$

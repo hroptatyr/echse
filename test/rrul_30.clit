@@ -1,0 +1,24 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_12a.ics"
+2000-02-28	Some February Days
+2000-02-29	Some February Days
+2001-02-28	Some February Days
+2002-02-28	Some February Days
+2003-02-28	Some February Days
+2004-02-28	Some February Days
+2004-02-29	Some February Days
+2005-02-28	Some February Days
+2006-02-28	Some February Days
+2007-02-28	Some February Days
+2008-02-28	Some February Days
+2008-02-29	Some February Days
+2009-02-28	Some February Days
+2010-02-28	Some February Days
+2011-02-28	Some February Days
+2012-02-28	Some February Days
+2012-02-29	Some February Days
+2013-02-28	Some February Days
+2014-02-28	Some February Days
+2015-02-28	Some February Days
+$
