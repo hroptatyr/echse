@@ -1757,6 +1757,9 @@ struct evrrul_s {
 	/* proto-event */
 	echs_event_t e;
 
+	/* sequence counter */
+	size_t seq;
+
 	/* rrul/xrul */
 	struct rrulsp_s rr;
 	struct rrlst_s xr;
@@ -1786,13 +1789,14 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(const struct ical_vevent_s ve[static 1U])
+__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 {
 	struct evrrul_s *this = malloc(sizeof(*this));
 	echs_evstrm_t res;
 
 	this->class = &evrrul_cls;
 	this->e = ve->e;
+	this->seq = seq;
 	this->rr = *ve->rr.r;
 
 	if (ve->xr.nr) {
@@ -1838,7 +1842,7 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 	case 0:
 		return NULL;
 	case 1:
-		res = __make_evrrul(ve);
+		res = __make_evrrul(ve, 0U);
 		break;
 	default:
 		with (echs_evstrm_t s[ve->rr.nr]) {
@@ -1847,7 +1851,7 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 
 			for (size_t i = 0U; i < ve->rr.nr;
 			     i++, nr++, ve_tmp.rr.r++) {
-				s[nr] = __make_evrrul(&ve_tmp);
+				s[nr] = __make_evrrul(&ve_tmp, i);
 			}
 			res = make_echs_evmux(s, nr);
 		}
@@ -2024,7 +2028,9 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 {
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
-	send_ev(whither, this->e);
+	if (!this->seq) {
+		send_ev(whither, this->e);
+	}
 	send_rrul(whither, &this->rr);
 	return;
 }
