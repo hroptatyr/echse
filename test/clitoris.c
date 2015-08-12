@@ -680,7 +680,9 @@ find_opt(struct clit_chld_s ctx[static 1], const char *bp, size_t bz)
 		}
 #define CMP(x, lit)	(strncmp((x), (lit), sizeof(lit) - 1))
 		/* parse the option value */
-		if ((mp += sizeof(magic) - 1U) == NULL) {
+		mp += sizeof(magic) - 1U;
+		if (NULL) {
+			/* not reached */
 			;
 		} else if (CMP(mp, "verbose\n") == 0) {
 			ctx->verbosep = opt;
