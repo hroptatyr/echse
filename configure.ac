@@ -127,7 +127,7 @@ AC_DEFINE_UNQUOTED([PKGINCLUDEDIR], ["${pkgincludedir}"], [where headers reside]
 if test "${have_libev}" = "yes"; then
 	libevX="x"
 	if test "${have_rt_funs}" = "yes"; then
-		echsxX=" "
+		echsxX="x"
 	else
 		echsxX=" "
 	fi
