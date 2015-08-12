@@ -75,7 +75,8 @@ echs_event_lt_p(echs_event_t e1, echs_event_t e2)
 static inline __attribute__((const, pure)) bool
 echs_event_eq_p(echs_event_t e1, echs_event_t e2)
 {
-	return echs_oid_eq_p(e1.oid, e2.oid);
+	return echs_oid_eq_p(e1.oid, e2.oid) &&
+		echs_instant_eq_p(e1.from, e2.from);
 }
 
 static inline __attribute__((const, pure)) bool

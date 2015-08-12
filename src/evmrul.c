@@ -112,22 +112,20 @@ static echs_event_t next_evmrul_past(echs_evstrm_t);
 static echs_event_t next_evmrul_futu(echs_evstrm_t);
 static void free_evmrul(echs_evstrm_t);
 static echs_evstrm_t clone_evmrul(echs_const_evstrm_t);
-static void prnt_evmrul1(echs_const_evstrm_t);
+static void send_evmrul(int, echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmrul_past_cls = {
 	.next = next_evmrul_past,
 	.free = free_evmrul,
 	.clone = clone_evmrul,
-	.prnt1 = prnt_evmrul1,
-	.prntm = NULL,
+	.seria = send_evmrul,
 };
 
 static const struct echs_evstrm_class_s evmrul_futu_cls = {
 	.next = next_evmrul_futu,
 	.free = free_evmrul,
 	.clone = clone_evmrul,
-	.prnt1 = prnt_evmrul1,
-	.prntm = NULL,
+	.seria = send_evmrul,
 };
 
 static echs_event_t
@@ -296,25 +294,26 @@ clone_evmrul(echs_const_evstrm_t s)
 }
 
 static void
-prnt_evmrul1(echs_const_evstrm_t s)
+send_evmrul(int whither, echs_const_evstrm_t s)
 {
 	const struct evmrul_s *this = (const struct evmrul_s*)s;
 
-	echs_evstrm_prnt(this->movers);
+	echs_evstrm_seria(whither, this->movers);
+	mrulsp_icalify(whither, &this->mr);
 	return;
 }
 
 
 /* public funs */
 echs_evstrm_t
-make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
+make_evmrul(const mrulsp_t *mr, echs_evstrm_t mov, echs_evstrm_t aux)
 {
 /* the AUX arg is usually not available at the time of calling,
  * we happily accept NULL for it and provide a means to hand it
  * in later. */
 	struct evmrul_s *res;
 
-	switch (mr.mdir) {
+	switch (mr->mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
 	case MDIR_FUTURE:
@@ -325,7 +324,7 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	/* otherwise ... */
 	res = malloc(sizeof(*res));
-	switch (mr.mdir) {
+	switch (mr->mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
 		res->class = &evmrul_past_cls;
@@ -340,7 +339,7 @@ make_evmrul(mrulsp_t mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	res->movers = mov;
 	res->states = aux;
-	res->mr = mr;
+	res->mr = *mr;
 	memset(res->aux, 0, sizeof(res->aux));
 	return (echs_evstrm_t)res;
 }

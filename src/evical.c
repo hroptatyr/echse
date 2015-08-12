@@ -61,6 +61,7 @@
 #include "evmrul-gp.c"
 #include "evmeth-gp.c"
 #include "fdprnt.h"
+#include "echse-genuid.h"
 
 #if !defined assert
 # define assert(x)
@@ -119,8 +120,6 @@ struct ical_vevent_s {
 	struct dtlst_s xd;
 	/* points into the mrul array */
 	struct mrlst_s mr;
-	/* points into the mfil array */
-	struct urlst_s mf;
 };
 
 struct vearr_s {
@@ -145,8 +144,6 @@ struct cal_addr_s {
 	const char *s;
 	size_t z;
 };
-
-static struct muslst_s gms;
 
 
 #define CHECK_RESIZE(o, id, iniz, nitems)				\
@@ -208,58 +205,6 @@ clon_dtlst(struct dtlst_s dl)
 }
 
 static void
-add1_to_urlst(struct urlst_s *ul, struct uri_s u)
-{
-	CHECK_RESIZE(ul, u, 16U, 1U);
-	ul->u[ul->nu++] = u;
-	return;
-}
-
-static void
-add_to_urlst(struct urlst_s *ul, const struct uri_s *mf, size_t nmf)
-{
-	CHECK_RESIZE(ul, u, 16U, nmf);
-	memcpy(ul->u + ul->nu, mf, nmf * sizeof(*mf));
-	ul->nu += nmf;
-	return;
-}
-
-
-static void
-add1_to_gms(struct uri_s u, echs_evstrm_t s)
-{
-	CHECK_RESIZE(&gms, us, 16U, 1U);
-	gms.us[gms.nus++] = (struct mus_s){u, s};
-	return;
-}
-
-static echs_evstrm_t
-get_gms(struct uri_s u)
-{
-	/* try and find the mfile in the global list */
-	for (size_t j = 0U; j < gms.nus; j++) {
-		struct uri_s cu = gms.us[j].u;
-		if (u.typ == cu.typ && u.canon == cu.canon) {
-			return gms.us[j].s;
-		}
-	}
-	return NULL;
-}
-
-static void
-make_proto_task(struct ical_vevent_s *restrict ve)
-{
-	struct echs_task_s *res = malloc(sizeof(*res));
-
-	if (UNLIKELY(res == NULL)) {
-		return;
-	}
-	/* copy the proto task over */
-	*res = ve->t;
-	return;
-}
-
-static void
 free_ical_vevent(struct ical_vevent_s *restrict ve)
 {
 	if (ve->rr.nr) {
@@ -274,75 +219,10 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	if (ve->xd.ndt) {
 		free(ve->xd.dt);
 	}
-	if (ve->mf.nu) {
-		free(ve->mf.u);
-	}
 	if (ve->mr.nr) {
 		free(ve->mr.r);
 	}
 	return;
-}
-
-
-/* file name stack (and include depth control) */
-static const char *gfn[4U];
-static size_t nfn;
-
-static int
-push_fn(const char *fn)
-{
-	if (UNLIKELY(nfn >= countof(gfn))) {
-		return -1;
-	}
-	gfn[nfn++] = fn;
-	return 0;
-}
-
-static const char*
-pop_fn(void)
-{
-	if (UNLIKELY(nfn == 0U)) {
-		return NULL;
-	}
-	return gfn[--nfn];
-}
-
-static const char*
-peek_fn(void)
-{
-	if (UNLIKELY(nfn == 0U)) {
-		return NULL;
-	}
-	return gfn[nfn - 1U];
-}
-
-static struct uri_s
-canon_fn(const char *fn, size_t fz)
-{
-	obint_t ifn;
-
-	if (*fn != '/') {
-		/* relative file name */
-		const char *cfn = peek_fn();
-		const char *dir;
-
-		if ((dir = strrchr(cfn, '/')) != NULL) {
-			char tmp[dir - cfn + fz + 1U/*slash*/ + 1U/*\nul*/];
-			char *tp = tmp;
-
-			memcpy(tp, cfn, dir - cfn);
-			tp += dir - cfn;
-			*tp++ = '/';
-			memcpy(tp, fn, fz);
-			tp += fz;
-			*tp = '\0';
-			ifn = intern(tmp, tp - tmp);
-			return (struct uri_s){URI_FILE, ifn};
-		}
-		/* otherwise it was a file name `xyz' in cwd */
-	}
-	ifn = intern(fn, fz);
-	return (struct uri_s){URI_FILE, ifn};
 }
 
 
@@ -503,7 +383,7 @@ snarf_rrule(const char *s, size_t z)
 				echs_wday_t w;
 
 				tmp = strtol(++kv, &on, 10);
-				if ((w = snarf_wday(on)) == MIR) {
+				if (on == NULL || (w = snarf_wday(on)) == MIR) {
 					continue;
 				}
 				/* otherwise assign */
@@ -515,6 +395,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_MIN:
 		case BY_SEC:
 			do {
+				on = NULL;
 				tmp = strtoul(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MON:
@@ -530,7 +411,7 @@ snarf_rrule(const char *s, size_t z)
 					rr.S = ass_bui63(rr.S, tmp);
 					break;
 				}
-			} while (*(kv = on) == ',');
+			} while (on && *(kv = on) == ',');
 			break;
 
 		case BY_MDAY:
@@ -541,6 +422,7 @@ snarf_rrule(const char *s, size_t z)
 		case BY_ADD:
 			/* these ones take +/- values */
 			do {
+				on = NULL;
 				tmp = strtol(++kv, &on, 10);
 				switch (c->key) {
 				case BY_MDAY:
@@ -562,7 +444,7 @@ snarf_rrule(const char *s, size_t z)
 					ass_bi383(&rr.add, tmp);
 					break;
 				}
-			} while (*(kv = on) == ',');
+			} while (on && *(kv = on) == ',');
 			break;
 
 		default:
@@ -774,13 +656,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_MFILE:
-		/* aah, a file-wide MFILE directive */
-		if (LIKELY(!strncmp(vp, "file://", 7U))) {
-			struct uri_s u = (vp += 7U, canon_fn(vp, ep - vp));
-
-			/* bang to global array */
-			add1_to_urlst(&ve->mf, u);
-		}
+		/* aah, an event-wide MFILE directive,
+		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 	case FLD_UID:
 		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
@@ -841,9 +718,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			case 'f':
 			case 'F':
 				ve->t.mailout = 0U;
+				ve->t.moutset = 1U;
 				break;
 			default:
 				ve->t.mailout = 1U;
+				ve->t.moutset = 1U;
 				break;
 			}
 		}
@@ -856,9 +735,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			case 'f':
 			case 'F':
 				ve->t.mailerr = 0U;
+				ve->t.merrset = 1U;
 				break;
 			default:
 				ve->t.mailerr = 1U;
+				ve->t.merrset = 1U;
 				break;
 			}
 		}
@@ -939,14 +820,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	/* otherwise inspect the field */
 	switch (c->fld) {
 	case FLD_MFILE:
-		/* aah, a file-wide MFILE directive */
-		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
-			const char *const ep = line + llen;
-			struct uri_s u = (lp += 7U, canon_fn(lp, ep - lp));
-
-			/* bang to global array */
-			add1_to_urlst(&ve->mf, u);
-		}
+		/* aah, a file-wide MFILE directive,
+		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 
 	case FLD_METH:;
@@ -1113,14 +988,6 @@ _ical_proc(struct ical_parser_s p[static 1U])
 	case ST_VEVENT:
 		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
 			/* yep, prepare to report success */
-			if (p->globve.mf.nu) {
-				const size_t nmf = p->globve.mf.nu;
-				const struct uri_s *mf = p->globve.mf.u;
-
-				add_to_urlst(&p->ve.mf, mf, nmf);
-			}
-			/* assign */
-			make_proto_task(&p->ve);
 			/* reset to unknown state */
 			p->st = ST_BODY;
 			res = &p->ve;
@@ -1255,9 +1122,6 @@ read_ical(const char *fn)
 		return NULL;
 	}
 
-	/* let everyone know about our fn */
-	push_fn(fn);
-
 redo:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
 		struct ical_vevent_s *ve;
@@ -1303,290 +1167,7 @@ redo:
 	}
 
 	close(fd);
-	pop_fn();
 	return a;
-}
-
-static echs_evstrm_t
-read_mfil(struct uri_s u)
-{
-	/* otherwise resort to global reader */
-	switch (u.typ) {
-		const char *fn;
-	case URI_FILE:
-		fn = obint_name(u.canon);
-		return make_echs_evstrm_from_file(fn);
-	default:
-		break;
-	}
-	return NULL;
-}
-
-static echs_evstrm_t
-get_aux_strm(struct urlst_s ul)
-{
-	echs_evstrm_t aux[ul.nu];
-	size_t naux = 0U;
-
-	for (struct uri_s *u = ul.u, *const eou = u + ul.nu; u < eou; u++) {
-		/* try global cache, then mfile reader */
-		echs_evstrm_t s;
-
-		if ((s = get_gms(*u)) != NULL) {
-			;
-		} else if ((s = read_mfil(*u)) != NULL) {
-			add1_to_gms(*u, s);
-		}
-		aux[naux++] = s;
-	}
-	return echs_evstrm_vmux(aux, naux);
-}
-
-static void
-prnt_ical_hdr(void)
-{
-	static time_t now;
-	static char stmp[32U];
-
-	if (LIKELY(now)) {
-		;
-	} else {
-		struct tm tm;
-
-		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) != NULL))) {
-			echs_instant_t nowi;
-
-			nowi.y = tm.tm_year + 1900,
-			nowi.m = tm.tm_mon + 1,
-			nowi.d = tm.tm_mday,
-			nowi.H = tm.tm_hour,
-			nowi.M = tm.tm_min,
-			nowi.S = tm.tm_sec,
-			nowi.ms = ECHS_ALL_SEC,
-
-			dt_strf_ical(stmp, sizeof(stmp), nowi);
-		} else {
-			/* screw up the singleton */
-			now = 0;
-			return;
-		}
-	}
-	fputs("DTSTAMP:", stdout);
-	puts(stmp);
-	return;
-}
-
-static void
-prnt_ical_ftr(void)
-{
-	puts("END:VEVENT");
-	return;
-}
-
-static void
-prnt_cd(struct cd_s cd)
-{
-	static const char *w[] = {
-		"MI", "MO", "TU", "WE", "TH", "FR", "SA", "SU"
-	};
-
-	if (cd.cnt) {
-		fprintf(stdout, "%d", cd.cnt);
-	}
-	fputs(w[cd.dow], stdout);
-	return;
-}
-
-static void
-prnt_rrul(rrulsp_t rr)
-{
-	static const char *const f[] = {
-		[FREQ_NONE] = "FREQ=NONE",
-		[FREQ_YEARLY] = "FREQ=YEARLY",
-		[FREQ_MONTHLY] = "FREQ=MONTHLY",
-		[FREQ_WEEKLY] = "FREQ=WEEKLY",
-		[FREQ_DAILY] = "FREQ=DAILY",
-		[FREQ_HOURLY] = "FREQ=HOURLY",
-		[FREQ_MINUTELY] = "FREQ=MINUTELY",
-		[FREQ_SECONDLY] = "FREQ=SECONDLY",
-	};
-
-	fputs(f[rr->freq], stdout);
-
-	if (rr->inter > 1U) {
-		fprintf(stdout, ";INTERVAL=%u", rr->inter);
-	}
-	with (unsigned int m) {
-		bitint_iter_t i = 0UL;
-
-		if (!bui31_has_bits_p(rr->mon)) {
-			break;
-		}
-		m = bui31_next(&i, rr->mon);
-		fprintf(stdout, ";BYMONTH=%u", m);
-		while (m = bui31_next(&i, rr->mon), i) {
-			fprintf(stdout, ",%u", m);
-		}
-	}
-
-	with (int yw) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi63_has_bits_p(rr->wk)) {
-			break;
-		}
-		yw = bi63_next(&i, rr->wk);
-		fprintf(stdout, ";BYWEEKNO=%d", yw);
-		while (yw = bi63_next(&i, rr->wk), i) {
-			fprintf(stdout, ",%d", yw);
-		}
-	}
-
-	with (int yd) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->doy)) {
-			break;
-		}
-		yd = bi383_next(&i, &rr->doy);
-		fprintf(stdout, ";BYYEARDAY=%d", yd);
-		while (yd = bi383_next(&i, &rr->doy), i) {
-			fprintf(stdout, ",%d", yd);
-		}
-	}
-
-	with (int d) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi31_has_bits_p(rr->dom)) {
-			break;
-		}
-		d = bi31_next(&i, rr->dom);
-		fprintf(stdout, ";BYMONTHDAY=%d", d);
-		while (d = bi31_next(&i, rr->dom), i) {
-			fprintf(stdout, ",%d", d);
-		}
-	}
-
-	with (int e) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->easter)) {
-			break;
-		}
-		e = bi383_next(&i, &rr->easter);
-		fprintf(stdout, ";BYEASTER=%d", e);
-		while (e = bi383_next(&i, &rr->easter), i) {
-			fprintf(stdout, ",%d", e);
-		}
-	}
-
-	with (struct cd_s cd) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi447_has_bits_p(&rr->dow)) {
-			break;
-		}
-		cd = unpack_cd(bi447_next(&i, &rr->dow));
-		fputs(";BYDAY=", stdout);
-		prnt_cd(cd);
-		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
-			fputc(',', stdout);
-			prnt_cd(cd);
-		}
-	}
-
-	with (int a) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->add)) {
-			break;
-		}
-		a = bi383_next(&i, &rr->add);
-		fprintf(stdout, ";BYADD=%d", a);
-		while (a = bi383_next(&i, &rr->add), i) {
-			fprintf(stdout, ",%d", a);
-		}
-	}
-
-	with (int p) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->pos)) {
-			break;
-		}
-		p = bi383_next(&i, &rr->pos);
-		fprintf(stdout, ";BYPOS=%d", p);
-		while (p = bi383_next(&i, &rr->pos), i) {
-			fprintf(stdout, ",%d", p);
-		}
-	}
-
-	if ((int)rr->count > 0) {
-		fprintf(stdout, ";COUNT=%u", rr->count);
-	}
-	if (rr->until.u < -1ULL) {
-		char until[32U];
-
-		dt_strf_ical(until, sizeof(until), rr->until);
-		fprintf(stdout, ";UNTIL=%s", until);
-	}
-
-	fputc('\n', stdout);
-	return;
-}
-
-static void
-prnt_stset(echs_stset_t sts)
-{
-	echs_state_t st = 0U;
-
-	if (UNLIKELY(!sts)) {
-		return;
-	}
-	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-	fputs(state_name(st), stdout);
-	/* print list of states,
-	 * we should probably use an iter from state.h here */
-	while (st++, sts >>= 1U) {
-		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-		fputc(',', stdout);
-		fputs(state_name(st), stdout);
-	}
-	return;
-}
-
-static void
-prnt_ev(echs_event_t e)
-{
-	char stmp[32U] = {':'};
-
-	if (UNLIKELY(echs_nul_instant_p(e.from))) {
-		return;
-	}
-	dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
-	fputs("DTSTART", stdout);
-	if (echs_instant_all_day_p(e.from)) {
-		fputs(";VALUE=DATE", stdout);
-	}
-	puts(stmp);
-
-	if (LIKELY(!echs_nul_instant_p(e.till))) {
-		dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
-	} else {
-		e.till = e.from;
-	}
-	fputs("DTEND", stdout);
-	if (echs_instant_all_day_p(e.till)) {
-		fputs(";VALUE=DATE", stdout);
-	}
-	puts(stmp);
-	if (e.sts) {
-		fputs("X-GA-STATE:", stdout);
-		prnt_stset(e.sts);
-		fputc('\n', stdout);
-	}
-	return;
 }
 
 
@@ -1634,8 +1215,12 @@ send_task(int whither, echs_task_t t)
 	if (t->run_as.wd) {
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
-	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
-	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
+	if (t->moutset) {
+		fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
+	}
+	if (t->merrset) {
+		fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
+	}
 	if (t->max_simul) {
 		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
 	}
@@ -1696,6 +1281,34 @@ send_ical_ftr(int whither)
 }
 
 static void
+send_stset(int whither, echs_stset_t sts)
+{
+	echs_state_t st = 0U;
+
+	if (UNLIKELY(!sts)) {
+		return;
+	}
+
+	fdbang(whither);
+	for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+	with (const char *sn = state_name(st)) {
+		size_t sz = strlen(sn);
+		fdwrite(sn, sz);
+	}
+	/* print list of states,
+	 * we should probably use an iter from state.h here */
+	while (st++, sts >>= 1U) {
+		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
+		fdputc(',');
+		with (const char *sn = state_name(st)) {
+			size_t sz = strlen(sn);
+			fdwrite(sn, sz);
+		}
+	}
+	return;
+}
+
+static void
 send_ev(int whither, echs_event_t e)
 {
 	char stmp[32U] = {':'};
@@ -1727,6 +1340,11 @@ send_ev(int whither, echs_event_t e)
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
 	}
 	fdwrite(stmp, ztmp + 1U);
+	if (e.sts) {
+		fdwrite("X-GA-STATE:", strlenof("X-GA-STATE:"));
+		send_stset(whither, e.sts);
+		fdputc('\n');
+	}
 	return;
 }
 
@@ -1906,13 +1524,13 @@ struct evical_s {
 static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
-static void prnt_evical_vevent(echs_const_evstrm_t);
+static void send_evical_vevent(int whither, echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
-	.prnt1 = prnt_evical_vevent,
+	.seria = send_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -1962,20 +1580,7 @@ next_evical_vevent(echs_evstrm_t s)
 }
 
 static void
-prnt_evical_vevent(echs_const_evstrm_t s)
-{
-	const struct evical_s *this = (const struct evical_s*)s;
-
-	for (size_t i = 0UL; i < this->nev; i++) {
-		prnt_ical_hdr();
-		prnt_ev(this->ev[i]);
-		prnt_ical_ftr();
-	}
-	return;
-}
-
-static void
-send_vevent(int whither, echs_const_evstrm_t s)
+send_evical_vevent(int whither, echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
 
@@ -1992,8 +1597,8 @@ struct evrrul_s {
 	/* proto-event */
 	echs_event_t e;
 
-	/* reference counter */
-	size_t nref;
+	/* sequence counter */
+	size_t seq;
 
 	/* rrul/xrul */
 	struct rrulsp_s rr;
@@ -2014,117 +1619,88 @@ struct evrrul_s {
 static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
-static void prnt_evrrul1(echs_const_evstrm_t);
-static void prnt_evrrulm(const echs_const_evstrm_t s[], size_t n);
+static void send_evrrul(int whither, echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
-	.prnt1 = prnt_evrrul1,
-	.prntm = prnt_evrrulm,
+	.seria = send_evrrul,
 };
 
 static echs_evstrm_t
-__make_evrrul(struct ical_vevent_s ve, size_t nref)
+__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 {
 	struct evrrul_s *this = malloc(sizeof(*this));
 	echs_evstrm_t res;
 
 	this->class = &evrrul_cls;
-	this->e = ve.e;
-	this->rr = *ve.rr.r;
-	this->nref = nref;
+	this->e = ve->e;
+	this->seq = seq;
+	this->rr = *ve->rr.r;
 
-	/* free the rr-list in here after materialisation */
-	if (nref <= 1U) {
-		free(ve.rr.r);
-	}
-
-	if (ve.xr.nr) {
-		this->xr = ve.xr;
+	if (ve->xr.nr) {
+		this->xr = ve->xr;
 	} else {
 		this->xr.nr = 0U;
 	}
-	if (ve.rd.ndt) {
-		this->rd = ve.rd;
+	if (ve->rd.ndt) {
+		this->rd = ve->rd;
 	} else {
 		this->rd.ndt = 0U;
 	}
-	if (ve.xd.ndt) {
-		this->xd = ve.xd;
+	if (ve->xd.ndt) {
+		this->xd = ve->xd;
 	} else {
 		this->xd.ndt = 0U;
 	}
-	this->dur = echs_instant_diff(ve.e.till, ve.e.from);
+	this->dur = echs_instant_diff(ve->e.till, ve->e.from);
 	this->rdi = 0UL;
 	this->ncch = 0UL;
 	res = (echs_evstrm_t)this;
-	if (ve.mr.nr && ve.mf.nu) {
-		echs_evstrm_t aux;
-
-		if (LIKELY((aux = get_aux_strm(ve.mf)) != NULL)) {
-			res = make_evmrul(*ve.mr.r, res, aux);
-		}
-		/* otherwise display stream as is, maybe print a warning? */
-	}
-	/* better free this guy */
-	if (nref <= 1U) {
-		if (ve.mf.nu) {
-			free(ve.mf.u);
-		}
-		if (ve.mr.nr) {
-			free(ve.mr.r);
-		}
-	}
-	return (echs_evstrm_t)res;
+	return res;
 }
 
 static echs_evstrm_t
-make_evrrul(struct ical_vevent_s ve)
+make_evrrul(const struct ical_vevent_s ve[static 1U])
 {
 /* here's the deal, we check how many rrules there are, and
  * if it's just one we return a normal evrrul_s object, if
  * it's more than one we generate one evrrul_s object per
  * rrule and mux them together, sharing the resources in VE. */
+	echs_evstrm_t res;
 
-	switch (ve.rr.nr) {
+	switch (ve->rr.nr) {
 	case 0:
 		return NULL;
 	case 1:
-		return __make_evrrul(ve, 1U);
+		res = __make_evrrul(ve, 0U);
+		break;
 	default:
+		with (echs_evstrm_t s[ve->rr.nr]) {
+			struct ical_vevent_s ve_tmp = *ve;
+			size_t nr = 0UL;
+
+			for (size_t i = 0U; i < ve->rr.nr;
+			     i++, nr++, ve_tmp.rr.r++) {
+				s[nr] = __make_evrrul(&ve_tmp, i);
+			}
+			res = make_echs_evmux(s, nr);
+		}
 		break;
 	}
-	with (echs_evstrm_t s[ve.rr.nr]) {
-		struct ical_vevent_s ve_tmp = ve;
-		size_t nr = 0UL;
-
-		for (size_t i = 0U; i < ve.rr.nr; i++, nr++, ve_tmp.rr.r++) {
-			s[nr] = __make_evrrul(ve_tmp, ve.rr.nr);
-		}
-		/* we've materialised these */
-		free(ve.rr.r);
-		if (ve.mr.nr) {
-			free(ve.mr.r);
-		}
-		if (ve.mf.nu) {
-			free(ve.mf.u);
-		}
-		return make_echs_evmux(s, nr);
+	/* we've materialised these */
+	free(ve->rr.r);
+	if (ve->mr.nr) {
+		free(ve->mr.r);
 	}
-	return NULL;
+	return res;
 }
 
 static void
 free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
-
-	/* check reference counter */
-	if (--this->nref) {
-		return;
-	}
 
 	if (this->xr.nr) {
 		free(this->xr.r);
@@ -2277,58 +1853,42 @@ nul:
 }
 
 static void
-prnt_evrrul1(echs_const_evstrm_t s)
-{
-	const struct evrrul_s *this = (const struct evrrul_s*)s;
-
-	prnt_ical_hdr();
-	prnt_ev(this->e);
-
-	fputs("RRULE:", stdout);
-	prnt_rrul(&this->rr);
-
-	prnt_ical_ftr();
-	return;
-}
-
-static void
-prnt_evrrulm(const echs_const_evstrm_t s[], size_t n)
-{
-/* we know that they all come from one ical_event_s originally,
- * print the proto event from the first guy, then all rrules in succession */
-	const struct evrrul_s *this = (const void*)*s;
-	size_t i;
-
-	prnt_ical_hdr();
-	prnt_ev(this->e);
-
-	for (i = 0U; i < n; i++) {
-		const struct evrrul_s *that = (const void*)s[i];
-
-		if (!echs_event_eq_p(this->e, that->e)) {
-			prnt_ical_ftr();
-			goto one_by_one;
-		}
-		fputs("RRULE:", stdout);
-		prnt_rrul(&that->rr);
-	}
-	prnt_ical_ftr();
-	return;
-
-one_by_one:
-	for (; i < n; i++) {
-		prnt_evrrul1(s[i]);
-	}
-	return;
-}
-
-static void
 send_evrrul(int whither, echs_const_evstrm_t s)
 {
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
-	send_ev(whither, this->e);
+	/* we know rrules are consecutive so only print for
+	 * first stream in sequence */
+	if (!this->seq) {
+		send_ev(whither, this->e);
+	}
 	send_rrul(whither, &this->rr);
+	return;
+}
+
+/* decl'd in evmrul.h, impl'd by us */
+void
+mrulsp_icalify(int whither, const mrulsp_t *mr)
+{
+	static const char *const mdirs[] = {
+		NULL, "PAST", "PASTTHENFUTURE", "FUTURE", "FUTURETHENPAST",
+	};
+
+	fdbang(whither);
+	fdwrite("X-GA-MRULE:", 11U);
+	if (mr->mdir) {
+		fdprintf("DIR=%s", mdirs[mr->mdir]);
+	}
+	if (mr->from) {
+		fdwrite(";MOVEFROM=", 10U);
+		send_stset(whither, mr->from);
+	}
+	if (mr->into) {
+		fdwrite(";MOVEINTO=", 10U);
+		send_stset(whither, mr->into);
+	}
+
+	fdputc('\n');
 	return;
 }
 
@@ -2368,9 +1928,6 @@ make_echs_evical(const char *fn)
 				if (a->ev[i].mr.nr) {
 					free(a->ev[i].mr.r);
 				}
-				if (a->ev[i].mf.nu) {
-					free(a->ev[i].mf.u);
-				}
 				assert(a->ev[i].rr.r == NULL);
 				continue;
 			}
@@ -2383,7 +1940,7 @@ make_echs_evical(const char *fn)
 				echs_instant_sort(xd, a->ev[i].xd.ndt);
 			}
 
-			if ((tmp = make_evrrul(a->ev[i])) != NULL) {
+			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
 				s[ns++] = tmp;
 			}
 		}
@@ -2411,30 +1968,38 @@ make_echs_evical(const char *fn)
 }
 
 void
-echs_prnt_ical_event(echs_event_t ev)
+echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	prnt_ical_hdr();
-	prnt_ev(ev);
-	prnt_ical_ftr();
+	send_ical_hdr(STDOUT_FILENO);
+	send_ev(STDOUT_FILENO, ev);
+	send_task(STDOUT_FILENO, t);
+	send_ical_ftr(STDOUT_FILENO);
 	return;
 }
 
 void
 echs_prnt_ical_init(void)
 {
-	fputs("\
+	static const char hdr[] = "\
 BEGIN:VCALENDAR\n\
 VERSION:2.0\n\
 PRODID:-//GA Financial Solutions//echse//EN\n\
-CALSCALE:GREGORIAN\n", stdout);
+CALSCALE:GREGORIAN\n";
+
+	fdbang(STDOUT_FILENO);
+	fdwrite(hdr, strlenof(hdr));
 	return;
 }
 
 void
 echs_prnt_ical_fini(void)
 {
-	fputs("\
-END:VCALENDAR\n", stdout);
+	static const char ftr[] = "\
+END:VCALENDAR\n";
+
+	fdbang(STDOUT_FILENO);
+	fdwrite(ftr, strlenof(ftr));
+	fdflush();
 	return;
 }
 
@@ -2454,6 +2019,11 @@ make_task(struct ical_vevent_s *ve)
 		return NULL;
 	}
 
+	/* generate a uid on the fly */
+	if (UNLIKELY(!ve->t.oid)) {
+		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
+	}
+
 	if (!ve->rr.nr && !ve->rd.ndt) {
 		/* not an rrule but a normal vevent */
 
@@ -2468,9 +2038,6 @@ make_task(struct ical_vevent_s *ve)
 		if (ve->mr.nr) {
 			free(ve->mr.r);
 		}
-		if (ve->mf.nu) {
-			free(ve->mf.u);
-		}
 		assert(ve->rr.r == NULL);
 		s = make_evical_vevent(&ve->e, 1U);
 	} else {
@@ -2483,7 +2050,7 @@ make_task(struct ical_vevent_s *ve)
 			echs_instant_sort(xd, ve->xd.ndt);
 		}
 
-		s = make_evrrul(*ve);
+		s = make_evrrul(ve);
 	}
 	/* now massage the task specific fields in VE into an echs_task_t */
 	*res = ve->t;
@@ -2587,24 +2154,13 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 
 
 /* seria/deseria helpers */
-static void
-echs_strm_icalify(int whither, echs_evstrm_t s)
-{
-	if (s->class == &evrrul_cls) {
-		send_evrrul(whither, s);
-	} else if (s->class == &evical_cls) {
-		send_vevent(whither, s);
-	}
-	return;
-}
-
 void
 echs_task_icalify(int whither, echs_task_t t)
 {
 	send_ical_hdr(whither);
 	send_task(whither, t);
 	if (LIKELY(t->strm != NULL)) {
-		echs_strm_icalify(whither, t->strm);
+		echs_evstrm_seria(whither, t->strm);
 	}
 	send_ical_ftr(whither);
 	return;

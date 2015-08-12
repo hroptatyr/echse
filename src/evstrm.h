@@ -51,9 +51,8 @@ struct echs_evstrm_class_s {
 	echs_evstrm_t(*clone)(echs_const_evstrm_t);
 	/** dtor method */
 	void(*free)(echs_evstrm_t);
-	/** printer methods */
-	void(*prnt1)(echs_const_evstrm_t);
-	void(*prntm)(const echs_const_evstrm_t s[], size_t n);
+	/** serialiser method */
+	void(*seria)(int whither, echs_const_evstrm_t);
 };
 
 struct echs_evstrm_s {
@@ -95,17 +94,6 @@ echs_evstrm_next(echs_evstrm_t s)
 }
 
 static inline void
-echs_evstrm_prnt(echs_evstrm_t s)
-{
-	if (s->class->prnt1 != NULL) {
-		s->class->prnt1(s);
-	} else if (s->class->prntm != NULL) {
-		s->class->prntm(&s, 1UL);
-	}
-	return;
-}
-
-static inline void
 free_echs_evstrm(echs_evstrm_t s)
 {
 	s->class->free(s);
@@ -116,6 +104,15 @@ static inline echs_evstrm_t
 clone_echs_evstrm(echs_evstrm_t s)
 {
 	return s->class->clone(s);
+}
+
+static inline void
+echs_evstrm_seria(int whither, echs_evstrm_t s)
+{
+	if (s->class->seria != NULL) {
+		return s->class->seria(whither, s);
+	}
+	return;
 }
 
 #endif	/* INCLUDED_evstrm_h_ */

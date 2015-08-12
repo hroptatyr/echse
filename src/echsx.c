@@ -459,6 +459,9 @@ prep_task(echs_task_t t)
 	int nulfd_used = 0;
 	int rc = 0;
 
+	/* set the umask here just so we're safe throughout the whole run */
+	(void)umask(0600);
+
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
 	t->ifd = t->ofd = t->efd = t->mfd = -1;
@@ -638,7 +641,7 @@ cannot open /dev/null for child input: %s", STRERR);
 		}
 	}
 clo:
-	if (!nulfd_used) {
+	if (!nulfd_used && LIKELY(nulfd >= 0)) {
 		close(nulfd);
 	}
 #undef NULFD
@@ -953,6 +956,7 @@ daemonise(void)
 	static char nulfn[] = "/dev/null";
 	int nulfd;
 	pid_t pid;
+	int rc = 0;
 
 	switch (pid = fork()) {
 	case -1:
@@ -975,7 +979,7 @@ daemonise(void)
 		return -1;
 	} else if (UNLIKELY(dup2(nulfd, STDIN_FILENO) < 0)) {
 		/* yay, just what we need right now */
-		return -1;
+		rc = -1;
 	}
 	/* make sure nobody sees what we've been doing */
 	close(nulfd);
@@ -985,14 +989,14 @@ daemonise(void)
 		return -1;
 	} else if (UNLIKELY(dup2(nulfd, STDOUT_FILENO) < 0)) {
 		/* nah, that's just not good enough */
-		return -1;
+		rc = -1;
 	} else if (UNLIKELY(dup2(nulfd, STDERR_FILENO) < 0)) {
 		/* still shit */
-		return -1;
+		rc = -1;
 	}
 	/* make sure we only have the copies around */
 	close(nulfd);
-	return 0;
+	return rc;
 }
 
 int

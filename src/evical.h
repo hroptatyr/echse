@@ -58,8 +58,8 @@ extern void echs_prnt_ical_init(void);
 extern void echs_prnt_ical_fini(void);
 
 /**
- * Print a single event in ical format. */
-extern void echs_prnt_ical_event(echs_event_t);
+ * Print a single event of task T in ical format. */
+extern void echs_prnt_ical_event(echs_task_t t, echs_event_t);
 
 /**
  * For filters and command-line stuff. */

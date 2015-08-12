@@ -99,4 +99,13 @@ free_echs_task(echs_task_t t)
 	return;
 }
 
+int
+echs_task_rset_toid(echs_task_t t, echs_toid_t oid)
+{
+	struct echs_task_s *restrict tmpt = deconst(t);
+
+	tmpt->oid = oid;
+	return 0;
+}
+
 /* task.c ends here */

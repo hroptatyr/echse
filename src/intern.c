@@ -1,6 +1,6 @@
 /*** intern.c -- interning system
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -45,15 +45,12 @@
 #include "nifty.h"
 
 /* a hash is the bucket locator and a chksum for collision detection */
-typedef struct {
-	size_t idx;
-	uint_fast32_t chk;
-} hash_t;
+typedef uint_fast32_t hash_t;
 
 /* the beef table */
 static struct {
 	obint_t ob;
-	uint_fast32_t ck;
+	hash_t hx;
 } *sstk;
 /* alloc size, 2-power */
 static size_t zstk;
@@ -67,19 +64,68 @@ static size_t obz;
 /* next ob */
 static size_t obn;
 
+static char
+u2h(uint8_t c)
+{
+	switch (c) {
+	case 0 ... 9:
+		return (char)(c + '0');
+	case 10 ... 15:
+		return (char)(c + 'a' - 10);
+	default:
+		break;
+	}
+	return (char)'?';
+}
+
 static hash_t
 murmur(const uint8_t *str, size_t len)
 {
-/* tokyocabinet's hasher */
-	size_t idx = 19780211U;
-	uint_fast32_t hash = 751U;
-	const uint8_t *rp = str + len;
+	const uint_fast32_t c1 = 0xcc9e2d51U;
+	const uint_fast32_t c2 = 0x1b873593U;
+	const size_t nb = len / 4U;
+	/* ALIGNMENT!!! */
+	const uint32_t *b = (const uint32_t*)str;
+	const uint8_t *tail = (const uint8_t*)(str + (nb * 4U));
+	hash_t h = 0U;
+	hash_t k;
 
-	while (len--) {
-		idx = idx * 37U + *str++;
-		hash = (hash * 31U) ^ *--rp;
+	for (size_t i = 0U; i < nb; i++) {
+		k = b[i];
+		k *= c1;
+		k = (k << 15U) | (k >> (32U - 15U));
+		k *= c2;
+		h ^= k;
+		h = (h << 13U) | (h >> (32U - 13U));
+		h = (h * 5U) + 0xe6546b64U;
 	}
-	return (hash_t){idx, hash};
+	/* reset k and process the tail */
+	k = 0U;
+	switch (nb % 4U) {
+	case 3U:
+		k ^= tail[2U] << 16U;
+		/*@fallthrough@*/
+	case 2U:
+		k ^= tail[1U] << 8U;
+		/*@fallthrough@*/
+	case 1U:
+		k ^= tail[0U];
+		k *= c1;
+		k = (k << 15U) | (k >> (32U - 15U));
+		k *= c2;
+		h ^= k;
+		/*@fallthrough@*/
+	case 0U:
+		break;
+	}
+
+	h ^= nb;
+	h ^= h >> 16U;
+	h *= 0x85ebca6b;
+	h ^= h >> 13U;
+	h *= 0xc2b2ae35;
+	h ^= h >> 16U;
+	return h;
 }
 
 static void*
@@ -106,6 +152,10 @@ make_obint(const char *str, size_t len)
 
 		obs = recalloc(obs, obz, nuz, sizeof(*obs));
 		obz = nuz;
+		if (UNLIKELY(obs == NULL)) {
+			obz = obn = 0U;
+			return 0U;
+		}
 	}
 	/* paste the string in question */
 	memcpy(obs + (res = obn), str, len);
@@ -137,7 +187,7 @@ intern(const char *str, size_t len)
 	 * bytes wide, but only hosts 768 entries because the probe is
 	 * constructed so that the lowest 8bits are always 0. */
 	const hash_t hx = murmur((const uint8_t*)str, len);
-	uint_fast32_t k = hx.idx;
+	hash_t k = hx;
 
 	/* just try what we've got */
 	if (UNLIKELY(!zstk)) {
@@ -149,22 +199,22 @@ intern(const char *str, size_t len)
 	for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
 		const size_t off = k & 0xffU;
 
-		if (sstk[off].ck == hx.chk) {
+		if (sstk[off].hx == hx) {
 			/* found him (or super-collision) */
-			return sstk[off].ob;
-		} else if (!sstk[off].ob) {
+			return hx;
+		} else if (!sstk[off].hx) {
 			/* found empty slot */
 			obint_t ob = make_obint(str, len);
 			sstk[off].ob = ob;
-			sstk[off].ck = hx.chk;
+			sstk[off].hx = hx;
 			nstk++;
-			return ob;
+			return hx;
 		}
 	}
 
 	for (size_t i = SSTK_NSLOT, m = 0x3ffU;; i <<= 2U, m <<= 2U, m |= 3U) {
 		/* reset k */
-		k = hx.idx;
+		k = hx;
 
 		if (UNLIKELY(i >= zstk)) {
 			sstk = recalloc(sstk, zstk, i << 2U, sizeof(*sstk));
@@ -180,16 +230,16 @@ intern(const char *str, size_t len)
 		for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
 			const size_t off = (i | k) & m;
 
-			if (sstk[off].ck == hx.chk) {
+			if (sstk[off].hx == hx) {
 				/* found him (or super-collision) */
-				return sstk[off].ob;
-			} else if (!sstk[off].ob) {
+				return hx;
+			} else if (!sstk[off].hx) {
 				/* found empty slot */
 				obint_t ob = make_obint(str, len);
 				sstk[off].ob = ob;
-				sstk[off].ck = hx.chk;
+				sstk[off].hx = hx;
 				nstk++;
-				return ob;
+				return hx;
 			}
 		}
 	}
@@ -202,13 +252,63 @@ unintern(obint_t UNUSED(ob))
 	return;
 }
 
-const char*
-obint_name(obint_t ob)
+obint_t
+obint(const char *str, size_t len)
 {
-	if (UNLIKELY(ob == 0UL)) {
-		return NULL;
+/* like `intern()' but don't actually intern the string */
+	const hash_t hx = murmur((const uint8_t*)str, len);
+	return hx;
+}
+
+const char*
+obint_name(obint_t hx)
+{
+	static char buf[32] = "echse/autouid-0x00000000@echse";
+	hash_t k = hx;
+	obint_t r;
+
+	if (UNLIKELY(hx == 0UL)) {
+		return obs;
+	} else if (UNLIKELY(sstk == NULL)) {
+		goto auto_uid;
 	}
-	return obs + obint_off(ob);
+
+	/* here's the initial probe then */
+	for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+		const size_t off = k & 0xffU;
+
+		if (sstk[off].hx == hx) {
+			/* found him (or super-collision) */
+			r = sstk[off].ob;
+			goto yep;
+		}
+	}
+
+	for (size_t i = SSTK_NSLOT, m = 0x3ffU; i < zstk;
+	     i <<= 2U, m <<= 2U, m |= 3U) {
+		/* reset k */
+		k = hx;
+
+		/* here we probe within the top entries of the stack */
+		for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+			const size_t off = (i | k) & m;
+
+			if (sstk[off].hx == hx) {
+				/* found him (or super-collision) */
+				r = sstk[off].ob;
+				goto yep;
+			}
+		}
+	}
+auto_uid:
+	/* it's probably one of those autogenerated uids */
+	for (char *restrict bp = buf + 16U + 8U; bp > buf + 16U; hx >>= 4U) {
+		*--bp = u2h((uint8_t)(hx & 0xfU));
+	}
+	return buf;
+
+yep:
+	return obs + ((r >> 8U) << 2U);
 }
 
 void
