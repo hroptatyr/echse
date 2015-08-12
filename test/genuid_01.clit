@@ -6,7 +6,7 @@ VERSION:1.0
 BEGIN:VEVENT
 DTSTART:20140323T090000
 DTEND:20140323T100000
-UID:echse/sample_01.ics/dd8ae977@example.com
+UID:echse/sample_01.ics/f4fb11e5@example.com
 SUMMARY:March meeting
 DESCRIPTION:Just a catch-up thing really.
 PRIORITY:3
@@ -14,7 +14,7 @@ END:VEVENT
 BEGIN:VEVENT
 DTSTART:20140423T090000
 DTEND:20140423T120000
-UID:echse/sample_01.ics/b52341d8@example.com
+UID:echse/sample_01.ics/06d00656@example.com
 SUMMARY:Flight home
 DESCRIPTION:Make sure to pack bags beforehand.
 PRIORITY:3
