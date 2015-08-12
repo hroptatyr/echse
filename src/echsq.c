@@ -51,9 +51,6 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/socket.h>
-#if defined HAVE_SYS_SENDFILE_H
-# include <sys/sendfile.h>
-#endif	/* HAVE_SYS_SENDFILE_H */
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <fcntl.h>
@@ -62,30 +59,12 @@
 #if defined HAVE_PATHS_H
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
-#if defined HAVE_NET_PROTO_UIPC_H
-# include <net/proto_uipc.h>
-#endif	/* HAVE_NET_PROTO_UIPC_H */
 #include <pwd.h>
 #include "nifty.h"
 #include "evical.h"
 #include "fdprnt.h"
 
 extern char **environ;
-
-#if defined HAVE_SPLICE && !defined SPLICE_F_MOVE
-/* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
-# if defined __INTEL_COMPILER
-#  pragma warning(disable:1419)
-# endif	/* __INTEL_COMPILER */
-# if !defined _AIX
-extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
-# endif	/* !_AIX */
-# define SPLICE_F_MOVE	(1U)
-# define SPLICE_F_MORE	(4U)
-# if defined __INTEL_COMPILER
-#  pragma warning(default:1419)
-# endif	/* __INTEL_COMPILER */
-#endif	/* HAVE_SPLICE && !SPLICE_F_MOVE */
 
 #if !defined _PATH_TMP
 # define _PATH_TMP	"/tmp/"
