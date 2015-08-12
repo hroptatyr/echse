@@ -149,7 +149,7 @@ echo
 echo "[[x]]  echse helper tool"
 echo "[[${echsxX}]]  echsx executor agent"
 echo "[[${libevX}]]  echsd job scheduling daemon"
-echo "[[${libevX}]]  echsq queue managing client"
+echo "[[x]]  echsq queue managing client"
 echo
 
 dnl -------------------------------------------------------------------------
