@@ -458,6 +458,7 @@ more:
 			/* pushing more brings nothing */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 		do {
 			ins = echs_evical_pull(&pp);
@@ -477,6 +478,7 @@ more:
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
+		/*@fallthrough@*/
 	case -1:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
@@ -512,6 +514,7 @@ more:
 			/* pushing more brings nothing */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 		do {
 			ins = echs_evical_pull(&pp);
@@ -531,6 +534,7 @@ more:
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
+		/*@fallthrough@*/
 	case -1:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
