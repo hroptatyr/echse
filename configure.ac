@@ -47,6 +47,8 @@ AX_CHECK_YUCK
 AX_YUCK_SCMVER([version.mk])
 AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
 
+AX_CHECK_CLITORIS
+
 case "${featflags}" in
 (*"msse2"*)
 	have_simd="yes"
