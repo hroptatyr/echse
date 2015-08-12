@@ -37,11 +37,18 @@
 #if !defined INCLUDED_echse_genuid_h_
 #define INCLUDED_echse_genuid_h_
 
+#include "task.h"
+
 
 /* helper routines */
 extern void echse_init_genuid(void);
 extern void echse_fini_genuid(void);
 
 extern int echse_genuid1(const char *fmt, const char *fn, bool forcep);
+
+/**
+ * Service for the task fiddlers, generate an oid for task T.
+ * This will not touch or update the oid slot of T. */
+extern echs_toid_t echs_toid_gen(echs_task_t t);
 
 #endif	/* INCLUDED_echse_genuid_h__h_ */

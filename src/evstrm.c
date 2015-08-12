@@ -58,22 +58,25 @@ struct evmux_s {
 static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
-static void prnt_evmux1(echs_const_evstrm_t);
-static void prnt_evmuxm(echs_const_evstrm_t);
+static void seria_evmux(int, echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
-	.prnt1 = prnt_evmux1,
+	.seria = seria_evmux,
 };
 
-static const struct echs_evstrm_class_s evmuxm_cls = {
-	.next = next_evmux,
-	.free = free_evmux,
-	.clone = clone_evmux,
-	.prnt1 = prnt_evmuxm,
-};
+static void
+seria_evmux(int whither, echs_const_evstrm_t strm)
+{
+	const struct evmux_s *this = (const struct evmux_s*)strm;
+
+	for (size_t i = 0UL; i < this->ns; i++) {
+		echs_evstrm_seria(whither, this->s[i]);
+	}
+	return;
+}
 
 static __attribute__((nonnull(1))) void
 __refill(struct evmux_s *this, size_t idx)
@@ -112,9 +115,7 @@ next_evmux(echs_evstrm_t strm)
 	}
 	/* quick check if we hit the event boundary */
 	if (UNLIKELY(i >= this->ns)) {
-		/* yep, bugger off, we assume the streams have been
-		 * freed upon __refill() previously, so just free the
-		 * stream array here */
+		/* yep, bugger off free the streams and the stream array here */
 		for (size_t j = 0U; j < this->ns; j++) {
 			free_echs_evstrm(this->s[j]);
 		}
@@ -141,26 +142,6 @@ next_evmux(echs_evstrm_t strm)
 	return best;
 }
 
-static void
-prnt_evmux1(echs_const_evstrm_t strm)
-{
-	const struct evmux_s *this = (const struct evmux_s*)strm;
-
-	for (size_t i = 0UL; i < this->ns; i++) {
-		echs_evstrm_prnt(this->s[i]);
-	}
-	return;
-}
-
-static void
-prnt_evmuxm(echs_const_evstrm_t strm)
-{
-	const struct evmux_s *this = (const struct evmux_s*)strm;
-
-	this->s[0]->class->prntm(this->s, this->ns);
-	return;
-}
-
 static echs_evstrm_t
 make_evmux(echs_evstrm_t s[], size_t ns)
 {
@@ -179,21 +160,6 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	res->class = &evmux_cls;
 	res->ns = ns;
 	res->s = s;
-	/* check if we can use the many-items printer */
-	if ((*s)->class->prntm != NULL) {
-		const echs_evstrm_class_t proto = (*s)->class;
-		bool same_class_p = true;
-
-		for (size_t i = 1U; i < ns; i++) {
-			if (s[i]->class != proto) {
-				same_class_p = false;
-				break;
-			}
-		}
-		if (same_class_p) {
-			res->class = &evmuxm_cls;
-		}
-	}
 	/* we used to precache events here but seeing as not every
 	 * echse command would need the unrolled stream we leave it
 	 * to next_evmux(), put an indicator into the event cache here */
@@ -327,7 +293,7 @@ echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
 	const struct evmux_s *this;
 	size_t res = 0U;
 
-	if (UNLIKELY(!(s->class == &evmuxm_cls || s->class == &evmux_cls))) {
+	if (UNLIKELY(!(s->class == &evmux_cls))) {
 		/* not our can of beer */
 		return 0UL;
 	}
