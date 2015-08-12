@@ -68,6 +68,7 @@ SXE_CHECK_LIBLTDL
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 AC_CHECK_FUNCS([tee])
+AC_CHECK_HEADERS([net/proto_uipc.h])
 
 AC_CHECK_HEADERS([ucred.h])
 AC_CHECK_HEADERS([sys/ucred.h])
@@ -149,7 +150,7 @@ echo
 echo "[[x]]  echse helper tool"
 echo "[[${echsxX}]]  echsx executor agent"
 echo "[[${libevX}]]  echsd job scheduling daemon"
-echo "[[${libevX}]]  echsq queue managing client"
+echo "[[x]]  echsq queue managing client"
 echo
 
 dnl -------------------------------------------------------------------------

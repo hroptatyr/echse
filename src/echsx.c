@@ -55,6 +55,9 @@
 #if defined HAVE_SENDFILE
 # include <sys/sendfile.h>
 #endif	/* HAVE_SENDFILE */
+#if defined HAVE_NET_PROTO_UIPC_H
+# include <net/proto_uipc.h>
+#endif	/* HAVE_NET_PROTO_UIPC_H */
 #include <ev.h>
 #include <assert.h>
 #include "logger.h"
@@ -66,7 +69,7 @@
 # define auto	static
 #endif	/* __INTEL_COMPILER */
 
-#if !defined SPLICE_F_MOVE
+#if defined HAVE_SPLICE && !defined SPLICE_F_MOVE && !defined _AIX
 /* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
 # if defined __INTEL_COMPILER
 #  pragma warning(disable:1419)
@@ -361,9 +364,17 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	 * descriptor where mmap-like opers work on, then, in the
 	 * next step we use sendfile(2) to push it to out->filed if
 	 * applicable */
-	if ((nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, fl)) <= 0) {
+	if (0) {
+		;
+# if defined _AIX
+	} else if (splice(cfd, mfd, fl) < 0) {
+		/* nothing workee */
+		goto shut;
+# else	/* !_AIX */
+	} else if ((nsp = splice(cfd, NULL, mfd, NULL, UINT_MAX, fl)) <= 0) {
 		/* nothing works, does it */
 		goto shut;
+# endif	 /* _AIX */
 	} else if (out->filefd >= 0) {
 		const int ofd = out->filefd;
 		off_t mfo = lseek(mfd, 0, SEEK_CUR);
