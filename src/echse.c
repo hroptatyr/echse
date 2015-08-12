@@ -306,16 +306,16 @@ chck_filt(struct rrulsp_s *restrict f)
 }
 
 static void
-unroll_ical(echs_evstrm_t smux, struct unroll_param_s p)
+unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 {
 	echs_event_t e;
 
 	/* just get it out now */
 	echs_prnt_ical_init();
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
-		if (echs_instant_lt_p(e.from, p.from)) {
+		if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
-		} else if (echs_instant_lt_p(p.till, e.from)) {
+		} else if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		}
 		/* otherwise print */
@@ -413,7 +413,7 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 }
 
 static void
-unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
+unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 {
 	const size_t fmz = strlen(fmt);
 	char fbuf[fmz + 2 * 32U + 2 * 256U];
@@ -423,12 +423,12 @@ unroll_frmt(echs_evstrm_t smux, struct unroll_param_s p, const char *fmt)
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
 		char *restrict bp;
 
-		if (echs_instant_lt_p(p.till, e.from)) {
+		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
-		} else if (echs_instant_lt_p(e.from, p.from)) {
+		} else if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
-		} else if (p.filt.freq &&
-			   !echs_instant_matches_p(&p.filt, e.from)) {
+		} else if (p->filt.freq &&
+			   !echs_instant_matches_p(&p->filt, e.from)) {
 			continue;
 		}
 		/* otherwise print */
@@ -631,10 +631,10 @@ echse: Error: cannot open file `%s'", fn);
 
 	if (argi->format_arg != NULL && !strcmp(argi->format_arg, "ical")) {
 		/* special output format */
-		unroll_ical(smux, p);
+		unroll_ical(smux, &p);
 	} else {
 		const char *fmt = argi->format_arg ?: dflt_fmt;
-		unroll_frmt(smux, p, fmt);
+		unroll_frmt(smux, &p, fmt);
 	}
 
 	free_echs_evstrm(smux);
