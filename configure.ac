@@ -47,6 +47,8 @@ AX_CHECK_YUCK
 AX_YUCK_SCMVER([version.mk])
 AC_CONFIG_LINKS([GNUmakefile:GNUmakefile])
 
+AX_CHECK_CLITORIS
+
 case "${featflags}" in
 (*"msse2"*)
 	have_simd="yes"
@@ -66,6 +68,7 @@ SXE_CHECK_LIBLTDL
 AC_CHECK_FUNCS([splice])
 AC_CHECK_FUNCS([sendfile])
 AC_CHECK_FUNCS([tee])
+AC_CHECK_HEADERS([net/proto_uipc.h])
 
 AC_CHECK_HEADERS([ucred.h])
 AC_CHECK_HEADERS([sys/ucred.h])
@@ -110,6 +113,9 @@ else
 fi
 AM_CONDITIONAL([HAVE_RT_FUNS], [test "${have_rt_funs}" = "yes"])
 
+AC_CHECK_HEADERS([sys/types.h])
+AC_CHECK_HEADERS([sys/param.h])
+
 
 SXE_CHECK_LIBEV
 AM_CONDITIONAL([HAVE_LIBEV], [test "${have_libev}" = "yes"])
@@ -144,7 +150,7 @@ echo
 echo "[[x]]  echse helper tool"
 echo "[[${echsxX}]]  echsx executor agent"
 echo "[[${libevX}]]  echsd job scheduling daemon"
-echo "[[${libevX}]]  echsq queue managing client"
+echo "[[x]]  echsq queue managing client"
 echo
 
 dnl -------------------------------------------------------------------------

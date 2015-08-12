@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "boobs.h"
 #include "intern.h"
 #include "nifty.h"
 
@@ -81,22 +82,37 @@ u2h(uint8_t c)
 static hash_t
 murmur(const uint8_t *str, size_t len)
 {
+/* See http://murmurhash.googlepages.com/ for info about the Murmur hash.
+ * Murmur is a non-cryptographic hashing hash  is by Austin Appleby. */
 	const uint_fast32_t c1 = 0xcc9e2d51U;
 	const uint_fast32_t c2 = 0x1b873593U;
 	const size_t nb = len / 4U;
-	/* ALIGNMENT!!! */
-	const uint32_t *b = (const uint32_t*)str;
-	const uint8_t *tail = (const uint8_t*)(str + (nb * 4U));
+	const uint8_t *const tail = (const uint8_t*)(str + nb * 4U);
+#if BYTE_ORDER == LITTLE_ENDIAN
+	const uint32_t *b = (const uint32_t*)tail;
+#endif	/* LITTLE_ENDIAN */
 	hash_t h = 0U;
 	hash_t k;
 
-	for (size_t i = 0U; i < nb; i++) {
+	for (ssize_t i = -nb; i; i++) {
+#if BYTE_ORDER == LITTLE_ENDIAN
 		k = b[i];
+#elif BYTE_ORDER == BIG_ENDIAN
+		k = 0U;
+		k ^= tail[4 * i + 0] << 0U;
+		k ^= tail[4 * i + 1] << 8U;
+		k ^= tail[4 * i + 2] << 16U;
+		k ^= tail[4 * i + 3] << 24U;
+#else
+# warning byte order detection failed, expect bogosity
+#endif	/* BYTE_ORDERS */
 		k *= c1;
-		k = (k << 15U) | (k >> (32U - 15U));
+		k &= 0xffffffffU;
+		k = (k << 15U) ^ (k >> (32U - 15U));
 		k *= c2;
 		h ^= k;
-		h = (h << 13U) | (h >> (32U - 13U));
+		h &= 0xffffffffU;
+		h = (h << 13U) ^ (h >> (32U - 13U));
 		h = (h * 5U) + 0xe6546b64U;
 	}
 	/* reset k and process the tail */
@@ -109,8 +125,9 @@ murmur(const uint8_t *str, size_t len)
 		k ^= tail[1U] << 8U;
 		/*@fallthrough@*/
 	case 1U:
-		k ^= tail[0U];
+		k ^= tail[0U] << 0U;
 		k *= c1;
+		k &= 0xffffffffU;
 		k = (k << 15U) | (k >> (32U - 15U));
 		k *= c2;
 		h ^= k;
@@ -120,10 +137,13 @@ murmur(const uint8_t *str, size_t len)
 	}
 
 	h ^= nb;
+	h &= 0xffffffffU;
 	h ^= h >> 16U;
-	h *= 0x85ebca6b;
+	h *= 0x85ebca6bU;
+	h &= 0xffffffffU;
 	h ^= h >> 13U;
-	h *= 0xc2b2ae35;
+	h *= 0xc2b2ae35U;
+	h &= 0xffffffffU;
 	h ^= h >> 16U;
 	return h;
 }

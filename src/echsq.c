@@ -51,7 +51,6 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/socket.h>
-#include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <fcntl.h>
@@ -66,19 +65,6 @@
 #include "fdprnt.h"
 
 extern char **environ;
-
-#if defined HAVE_SPLICE && !defined SPLICE_F_MOVE
-/* just so we don't have to use _GNU_SOURCE declare prototype of splice() */
-# if defined __INTEL_COMPILER
-#  pragma warning(disable:1419)
-# endif	/* __INTEL_COMPILER */
-extern ssize_t splice(int, __off64_t*, int, __off64_t*, size_t, unsigned int);
-# define SPLICE_F_MOVE	(1U)
-# define SPLICE_F_MORE	(4U)
-# if defined __INTEL_COMPILER
-#  pragma warning(default:1419)
-# endif	/* __INTEL_COMPILER */
-#endif	/* HAVE_SPLICE && !SPLICE_F_MOVE */
 
 #if !defined _PATH_TMP
 # define _PATH_TMP	"/tmp/"
