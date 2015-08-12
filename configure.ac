@@ -110,6 +110,9 @@ else
 fi
 AM_CONDITIONAL([HAVE_RT_FUNS], [test "${have_rt_funs}" = "yes"])
 
+AC_CHECK_HEADERS([sys/types.h])
+AC_CHECK_HEADERS([sys/param.h])
+
 
 SXE_CHECK_LIBEV
 AM_CONDITIONAL([HAVE_LIBEV], [test "${have_libev}" = "yes"])
