@@ -14,6 +14,7 @@ echse_LIBS = $(top_builddir)/src/libechse.la
 
 EXTRA_DIST = $(BUILT_SOURCES) $(TESTS)
 TESTS =
+NOTESTS =
 TEST_EXTENSIONS =
 BUILT_SOURCES =
 check_PROGRAMS =
@@ -167,10 +168,10 @@ TESTS += filt_02.clit
 TESTS += filt_03.clit
 TESTS += filt_04.clit
 
-TESTS += mrul_01.clit
-TESTS += mrul_02.clit
-TESTS += mrul_03.clit
-TESTS += mrul_04.clit
+NOTESTS += mrul_01.clit
+NOTESTS += mrul_02.clit
+NOTESTS += mrul_03.clit
+NOTESTS += mrul_04.clit
 
 ## our friendly helpers
 check_PROGRAMS += clitoris

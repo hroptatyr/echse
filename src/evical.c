@@ -120,8 +120,6 @@ struct ical_vevent_s {
 	struct dtlst_s xd;
 	/* points into the mrul array */
 	struct mrlst_s mr;
-	/* points into the mfil array */
-	struct urlst_s mf;
 };
 
 struct vearr_s {
@@ -146,8 +144,6 @@ struct cal_addr_s {
 	const char *s;
 	size_t z;
 };
-
-static struct muslst_s gms;
 
 
 #define CHECK_RESIZE(o, id, iniz, nitems)				\
@@ -209,45 +205,6 @@ clon_dtlst(struct dtlst_s dl)
 }
 
 static void
-add1_to_urlst(struct urlst_s *ul, struct uri_s u)
-{
-	CHECK_RESIZE(ul, u, 16U, 1U);
-	ul->u[ul->nu++] = u;
-	return;
-}
-
-static void
-add_to_urlst(struct urlst_s *ul, const struct uri_s *mf, size_t nmf)
-{
-	CHECK_RESIZE(ul, u, 16U, nmf);
-	memcpy(ul->u + ul->nu, mf, nmf * sizeof(*mf));
-	ul->nu += nmf;
-	return;
-}
-
-
-static void
-add1_to_gms(struct uri_s u, echs_evstrm_t s)
-{
-	CHECK_RESIZE(&gms, us, 16U, 1U);
-	gms.us[gms.nus++] = (struct mus_s){u, s};
-	return;
-}
-
-static echs_evstrm_t
-get_gms(struct uri_s u)
-{
-	/* try and find the mfile in the global list */
-	for (size_t j = 0U; j < gms.nus; j++) {
-		struct uri_s cu = gms.us[j].u;
-		if (u.typ == cu.typ && u.canon == cu.canon) {
-			return gms.us[j].s;
-		}
-	}
-	return NULL;
-}
-
-static void
 free_ical_vevent(struct ical_vevent_s *restrict ve)
 {
 	if (ve->rr.nr) {
@@ -262,77 +219,10 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	if (ve->xd.ndt) {
 		free(ve->xd.dt);
 	}
-	if (ve->mf.nu) {
-		free(ve->mf.u);
-	}
 	if (ve->mr.nr) {
 		free(ve->mr.r);
 	}
 	return;
-}
-
-
-/* file name stack (and include depth control) */
-static const char *gfn[4U];
-static size_t nfn;
-
-static int
-push_fn(const char *fn)
-{
-	if (UNLIKELY(nfn >= countof(gfn))) {
-		return -1;
-	}
-	gfn[nfn++] = fn;
-	return 0;
-}
-
-static const char*
-pop_fn(void)
-{
-	if (UNLIKELY(nfn == 0U)) {
-		return NULL;
-	}
-	return gfn[--nfn];
-}
-
-static const char*
-peek_fn(void)
-{
-	if (UNLIKELY(nfn == 0U)) {
-		return NULL;
-	}
-	return gfn[nfn - 1U];
-}
-
-static struct uri_s
-canon_fn(const char *fn, size_t fz)
-{
-	obint_t ifn;
-
-	if (*fn != '/') {
-		/* relative file name */
-		const char *cfn = peek_fn();
-		const char *dir;
-
-		if (UNLIKELY(cfn == NULL)) {
-			;
-		} else if ((dir = strrchr(cfn, '/')) != NULL) {
-			char tmp[dir - cfn + fz + 1U/*slash*/ + 1U/*\nul*/];
-			char *tp = tmp;
-
-			memcpy(tp, cfn, dir - cfn);
-			tp += dir - cfn;
-			*tp++ = '/';
-			memcpy(tp, fn, fz);
-			tp += fz;
-			*tp = '\0';
-			ifn = intern(tmp, tp - tmp);
-			return (struct uri_s){URI_FILE, ifn};
-		}
-		/* otherwise it was a file name `xyz' in cwd */
-	}
-	ifn = intern(fn, fz);
-	return (struct uri_s){URI_FILE, ifn};
 }
 
 
@@ -766,13 +656,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 	case FLD_MFILE:
-		/* aah, a file-wide MFILE directive */
-		if (LIKELY(!strncmp(vp, "file://", 7U))) {
-			struct uri_s u = (vp += 7U, canon_fn(vp, ep - vp));
-
-			/* bang to global array */
-			add1_to_urlst(&ve->mf, u);
-		}
+		/* aah, an event-wide MFILE directive,
+		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 	case FLD_UID:
 		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
@@ -935,14 +820,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	/* otherwise inspect the field */
 	switch (c->fld) {
 	case FLD_MFILE:
-		/* aah, a file-wide MFILE directive */
-		if (LIKELY(!strncmp(++lp, "file://", 7U))) {
-			const char *const ep = line + llen;
-			struct uri_s u = (lp += 7U, canon_fn(lp, ep - lp));
-
-			/* bang to global array */
-			add1_to_urlst(&ve->mf, u);
-		}
+		/* aah, a file-wide MFILE directive,
+		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 
 	case FLD_METH:;
@@ -1109,12 +988,6 @@ _ical_proc(struct ical_parser_s p[static 1U])
 	case ST_VEVENT:
 		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
 			/* yep, prepare to report success */
-			if (p->globve.mf.nu) {
-				const size_t nmf = p->globve.mf.nu;
-				const struct uri_s *mf = p->globve.mf.u;
-
-				add_to_urlst(&p->ve.mf, mf, nmf);
-			}
 			/* reset to unknown state */
 			p->st = ST_BODY;
 			res = &p->ve;
@@ -1249,9 +1122,6 @@ read_ical(const char *fn)
 		return NULL;
 	}
 
-	/* let everyone know about our fn */
-	push_fn(fn);
-
 redo:
 	switch ((nrd = read(fd, buf, sizeof(buf)))) {
 		struct ical_vevent_s *ve;
@@ -1297,43 +1167,7 @@ redo:
 	}
 
 	close(fd);
-	pop_fn();
 	return a;
-}
-
-static echs_evstrm_t
-read_mfil(struct uri_s u)
-{
-	/* otherwise resort to global reader */
-	switch (u.typ) {
-		const char *fn;
-	case URI_FILE:
-		fn = obint_name(u.canon);
-		return make_echs_evstrm_from_file(fn);
-	default:
-		break;
-	}
-	return NULL;
-}
-
-static echs_evstrm_t
-get_aux_strm(struct urlst_s ul)
-{
-	echs_evstrm_t aux[ul.nu];
-	size_t naux = 0U;
-
-	for (struct uri_s *u = ul.u, *const eou = u + ul.nu; u < eou; u++) {
-		/* try global cache, then mfile reader */
-		echs_evstrm_t s;
-
-		if ((s = get_gms(*u)) != NULL) {
-			;
-		} else if ((s = read_mfil(*u)) != NULL) {
-			add1_to_gms(*u, s);
-		}
-		aux[naux++] = s;
-	}
-	return echs_evstrm_vmux(aux, naux);
 }
 
 
@@ -1824,15 +1658,7 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 	this->rdi = 0UL;
 	this->ncch = 0UL;
 	res = (echs_evstrm_t)this;
-	if (ve->mr.nr && ve->mf.nu) {
-		echs_evstrm_t aux;
-
-		if (LIKELY((aux = get_aux_strm(ve->mf)) != NULL)) {
-			res = make_evmrul(ve->mr.r, res, aux);
-		}
-		/* otherwise display stream as is, maybe print a warning? */
-	}
-	return (echs_evstrm_t)res;
+	return res;
 }
 
 static echs_evstrm_t
@@ -1867,9 +1693,6 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 	free(ve->rr.r);
 	if (ve->mr.nr) {
 		free(ve->mr.r);
-	}
-	if (ve->mf.nu) {
-		free(ve->mf.u);
 	}
 	return res;
 }
@@ -2105,9 +1928,6 @@ make_echs_evical(const char *fn)
 				if (a->ev[i].mr.nr) {
 					free(a->ev[i].mr.r);
 				}
-				if (a->ev[i].mf.nu) {
-					free(a->ev[i].mf.u);
-				}
 				assert(a->ev[i].rr.r == NULL);
 				continue;
 			}
@@ -2217,9 +2037,6 @@ make_task(struct ical_vevent_s *ve)
 		}
 		if (ve->mr.nr) {
 			free(ve->mr.r);
-		}
-		if (ve->mf.nu) {
-			free(ve->mf.u);
 		}
 		assert(ve->rr.r == NULL);
 		s = make_evical_vevent(&ve->e, 1U);
