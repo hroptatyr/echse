@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "boobs.h"
 #include "intern.h"
 #include "nifty.h"
 
@@ -86,14 +87,25 @@ murmur(const uint8_t *str, size_t len)
 	const uint_fast32_t c1 = 0xcc9e2d51U;
 	const uint_fast32_t c2 = 0x1b873593U;
 	const size_t nb = len / 4U;
-	/* ALIGNMENT!!! */
-	const uint32_t *b = (const uint32_t*)str;
-	const uint8_t *tail = (const uint8_t*)(str + (nb * 4U));
+	const uint8_t *const tail = (const uint8_t*)(str + nb * 4U);
+#if BYTE_ORDER == LITTLE_ENDIAN
+	const uint32_t *b = (const uint32_t*)tail;
+#endif	/* LITTLE_ENDIAN */
 	hash_t h = 0U;
 	hash_t k;
 
-	for (size_t i = 0U; i < nb; i++) {
+	for (ssize_t i = -nb; i; i++) {
+#if BYTE_ORDER == LITTLE_ENDIAN
 		k = b[i];
+#elif BYTE_ORDER == BIG_ENDIAN
+		k = 0U;
+		k ^= tail[4 * i + 0] << 0U;
+		k ^= tail[4 * i + 1] << 8U;
+		k ^= tail[4 * i + 2] << 16U;
+		k ^= tail[4 * i + 3] << 24U;
+#else
+# warning byte order detection failed, expect bogosity
+#endif	/* BYTE_ORDERS */
 		k *= c1;
 		k &= 0xffffffffU;
 		k = (k << 15U) ^ (k >> (32U - 15U));
