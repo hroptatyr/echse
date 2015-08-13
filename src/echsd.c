@@ -1139,6 +1139,7 @@ struct echs_cmdparam_s {
 };
 
 static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
+static int _eject_task1(EV_P_ echs_toid_t o, uid_t u);
 
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
@@ -1330,6 +1331,18 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 
 		case INSVERB_UNSC:
 			/* cancel request */
+			if (UNLIKELY(!ins.o)) {
+				/* must be a status update then */
+				continue;
+			}
+			/* otherwise eject him */
+			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
+				/* reply with REQUEST-STATUS:x */
+				nwr += cmd_ical_rpl(ofd, ins.o, 1U);
+			} else {
+				/* reply with REQUEST-STATUS:2.0;Success */
+				nwr += cmd_ical_rpl(ofd, ins.o, 0U);
+			}
 			break;
 
 		default:
@@ -1827,6 +1840,31 @@ task update from user %d for task from user %d failed: permission denied",
 	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
 	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
+	return 0;
+}
+
+static int
+_eject_task1(EV_P_ echs_toid_t oid, uid_t uid)
+{
+	_task_t res;
+
+	if (UNLIKELY((res = get_task(oid)) == NULL)) {
+		ECHS_ERR_LOG("\
+cannot update task: no task with oid 0x%x found", oid);
+		return -1;
+	} else if (UNLIKELY(res->t->owner != uid)) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     uid, res->t->owner);
+		return -1;
+	}
+	/* otherwise proceed with the evacuation */
+	ECHS_NOTI_LOG("cancelling task 0x%x", oid);
+	ev_periodic_stop(EV_A_ &res->w);
+	free(deconst(res->dflt_cred.wd));
+	free(deconst(res->dflt_cred.sh));
+	free_echs_task(res->t);
 	return 0;
 }
 
