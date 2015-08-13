@@ -1215,7 +1215,7 @@ HTTP/1.1 200 Ok\r\n\r\n";
 }
 
 static ssize_t
-cmd_ical_rpl(int ofd, echs_task_t t, unsigned int code)
+cmd_ical_rpl(int ofd, echs_toid_t o, unsigned int code)
 {
 	static const char rpl_hdr[] = "\
 BEGIN:VCALENDAR\n\
@@ -1246,8 +1246,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	ssize_t nwr = 0;
 
 	fdbang(ofd);
-	if (UNLIKELY(t == NULL)) {
-#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, NULL, 0U)
+	if (UNLIKELY(!o)) {
+#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, 0U, 0U)
 		if (nrpl) {
 			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
@@ -1277,9 +1277,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 
 	nwr += fdwrite(rpl_veh, strlenof(rpl_veh));
 
-	nwr += fdprintf("UID:%s\n", obint_name(t->oid));
+	nwr += fdprintf("UID:%s\n", obint_name(o));
 	nwr += fdprintf("DTSTAMP:%s\n", stmp);
-	nwr += fdprintf("ORGANIZER:%s\n", t->org);
 	nwr += fdprintf("ATTENDEE:echse\n");
 	switch (code) {
 	case 0:
@@ -1316,10 +1315,10 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				nwr += cmd_ical_rpl(ofd, ins.t, 1U);
+				nwr += cmd_ical_rpl(ofd, ins.t->oid, 1U);
 			} else {
 				/* reply with REQUEST-STATUS:2.0;Success */
-				nwr += cmd_ical_rpl(ofd, ins.t, 0U);
+				nwr += cmd_ical_rpl(ofd, ins.t->oid, 0U);
 			}
 			break;
 
