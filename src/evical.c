@@ -1005,6 +1005,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 	case ST_VEVENT:
 		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
 			/* yep, prepare to report success */
+			/* bang vital globals: owner, etc. */
+			p->ve.t.owner = p->globve.t.owner;
 			/* reset to unknown state */
 			p->st = ST_BODY;
 			res = &p->ve;
