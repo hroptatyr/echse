@@ -1786,6 +1786,10 @@ _inject_task1(EV_P_ echs_task_t t)
 		/* task with no owner? better scram */
 		ECHS_ERR_LOG("attempt to inject a task with no owner");
 		return -1;
+	} else if (meself.uid && !t->owner) {
+		ECHS_ERR_LOG("\
+need root privileges to run task as user %d", t->owner);
+		return -1;
 	} else if (UNLIKELY((c = compl_uid(t->owner),
 			     c.sh == NULL || c.wd == NULL ||
 			     c.u != t->owner))) {
