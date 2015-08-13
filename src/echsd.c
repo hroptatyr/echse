@@ -1138,7 +1138,7 @@ struct echs_cmdparam_s {
 	};
 };
 
-static int _inject_task1(EV_P_ echs_task_t t);
+static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
 
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
@@ -1310,11 +1310,8 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			}
-			/* massage away the owner in the task and
-			 * replace by the connection credentials */
-			echs_task_rset_ownr(ins.t, cred.u);
 			/* and otherwise inject him */
-			if (UNLIKELY(_inject_task1(EV_A_ ins.t) < 0)) {
+			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
 				nwr += cmd_ical_rpl(ofd, ins.t->oid, 1U);
 			} else {
@@ -1781,32 +1778,28 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static int
-_inject_task1(EV_P_ echs_task_t t)
+_inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
 	_task_t res;
 	ncred_t c;
 
-	if (UNLIKELY(t->owner < 0)) {
-		/* task with no owner? better scram */
-		ECHS_ERR_LOG("attempt to inject a task with no owner");
-		return -1;
-	} else if (meself.uid && !t->owner) {
+	if (meself.uid && !u) {
 		ECHS_ERR_LOG("\
-need root privileges to run task as user %d", t->owner);
+need root privileges to run task as user %d", u);
 		return -1;
-	} else if (UNLIKELY((c = compl_uid(t->owner),
+	} else if (UNLIKELY((c = compl_uid(u),
 			     c.sh == NULL || c.wd == NULL ||
 			     c.u != t->owner))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("\
-ignoring task update for (non-existing) user %u", t->owner);
+ignoring task update for (non-existing) user %u", u);
 		return -1;
 	} else if ((res = get_task(t->oid)) != NULL &&
-		   res->t->owner != t->owner) {
+		   res->t->owner != u) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     t->owner, res->t->owner);
+			     u, res->t->owner);
 		return -1;
 	} else if (res != NULL) {
 		ECHS_NOTI_LOG("task update, unscheduling old task");
@@ -1819,6 +1812,9 @@ task update from user %d for task from user %d failed: permission denied",
 		return -1;
 	}
 
+	/* massage away the owner in the task and
+	 * replace by the connection credentials */
+	echs_task_rset_ownr(t, u);
 	/* bang libechse task into our _task */
 	res->t = t;
 	/* run all tasks as U and the default group of U */
@@ -1869,7 +1865,7 @@ more:
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx->loop, ins.t);
+			_inject_task1(ctx->loop, ins.t, ins.t->owner);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
