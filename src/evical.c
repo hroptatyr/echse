@@ -161,10 +161,10 @@ struct cal_addr_s {
 	}
 
 static void
-add1_to_rrlst(struct rrlst_s *rl, struct rrulsp_s rr)
+add1_to_rrlst(struct rrlst_s *rl, const struct rrulsp_s *rr)
 {
 	CHECK_RESIZE(rl, r, 16U, 1U);
-	rl->r[rl->nr++] = rr;
+	rl->r[rl->nr++] = *rr;
 	return;
 }
 
@@ -629,11 +629,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			switch (c->fld) {
 			case FLD_RRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->rr, r);
+				add1_to_rrlst(&ve->rr, &r);
 				break;
 			case FLD_XRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->xr, r);
+				add1_to_rrlst(&ve->xr, &r);
 				break;
 			}
 		}
