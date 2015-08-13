@@ -75,6 +75,7 @@
 #include "echse.h"
 #include "evical.h"
 #include "logger.h"
+#include "fdprnt.h"
 #include "nifty.h"
 
 #if defined __INTEL_COMPILER
@@ -1138,6 +1139,7 @@ struct echs_cmdparam_s {
 };
 
 static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
+static int _eject_task1(EV_P_ echs_toid_t o, uid_t u);
 
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
@@ -1214,7 +1216,7 @@ HTTP/1.1 200 Ok\r\n\r\n";
 }
 
 static ssize_t
-cmd_ical_rpl(int ofd, echs_task_t t, unsigned int code)
+cmd_ical_rpl(int ofd, echs_toid_t o, unsigned int code)
 {
 	static const char rpl_hdr[] = "\
 BEGIN:VCALENDAR\n\
@@ -1244,16 +1246,19 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	time_t tmp;
 	ssize_t nwr = 0;
 
-	if (UNLIKELY(t == NULL)) {
+	fdbang(ofd);
+	if (UNLIKELY(!o)) {
+#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, 0U, 0U)
 		if (nrpl) {
-			nwr += write(ofd, rpl_ftr, strlenof(rpl_ftr));
+			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
 		}
+		fdflush();
 		return nwr;
 	} else if (!nrpl) {
 		/* we haven't sent the VCALENDAR thingie yet */
-		nwr += write(ofd, rpl_hdr, strlenof(rpl_hdr));
-		nwr += write(ofd, rpl_rpl, strlenof(rpl_rpl));
+		nwr += fdwrite(rpl_hdr, strlenof(rpl_hdr));
+		nwr += fdwrite(rpl_rpl, strlenof(rpl_rpl));
 	}
 
 	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
@@ -1271,24 +1276,24 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 		now = tmp;
 	}
 
-	nwr += write(ofd, rpl_veh, strlenof(rpl_veh));
+	nwr += fdwrite(rpl_veh, strlenof(rpl_veh));
 
-	nwr += dprintf(ofd, "UID:%s\n", obint_name(t->oid));
-	nwr += dprintf(ofd, "DTSTAMP:%s\n", stmp);
-	nwr += dprintf(ofd, "ORGANIZER:%s\n", t->org);
-	nwr += dprintf(ofd, "ATTENDEE:echse\n");
+	nwr += fdprintf("UID:%s\n", obint_name(o));
+	nwr += fdprintf("DTSTAMP:%s\n", stmp);
+	nwr += fdprintf("ATTENDEE:echse\n");
 	switch (code) {
 	case 0:
-		nwr += write(ofd, succ, strlenof(succ));
+		nwr += fdwrite(succ, strlenof(succ));
 		break;
 	default:
-		nwr += write(ofd, fail, strlenof(fail));
+		nwr += fdwrite(fail, strlenof(fail));
 		break;
 	}
-	nwr += write(ofd, rpl_vef, strlenof(rpl_vef));
+	nwr += fdwrite(rpl_vef, strlenof(rpl_vef));
 
 	/* just for the next iteration */
 	nrpl++;
+	(void)fdputc;
 	return nwr;
 }
 
@@ -1309,10 +1314,10 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				cmd_ical_rpl(ofd, ins.t, 1U);
+				nwr += cmd_ical_rpl(ofd, ins.t->oid, 1U);
 			} else {
 				/* reply with REQUEST-STATUS:2.0;Success */
-				cmd_ical_rpl(ofd, ins.t, 0U);
+				nwr += cmd_ical_rpl(ofd, ins.t->oid, 0U);
 			}
 			break;
 
@@ -1326,18 +1331,30 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 
 		case INSVERB_UNSC:
 			/* cancel request */
+			if (UNLIKELY(!ins.o)) {
+				/* must be a status update then */
+				continue;
+			}
+			/* otherwise eject him */
+			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
+				/* reply with REQUEST-STATUS:x */
+				nwr += cmd_ical_rpl(ofd, ins.o, 1U);
+			} else {
+				/* reply with REQUEST-STATUS:2.0;Success */
+				nwr += cmd_ical_rpl(ofd, ins.o, 0U);
+			}
 			break;
 
 		default:
-		case INSVERB_UNK:
 			ECHS_NOTI_LOG("\
 unknown instruction received from %d", ofd);
+		case INSVERB_UNK:
 			goto fini;
 		}
 	} while (1);
-
 fini:
-	cmd_ical_rpl(ofd, NULL, 0U);
+	/* this flushes all replies */
+	cmd_ical_rpl_flush(ofd);
 	return nwr;
 }
 
@@ -1777,13 +1794,27 @@ static int
 _inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
 	_task_t res;
-	ncred_t c = compl_uid(u);
+	ncred_t c;
 
-	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
-		/* user doesn't exist, do they */
-		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
+	if (meself.uid && !u) {
+		ECHS_ERR_LOG("\
+need root privileges to run task as user %d", u);
 		return -1;
-	} else if ((res = get_task(t->oid)) != NULL) {
+	} else if (UNLIKELY((c = compl_uid(u),
+			     c.sh == NULL || c.wd == NULL ||
+			     c.u != t->owner))) {
+		/* user doesn't exist, do they */
+		ECHS_ERR_LOG("\
+ignoring task update for (non-existing) user %u", u);
+		return -1;
+	} else if ((res = get_task(t->oid)) != NULL &&
+		   res->t->owner != u) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     u, res->t->owner);
+		return -1;
+	} else if (res != NULL) {
 		ECHS_NOTI_LOG("task update, unscheduling old task");
 		ev_periodic_stop(EV_A_ &res->w);
 		free(deconst(res->dflt_cred.wd));
@@ -1794,6 +1825,9 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 		return -1;
 	}
 
+	/* massage away the owner in the task and
+	 * replace by the connection credentials */
+	echs_task_rset_ownr(t, u);
 	/* bang libechse task into our _task */
 	res->t = t;
 	/* run all tasks as U and the default group of U */
@@ -1809,19 +1843,38 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 	return 0;
 }
 
+static int
+_eject_task1(EV_P_ echs_toid_t oid, uid_t uid)
+{
+	_task_t res;
+
+	if (UNLIKELY((res = get_task(oid)) == NULL)) {
+		ECHS_ERR_LOG("\
+cannot update task: no task with oid 0x%x found", oid);
+		return -1;
+	} else if (UNLIKELY(res->t->owner != uid)) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     uid, res->t->owner);
+		return -1;
+	}
+	/* otherwise proceed with the evacuation */
+	ECHS_NOTI_LOG("cancelling task 0x%x", oid);
+	ev_periodic_stop(EV_A_ &res->w);
+	free(deconst(res->dflt_cred.wd));
+	free(deconst(res->dflt_cred.sh));
+	free_echs_task(res->t);
+	return 0;
+}
+
 static void
-_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as)
+_inject_file(struct _echsd_s *ctx, const char *fn)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
 	ssize_t nrd;
 	int fd;
-
-	if (UNLIKELY(run_as >= (uid_t)~0UL)) {
-		return;
-	} else if (meself.uid && meself.uid != run_as) {
-		return;
-	}
 
 	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
 		return;
@@ -1836,6 +1889,7 @@ more:
 			/* pushing more brings nothing */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 		do {
 			ins = echs_evical_pull(&pp);
@@ -1844,14 +1898,17 @@ more:
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
+			} else if (UNLIKELY(!ins.t->oid)) {
+				free_echs_task(ins.t);
+				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx->loop, ins.t, run_as);
+			_inject_task1(ctx->loop, ins.t, ins.t->owner);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
-		break;
+		/*@fallthrough@*/
 	case -1:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
@@ -1875,49 +1932,30 @@ more:
 static void
 echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 {
-	uid_t u = meself.uid;
-
 	/* we are a super-echsd, load all .ics files we can find */
 	if_with (DIR *d, d = opendir(qd)) {
 		static const char prfx[] = "echsq_";
 		static const char sufx[] = ".ics";
 
 		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
-			const char *fn = dp->d_name;
-			long unsigned int xu;
-			char *on;
-			unsigned char qi;
+			const char *const fn = dp->d_name;
+			const size_t fz = strlen(fn);
 
 			/* check if it's the right prefix */
 			if (strncmp(fn, prfx, strlenof(prfx))) {
 				/* not our thing */
 				continue;
 			}
-			/* snarf the uid */
-			xu = strtoul(fn + strlenof(prfx), &on, 10);
-			/* looking good? */
-			if (UNLIKELY(xu >= (uid_t)~0UL)) {
-				continue;
-			} else if (u && xu != u) {
-				continue;
-			}
-			/* has it got A or B indicator? */
-			qi = (unsigned char)*on++;
-			switch (qi | 0x20U) {
-			case 'a':
-				break;
-			case 'b':
-				break;
-			default:
-				continue;
-			}
-			/* check suffix */
-			if (strncmp(on, sufx, strlenof(sufx))) {
+			/* check suffix
+			 * no length check needed as prefix beats
+			 * suffix in terms of string-length */
+			if (strncmp(fn + fz - strlenof(sufx),
+				    sufx, strlenof(sufx))) {
 				/* nope */
 				continue;
 			}
 			/* otherwise, try and load it */
-			_inject_file(ctx, fn, xu);
+			_inject_file(ctx, fn);
 		}
 		closedir(d);
 	}

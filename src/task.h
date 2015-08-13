@@ -65,6 +65,9 @@ struct echs_task_s {
 	const char *cmd;
 	struct strlst_s *env;
 
+	/* owner of the task, this is meant to be a uid with values <0
+	 * indicating that this has not been set */
+	int owner;
 	/* credentials we want this job run as */
 	cred_t run_as;
 
@@ -94,6 +97,11 @@ extern void free_echs_task(echs_task_t);
 /**
  * Forcefully change oid of T to OID. */
 extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
+
+/**
+ * Forcefully change owner of T to UID.
+ * Negative values of UID `unset' the owner field. */
+extern int echs_task_rset_ownr(echs_task_t t, int uid);
 
 
 /* convenience */
