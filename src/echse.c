@@ -530,6 +530,7 @@ more:
 			}
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
+			free_echs_task(ins.t);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
