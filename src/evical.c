@@ -805,19 +805,29 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	return 0;
 }
 
-static void
+static int
 snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 {
 /* prologue snarfer */
-	const struct ical_fld_cell_s *c;
 	const char *lp;
+	const char *const ep = line + llen;
+	const char *vp;
+	const struct ical_fld_cell_s *c;
 
 	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return;
+		return -1;
 	} else if ((c = __evical_fld(line, lp - line)) == NULL) {
-		return;
+		return -1;
 	}
-	/* otherwise inspect the field */
+
+	/* obtain the value pointer */
+	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
+		vp++;
+	} else {
+		return -1;
+	}
+
+	/* inspect the field */
 	switch (c->fld) {
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
@@ -829,7 +839,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		 * instructions ... */
 		const struct ical_meth_cell_s *m;
 
-		if ((lp++, m = __evical_meth(lp, llen - (lp - line))) == NULL) {
+		if ((lp++, m = __evical_meth(vp, ep - vp)) == NULL) {
 			/* nope, no methods given */
 			break;
 		}
@@ -837,7 +847,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(lp, NULL, 0)) {
+		with (long int i = strtol(vp, NULL, 0)) {
 			if (UNLIKELY(i < 0 || i >= 63)) {
 				ve->t.max_simul = 0U;
 			} else {
@@ -847,7 +857,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(lp, NULL, 0)) {
+		with (long int i = strtol(vp, NULL, 0)) {
 			/* off-by-one assignment here */
 			ve->t.owner = i + 1;
 		}
@@ -856,7 +866,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	default:
 		break;
 	}
-	return;
+	return 0;
 }
 
 
