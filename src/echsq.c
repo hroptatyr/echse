@@ -477,9 +477,11 @@ END:VCALENDAR\n";
 		}
 
 		fdwrite(ftr, strlenof(ftr));
+		nout++;
 	}
 	(void)fdputc;
 	fdflush();
+	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
 	return 0;
