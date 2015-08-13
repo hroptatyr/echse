@@ -1312,10 +1312,10 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				cmd_ical_rpl(ofd, ins.t, 1U);
+				nwr += cmd_ical_rpl(ofd, ins.t, 1U);
 			} else {
 				/* reply with REQUEST-STATUS:2.0;Success */
-				cmd_ical_rpl(ofd, ins.t, 0U);
+				nwr += cmd_ical_rpl(ofd, ins.t, 0U);
 			}
 			break;
 
@@ -1332,15 +1332,13 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			break;
 
 		default:
-		case INSVERB_UNK:
 			ECHS_NOTI_LOG("\
 unknown instruction received from %d", ofd);
-			goto fini;
+		case INSVERB_UNK:
+			goto out;
 		}
 	} while (1);
-
-fini:
-	cmd_ical_rpl(ofd, NULL, 0U);
+out:
 	return nwr;
 }
 
