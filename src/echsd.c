@@ -1247,6 +1247,7 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 
 	fdbang(ofd);
 	if (UNLIKELY(t == NULL)) {
+#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, NULL, 0U)
 		if (nrpl) {
 			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
@@ -1338,10 +1339,12 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			ECHS_NOTI_LOG("\
 unknown instruction received from %d", ofd);
 		case INSVERB_UNK:
-			goto out;
+			goto fini;
 		}
 	} while (1);
-out:
+fini:
+	/* this flushes all replies */
+	cmd_ical_rpl_flush(ofd);
 	return nwr;
 }
 
