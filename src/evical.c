@@ -1240,13 +1240,11 @@ send_ical_hdr(int whither)
 	fdbang(whither);
 
 	fdwrite(beg, strlenof(beg));
-	if (LIKELY(now)) {
-		;
-	} else {
+	if (UNLIKELY(now <= 0)) {
 		struct tm tm;
 		echs_instant_t nowi;
 
-		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) == NULL))) {
+		if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
 			/* screw up the singleton */
 			now = 0;
 			return;
