@@ -1137,7 +1137,7 @@ struct echs_cmdparam_s {
 	};
 };
 
-static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
+static int _inject_task1(EV_P_ echs_task_t t);
 
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
@@ -1307,7 +1307,7 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 				continue;
 			}
 			/* and otherwise inject him */
-			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
+			if (UNLIKELY(_inject_task1(EV_A_ ins.t) < 0)) {
 				/* reply with REQUEST-STATUS:x */
 				cmd_ical_rpl(ofd, ins.t, 1U);
 			} else {
@@ -1774,16 +1774,30 @@ free_echsd(struct _echsd_s *ctx)
 }
 
 static int
-_inject_task1(EV_P_ echs_task_t t, uid_t u)
+_inject_task1(EV_P_ echs_task_t t)
 {
 	_task_t res;
-	ncred_t c = compl_uid(u);
+	ncred_t c;
 
-	if (UNLIKELY(c.sh == NULL || c.wd == NULL || (!c.u && u))) {
-		/* user doesn't exist, do they */
-		ECHS_ERR_LOG("ignoring queue for (non-existing) user %u", u);
+	if (UNLIKELY(t->owner < 0)) {
+		/* task with no owner? better scram */
+		ECHS_ERR_LOG("attempt to inject a task with no owner");
 		return -1;
-	} else if ((res = get_task(t->oid)) != NULL) {
+	} else if (UNLIKELY((c = compl_uid(t->owner),
+			     c.sh == NULL || c.wd == NULL ||
+			     c.u != t->owner))) {
+		/* user doesn't exist, do they */
+		ECHS_ERR_LOG("\
+ignoring task update for (non-existing) user %u", t->owner);
+		return -1;
+	} else if ((res = get_task(t->oid)) != NULL &&
+		   res->t->owner != t->owner) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     t->owner, res->t->owner);
+		return -1;
+	} else if (res != NULL) {
 		ECHS_NOTI_LOG("task update, unscheduling old task");
 		ev_periodic_stop(EV_A_ &res->w);
 		free(deconst(res->dflt_cred.wd));
@@ -1810,18 +1824,12 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 }
 
 static void
-_inject_file(struct _echsd_s *ctx, const char *fn, uid_t run_as)
+_inject_file(struct _echsd_s *ctx, const char *fn)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
 	ssize_t nrd;
 	int fd;
-
-	if (UNLIKELY(run_as >= (uid_t)~0UL)) {
-		return;
-	} else if (meself.uid && meself.uid != run_as) {
-		return;
-	}
 
 	if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
 		return;
@@ -1850,7 +1858,7 @@ more:
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx->loop, ins.t, run_as);
+			_inject_task1(ctx->loop, ins.t);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -1879,49 +1887,30 @@ more:
 static void
 echsd_inject_queues(struct _echsd_s *ctx, const char *qd)
 {
-	uid_t u = meself.uid;
-
 	/* we are a super-echsd, load all .ics files we can find */
 	if_with (DIR *d, d = opendir(qd)) {
 		static const char prfx[] = "echsq_";
 		static const char sufx[] = ".ics";
 
 		for (struct dirent *dp; (dp = readdir(d)) != NULL;) {
-			const char *fn = dp->d_name;
-			long unsigned int xu;
-			char *on;
-			unsigned char qi;
+			const char *const fn = dp->d_name;
+			const size_t fz = strlen(fn);
 
 			/* check if it's the right prefix */
 			if (strncmp(fn, prfx, strlenof(prfx))) {
 				/* not our thing */
 				continue;
 			}
-			/* snarf the uid */
-			xu = strtoul(fn + strlenof(prfx), &on, 10);
-			/* looking good? */
-			if (UNLIKELY(xu >= (uid_t)~0UL)) {
-				continue;
-			} else if (u && xu != u) {
-				continue;
-			}
-			/* has it got A or B indicator? */
-			qi = (unsigned char)*on++;
-			switch (qi | 0x20U) {
-			case 'a':
-				break;
-			case 'b':
-				break;
-			default:
-				continue;
-			}
-			/* check suffix */
-			if (strncmp(on, sufx, strlenof(sufx))) {
+			/* check suffix
+			 * no length check needed as prefix beats
+			 * suffix in terms of string-length */
+			if (strncmp(fn + fz - strlenof(sufx),
+				    sufx, strlenof(sufx))) {
 				/* nope */
 				continue;
 			}
 			/* otherwise, try and load it */
-			_inject_file(ctx, fn, xu);
+			_inject_file(ctx, fn);
 		}
 		closedir(d);
 	}
