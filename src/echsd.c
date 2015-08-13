@@ -1306,6 +1306,9 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			}
+			/* massage away the owner in the task and
+			 * replace by the connection credentials */
+			echs_task_rset_ownr(ins.t, cred.u);
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t) < 0)) {
 				/* reply with REQUEST-STATUS:x */
