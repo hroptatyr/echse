@@ -1292,6 +1292,7 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 
 	/* just for the next iteration */
 	nrpl++;
+	(void)fdputc;
 	return nwr;
 }
 
