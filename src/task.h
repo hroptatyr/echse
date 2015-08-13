@@ -98,6 +98,11 @@ extern void free_echs_task(echs_task_t);
  * Forcefully change oid of T to OID. */
 extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
 
+/**
+ * Forcefully change owner of T to UID.
+ * Negative values of UID `unset' the owner field. */
+extern int echs_task_rset_ownr(echs_task_t t, int uid);
+
 
 /* convenience */
 static inline __attribute__((const, pure)) bool

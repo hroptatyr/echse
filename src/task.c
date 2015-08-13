@@ -108,4 +108,13 @@ echs_task_rset_toid(echs_task_t t, echs_toid_t oid)
 	return 0;
 }
 
+int
+echs_task_rset_ownr(echs_task_t t, int uid)
+{
+	struct echs_task_s *restrict tmpt = deconst(t);
+
+	tmpt->owner = uid;
+	return 0;
+}
+
 /* task.c ends here */
