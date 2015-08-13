@@ -87,6 +87,7 @@ murmur(const uint8_t *str, size_t len)
 	const uint_fast32_t c1 = 0xcc9e2d51U;
 	const uint_fast32_t c2 = 0x1b873593U;
 	const size_t nb = len / 4U;
+	const size_t nr = len % 4U;
 	const uint8_t *const tail = (const uint8_t*)(str + nb * 4U);
 #if BYTE_ORDER == LITTLE_ENDIAN
 	const uint32_t *b = (const uint32_t*)tail;
@@ -117,7 +118,7 @@ murmur(const uint8_t *str, size_t len)
 	}
 	/* reset k and process the tail */
 	k = 0U;
-	switch (nb % 4U) {
+	switch (nr) {
 	case 3U:
 		k ^= tail[2U] << 16U;
 		/*@fallthrough@*/
