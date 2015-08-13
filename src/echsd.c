@@ -1836,6 +1836,7 @@ more:
 			/* pushing more brings nothing */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 		do {
 			ins = echs_evical_pull(&pp);
@@ -1844,6 +1845,9 @@ more:
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
+			} else if (UNLIKELY(!ins.t->oid)) {
+				free_echs_task(ins.t);
+				continue;
 			}
 			/* and otherwise inject him */
 			_inject_task1(ctx->loop, ins.t, run_as);
@@ -1851,7 +1855,7 @@ more:
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
-		break;
+		/*@fallthrough@*/
 	case -1:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
