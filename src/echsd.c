@@ -75,6 +75,7 @@
 #include "echse.h"
 #include "evical.h"
 #include "logger.h"
+#include "fdprnt.h"
 #include "nifty.h"
 
 #if defined __INTEL_COMPILER
@@ -1244,16 +1245,18 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	time_t tmp;
 	ssize_t nwr = 0;
 
+	fdbang(ofd);
 	if (UNLIKELY(t == NULL)) {
 		if (nrpl) {
-			nwr += write(ofd, rpl_ftr, strlenof(rpl_ftr));
+			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
 		}
+		fdflush();
 		return nwr;
 	} else if (!nrpl) {
 		/* we haven't sent the VCALENDAR thingie yet */
-		nwr += write(ofd, rpl_hdr, strlenof(rpl_hdr));
-		nwr += write(ofd, rpl_rpl, strlenof(rpl_rpl));
+		nwr += fdwrite(rpl_hdr, strlenof(rpl_hdr));
+		nwr += fdwrite(rpl_rpl, strlenof(rpl_rpl));
 	}
 
 	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
@@ -1271,21 +1274,21 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 		now = tmp;
 	}
 
-	nwr += write(ofd, rpl_veh, strlenof(rpl_veh));
+	nwr += fdwrite(rpl_veh, strlenof(rpl_veh));
 
-	nwr += dprintf(ofd, "UID:%s\n", obint_name(t->oid));
-	nwr += dprintf(ofd, "DTSTAMP:%s\n", stmp);
-	nwr += dprintf(ofd, "ORGANIZER:%s\n", t->org);
-	nwr += dprintf(ofd, "ATTENDEE:echse\n");
+	nwr += fdprintf("UID:%s\n", obint_name(t->oid));
+	nwr += fdprintf("DTSTAMP:%s\n", stmp);
+	nwr += fdprintf("ORGANIZER:%s\n", t->org);
+	nwr += fdprintf("ATTENDEE:echse\n");
 	switch (code) {
 	case 0:
-		nwr += write(ofd, succ, strlenof(succ));
+		nwr += fdwrite(succ, strlenof(succ));
 		break;
 	default:
-		nwr += write(ofd, fail, strlenof(fail));
+		nwr += fdwrite(fail, strlenof(fail));
 		break;
 	}
-	nwr += write(ofd, rpl_vef, strlenof(rpl_vef));
+	nwr += fdwrite(rpl_vef, strlenof(rpl_vef));
 
 	/* just for the next iteration */
 	nrpl++;
