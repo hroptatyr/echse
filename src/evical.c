@@ -846,6 +846,13 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 
+	case FLD_OWNER:
+		with (long int i = strtol(lp, NULL, 0)) {
+			/* off-by-one assignment here */
+			ve->t.owner = i + 1;
+		}
+		break;
+
 	default:
 		break;
 	}
@@ -2021,6 +2028,9 @@ make_task(struct ical_vevent_s *ve)
 	if (UNLIKELY(!ve->t.oid)) {
 		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
 	}
+	/* off-by-one correction of owner, this is to indicate
+	 * an unset owner by the value of -1 */
+	ve->t.owner--;
 
 	if (!ve->rr.nr && !ve->rd.ndt) {
 		/* not an rrule but a normal vevent */

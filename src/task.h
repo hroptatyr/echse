@@ -65,6 +65,9 @@ struct echs_task_s {
 	const char *cmd;
 	struct strlst_s *env;
 
+	/* owner of the task, this is meant to be a uid with values <0
+	 * indicating that this has not been set */
+	int owner;
 	/* credentials we want this job run as */
 	cred_t run_as;
 
