@@ -65,6 +65,8 @@ fdputc(int c)
 {
 	if (UNLIKELY(fd_aux.bi >= sizeof(fd_aux.buf))) {
 		fdflush();
+		/* just for coverity which couldn't figure this one out */
+		fd_aux.bi = 0U;
 	}
 	fd_aux.buf[fd_aux.bi++] = (char)c;
 	return 0;
