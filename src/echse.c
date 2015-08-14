@@ -50,6 +50,7 @@
 #include "echse-genuid.h"
 #include "evical.h"
 #include "dt-strpf.h"
+#include "fdprnt.h"
 #include "nifty.h"
 
 struct unroll_param_s {
@@ -73,23 +74,6 @@ serror(const char *fmt, ...)
 	}
 	fputc('\n', stderr);
 	return;
-}
-
-static size_t
-xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
-{
-	if (ssz > dsz) {
-		ssz = dsz - 1U;
-	}
-	memcpy(dst, src, ssz);
-	dst[ssz] = '\0';
-	return ssz;
-}
-
-static size_t
-xstrlcpy(char *restrict dst, const char *src, size_t dsz)
-{
-	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
 
@@ -327,24 +311,24 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 	return;
 }
 
-static char*
-unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
+static int
+unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 {
-	char *restrict bp = buf;
-	const char *const ebp = buf + bsz;
+	(void)fdprintf;
 
-	for (const char *fp = fmt; *fp && bp < ebp; fp++) {
+	fdbang(ofd);
+	for (const char *fp = fmt; *fp; fp++) {
 		if (UNLIKELY(*fp == '\\')) {
 			static const char esc[] =
 				"\a\bcd\e\fghijklm\nopq\rs\tu\v";
 
 			if (*++fp && *fp >= 'a' && *fp <= 'v') {
-				*bp++ = esc[*fp - 'a'];
+				fdputc(esc[*fp - 'a']);
 			} else if (!*fp) {
 				/* huh? trailing lone backslash */
 				break;
 			} else {
-				*bp++ = *fp;
+				fdputc(*fp);
 			}
 		} else if (UNLIKELY(*fp == '%')) {
 			echs_instant_t i;
@@ -360,8 +344,13 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				i = e.till;
 				goto cpy_inst;
 			case 's':
-				if (LIKELY((t = get_task(e.oid)) != NULL)) {
-					bp += xstrlcpy(bp, t->cmd, ebp - bp);
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->cmd == NULL)) {
+					;
+				} else {
+					const size_t cmz = strlen(t->cmd);
+					fdwrite(t->cmd, cmz);
 				}
 				continue;
 			case 'S':
@@ -370,17 +359,20 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 					for (;
 					     e.sts && !(e.sts & 0b1U);
 					     e.sts >>= 1U, st++);
-					bp += xstrlcpy(
-						bp, state_name(st), ebp - bp);
+					const char *sn = state_name(st);
+					size_t sz = strlen(sn);
+
+					/* first one without leading comma */
+					fdwrite(sn, sz);
 					/* and the rest of the states */
 					while (st++, e.sts >>= 1U) {
 						for (;
 						     e.sts && !(e.sts & 0b1U);
 						     e.sts >>= 1U, st++);
-						*bp++ = ',';
-						bp += xstrlcpy(
-							bp, state_name(st),
-							ebp - bp);
+						sn = state_name(st);
+						sz = strlen(sn);
+						fdputc(',');
+						fdwrite(sn, sz);
 					}
 				}
 				continue;
@@ -390,39 +382,42 @@ unroll_prnt(char *restrict buf, size_t bsz, echs_event_t e, const char *fmt)
 				}
 				continue;
 			case '%':
-				*bp++ = '%';
+				fdputc('%');
 			default:
 				continue;
 			}
 
 		cpy_inst:
-			bp += dt_strf(bp, ebp - bp, i);
+			{
+				char b[32U];
+				size_t z;
+				z = dt_strf(b, sizeof(b), i);
+				fdwrite(b, z);
+			}
 			continue;
 		cpy_obint:
 			{
 				const char *nm = obint_name(x);
+				const size_t nz = strlen(nm);
 
-				bp += xstrlcpy(bp, nm, ebp - bp);
+				fdwrite(nm, nz);
 			}
 			continue;
 		} else {
-			*bp++ = *fp;
+			fdputc(*fp);
 		}
 	}
-	return bp;
+	return 0;
 }
 
 static void
 unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 {
-	const size_t fmz = strlen(fmt);
-	char fbuf[fmz + 2 * 32U + 2 * 256U];
 	echs_event_t e;
 
 	/* just get it out now */
+	fdbang(STDOUT_FILENO);
 	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
-		char *restrict bp;
-
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -432,13 +427,12 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 			continue;
 		}
 		/* otherwise print */
-		bp = unroll_prnt(fbuf, sizeof(fbuf) - 2U, e, fmt);
+		unroll_prnt(STDOUT_FILENO, e, fmt);
 		/* finalise buf */
-		*bp++ = '\n';
-		*bp++ = '\0';
-
-		fputs(fbuf, stdout);
+		fdputc('\n');
+		fdflush();
 	}
+	fdflush();
 	return;
 }
 
