@@ -1216,7 +1216,7 @@ HTTP/1.1 200 Ok\r\n\r\n";
 }
 
 static ssize_t
-cmd_ical_rpl(int ofd, echs_toid_t o, unsigned int code)
+cmd_ical_rpl(int ofd, echs_instruc_t ins)
 {
 	static const char rpl_hdr[] = "\
 BEGIN:VCALENDAR\n\
@@ -1247,8 +1247,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	ssize_t nwr = 0;
 
 	fdbang(ofd);
-	if (UNLIKELY(!o)) {
-#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, 0U, 0U)
+	if (UNLIKELY(!ins.v)) {
+#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, (echs_instruc_t){INSVERB_UNK})
 		if (nrpl) {
 			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
@@ -1278,13 +1278,14 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 
 	nwr += fdwrite(rpl_veh, strlenof(rpl_veh));
 
-	nwr += fdprintf("UID:%s\n", obint_name(o));
+	nwr += fdprintf("UID:%s\n", obint_name(ins.o));
 	nwr += fdprintf("DTSTAMP:%s\n", stmp);
 	nwr += fdprintf("ATTENDEE:echse\n");
-	switch (code) {
-	case 0:
+	switch (ins.v) {
+	case INSVERB_SUCC:
 		nwr += fdwrite(succ, strlenof(succ));
 		break;
+	case INSVERB_FAIL:
 	default:
 		nwr += fdwrite(fail, strlenof(fail));
 		break;
@@ -1314,35 +1315,33 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				nwr += cmd_ical_rpl(ofd, ins.t->oid, 1U);
-			} else {
-				/* reply with REQUEST-STATUS:2.0;Success */
-				nwr += cmd_ical_rpl(ofd, ins.t->oid, 0U);
+				ins.v = INSVERB_FAIL;
+				break;
 			}
+			/* reply with REQUEST-STATUS:2.0;Success */
+			ins.v = INSVERB_SUCC;
 			break;
 
 		case INSVERB_RESC:
-			/* cancel request */
+			/* reschedule (update) request */
+			ins.v = INSVERB_FAIL;
 			break;
 
 		case INSVERB_RES1:
-			/* cancel request */
+			/* reschedule (update) one in series request */
+			ins.v = INSVERB_FAIL;
 			break;
 
 		case INSVERB_UNSC:
 			/* cancel request */
-			if (UNLIKELY(!ins.o)) {
-				/* must be a status update then */
-				continue;
-			}
 			/* otherwise eject him */
 			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				nwr += cmd_ical_rpl(ofd, ins.o, 1U);
-			} else {
-				/* reply with REQUEST-STATUS:2.0;Success */
-				nwr += cmd_ical_rpl(ofd, ins.o, 0U);
+				ins.v = INSVERB_FAIL;
+				break;
 			}
+			/* reply with REQUEST-STATUS:2.0;Success */
+			ins.v = INSVERB_SUCC;
 			break;
 
 		default:
@@ -1351,6 +1350,8 @@ unknown instruction received from %d", ofd);
 		case INSVERB_UNK:
 			goto fini;
 		}
+		/* now serialise the actual reply */
+		nwr += cmd_ical_rpl(ofd, ins);
 	} while (1);
 fini:
 	/* this flushes all replies */
