@@ -60,6 +60,7 @@
 #include "evrrul-gp.c"
 #include "evmrul-gp.c"
 #include "evmeth-gp.c"
+#include "evcomp-gp.c"
 #include "fdprnt.h"
 #include "echse-genuid.h"
 
@@ -562,35 +563,20 @@ snarf_mailto(const char *line, size_t llen)
 }
 
 static int
-snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+snarf_fld(struct ical_vevent_s ve[static 1U],
+	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
-	const char *lp;
-	const char *const ep = line + llen;
-	const char *vp;
-	const struct ical_fld_cell_s *c;
+/* vevent field parser */
 
-	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return -1;
-	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
-		return -1;
-	}
-
-	/* obtain the value pointer */
-	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
-		vp++;
-	} else {
-		return -1;
-	}
-
-	switch (c->fld) {
+	switch (fld) {
 	default:
 	case FLD_UNK:
 		/* how did we get here */
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
-		with (echs_instant_t i = snarf_value(lp)) {
-			switch (c->fld) {
+		with (echs_instant_t i = snarf_value(eof)) {
+			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
 				if (!echs_nul_instant_p(ve->e.till)) {
@@ -611,7 +597,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			if (l.ndt == 0UL) {
 				break;
 			}
-			switch (c->fld) {
+			switch (fld) {
 			case FLD_XDATE:
 				ve->xd = l;
 				break;
@@ -626,7 +612,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* otherwise snarf him */
 		if_with (struct rrulsp_s r,
 			 (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE) {
-			switch (c->fld) {
+			switch (fld) {
 			case FLD_RRULE:
 				/* bang to global array */
 				add1_to_rrlst(&ve->rr, &r);
@@ -793,7 +779,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = snarf_value(lp);
+		ve->e.from = snarf_value(eof);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
@@ -806,29 +792,14 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 }
 
 static int
-snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+snarf_pro(struct ical_vevent_s ve[static 1U],
+	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
-/* prologue snarfer */
-	const char *lp;
-	const char *const ep = line + llen;
-	const char *vp;
-	const struct ical_fld_cell_s *c;
-
-	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return -1;
-	} else if ((c = __evical_fld(line, lp - line)) == NULL) {
-		return -1;
-	}
-
-	/* obtain the value pointer */
-	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
-		vp++;
-	} else {
-		return -1;
-	}
+/* prologue snarfer, should only be called whilst being in VCAL state */
+	(void)eof;
 
 	/* inspect the field */
-	switch (c->fld) {
+	switch (fld) {
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
 		 * too bad we had to turn these off (b480f83 still has them) */
@@ -839,7 +810,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		 * instructions ... */
 		const struct ical_meth_cell_s *m;
 
-		if ((lp++, m = __evical_meth(vp, ep - vp)) == NULL) {
+		if ((m = __evical_meth(vp, ep - vp)) == NULL) {
 			/* nope, no methods given */
 			break;
 		}
@@ -874,8 +845,9 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 struct ical_parser_s {
 	enum {
 		ST_UNK,
-		ST_BODY,
+		ST_VCAL,
 		ST_VEVENT,
+		ST_VOTHER,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -942,22 +914,8 @@ esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
 static int
 _ical_init_push(const char *buf, size_t bsz)
 {
-	/* oh they're here for the first time, check
-	 * the first 16 bytes */
-	static const char hdr[] = "BEGIN:VCALENDAR";
-
 	if (UNLIKELY(buf == NULL)) {
 		/* huh? no buffer AND no context? */
-		return -1;
-	}
-
-	/* little probe first
-	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-	if (bsz < sizeof(hdr) ||
-	    memcmp(buf, hdr, strlenof(hdr)) ||
-	    !(buf[strlenof(hdr)] == '\n' ||
-	      buf[strlenof(hdr)] == '\r')) {
-		/* that's just rubbish, refuse to do anything */
 		return -1;
 	}
 	return 0;
@@ -979,46 +937,187 @@ _ical_proc(struct ical_parser_s p[static 1U])
  * the stash will contain a whole line which is assumed to be consumed */
 	const char *sp = p->stash;
 	const size_t sz = p->six;
+	const char *const ep = sp + sz;
 	struct ical_vevent_s *res = NULL;
+	const char *eofld;
+	const char *vp;
+	const struct ical_fld_cell_s *c;
+
+	if (UNLIKELY((eofld = strpbrk(sp, ":;")) == NULL)) {
+		goto out;
+	} else if (UNLIKELY((c = __evical_fld(sp, eofld - sp)) == NULL)) {
+		goto out;
+	}
+
+	/* obtain the value pointer */
+	if (LIKELY(*(vp = eofld) == ':' || (vp = strchr(eofld, ':')) != NULL)) {
+		vp++;
+	} else {
+		goto out;
+	}
 
 	switch (p->st) {
-		static const char beg[] = "BEGIN:VEVENT";
-		static const char end[] = "END:VEVENT";
+	case ST_UNK:
+		/* we're before or behind a VCALENDAR,
+		 * fingers crossed we find one and can finally start parsing */
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* all bullshit */
+			res = ICAL_EOP;
+			break;
+
+		case FLD_BEGIN:
+			/* oh oh oh, looks promising innit? */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VCAL) {
+				p->st = ST_VOTHER;
+			} else {
+				p->st = ST_VCAL;
+			}
+			break;
+		}
+		break;
 
 	default:
-	case ST_UNK:
-		/*@fallthrough@*/
-	case ST_BODY:
+	case ST_VOTHER:
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* whatever */
+			break;
+		case FLD_BEGIN:
+			/* just up the depth tracker */
+			p->st++;
+			break;
+
+		case FLD_END:
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VCAL) {
+				/* just down the depth tracker */
+				if (p->st-- == ST_VOTHER) {
+					/* and fall back to VCAL */
+					p->st = ST_VCAL;
+				}
+			} else {
+				/* oooh END:VCALENDAR?
+				 * well we better fuck off then */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+			}
+			break;
+		}
+		break;
+
+	case ST_VCAL:
 		/* check for globals */
-		snarf_pro(&p->globve, sp, sz);
-		/* check if line is a new vevent */
-		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
-			/* yep, rinse our bucket */
-			memset(&p->ve, 0, sizeof(p->ve));
-			/* copy global task properties */
-			p->ve.t = p->globve.t;
-			/* and set state to vevent */
-			p->st = ST_VEVENT;
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* we're in a vcalendar component, let the prologue
+			 * snarfer figure out what we want */
+			snarf_pro(&p->globve, c->fld, eofld, vp, ep);
+			break;
+
+		case FLD_BEGIN:
+		case FLD_END:
+			/* oh oh oh, looks promising innit? */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL) {
+				if (UNLIKELY(c->fld == FLD_END)) {
+					/* what's ending here? */
+					p->st = ST_UNK;
+					res = ICAL_EOP;
+					break;
+				} else if (c->fld == FLD_BEGIN) {
+					/* ah something else is starting */
+					p->st = ST_VOTHER;
+					break;
+				}
+				/* not reached */
+			}
+			switch (comp->comp) {
+			case COMP_VEVT:
+				if (LIKELY(c->fld == FLD_BEGIN)) {
+					/* FINALLY a vevent thing */
+					/* rinse our bucket */
+					memset(&p->ve, 0, sizeof(p->ve));
+					/* copy global task properties */
+					p->ve.t = p->globve.t;
+					/* and set state to vevent */
+					p->st = ST_VEVENT;
+					break;
+				}
+				/* otherwise we've ended a VEVENT whilst
+				 * being in a VCALENDAR container, that's
+				 * just plain wrong */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+
+			case COMP_VCAL:
+				if (LIKELY(c->fld == FLD_END)) {
+					/* yay, we're finished */
+					p->st = ST_UNK;
+					res = ICAL_EOP;
+					break;
+				}
+				/*@fallthrough@*/
+			default:
+				/* vcal in vcal? or, worse, some other field? */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+			}
+			break;
 		}
 		break;
 
 	case ST_VEVENT:
-		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
-			/* yep, prepare to report success */
+		/* check for globals */
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* pass on field parsing to helper routines */
+			if (snarf_fld(&p->ve, c->fld, eofld, vp, ep) < 0) {
+				/* no state change */
+				;
+			}
+			break;
+
+		case FLD_BEGIN:
+			/* that's utterly bogus, nothing can begin inside
+			 * a VEVENT component */
+			p->st = ST_UNK;
+			res = ICAL_EOP;
+			break;
+
+		case FLD_END:
+			/* yep, that might be legit */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VEVT) {
+				/* nope it wasn't legit */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+			}
+			/* return to VCAL state so we can be looking forward
+			 * to other vevents as well */
+
 			/* bang vital globals: owner, etc. */
 			p->ve.t.owner = p->globve.t.owner;
 			/* reset to unknown state */
-			p->st = ST_BODY;
+			p->st = ST_VCAL;
 			res = &p->ve;
 			/* success */
 			break;
 		}
-		/* no state change, interpret the line */
-		if (snarf_fld(&p->ve, sp, sz) < 0) {
-			;
-		}
 		break;
 	}
+out:
 	/* we've consumed him */
 	p->six = 0U;
 	return res;
@@ -1028,7 +1127,6 @@ static struct ical_vevent_s*
 _ical_pull(struct ical_parser_s p[static 1U])
 {
 /* pull-version of read_ical */
-	static const char ftr[] = "END:VCALENDAR";
 	struct ical_vevent_s *res = NULL;
 	const char *eol;
 
@@ -1076,11 +1174,6 @@ chop_more:
 			 * fact a complete line */
 			p->stash[p->six] = '\001';
 		}
-	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
-			    !strncmp(BP, ftr, strlenof(ftr)))) {
-		/* oooh it's the end of the whole shebang,
-		 * indicate end-of-parsing */
-		res = ICAL_EOP;
 	} else {
 		const char *bp = BP;
 		const size_t llen = eol - bp;

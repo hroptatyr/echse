@@ -875,7 +875,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     m[nm++] = tmpm);
 
 		/* fill up with a default */
-		if (!nm && ymdp) {
+		if (!nm && ymdp && proto.m) {
 			m[nm++] = proto.m;
 		}
 	}
@@ -943,7 +943,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		fill_yly_eastr(&cand, y, &rr->easter);
 
 		/* extend by ymd */
-		if (!nm) {
+		if (UNLIKELY(!nm && !nd)) {
+			/* don't fill up any ymds */
+			;
+		} else if (!nm) {
 			fill_yly_ymd_all_m(&cand, y, d, nd, wd_mask);
 		} else if (!nd) {
 			fill_yly_ymd_all_d(&cand, y, m, nm, wd_mask);
