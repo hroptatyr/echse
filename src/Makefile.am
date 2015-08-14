@@ -59,11 +59,13 @@ EXTRA_DIST += evical-gp.erf
 EXTRA_DIST += evrrul-gp.erf
 EXTRA_DIST += evmrul-gp.erf
 EXTRA_DIST += evmeth-gp.erf
+EXTRA_DIST += evcomp-gp.erf
 libechse_la_built_sources =
 libechse_la_built_sources += evical-gp.c
 libechse_la_built_sources += evrrul-gp.c
 libechse_la_built_sources += evmrul-gp.c
 libechse_la_built_sources += evmeth-gp.c
+libechse_la_built_sources += evcomp-gp.c
 
 bin_PROGRAMS += echse
 echse_SOURCES = echse.c echse.h echse.yuck
