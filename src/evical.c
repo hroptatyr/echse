@@ -914,22 +914,8 @@ esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
 static int
 _ical_init_push(const char *buf, size_t bsz)
 {
-	/* oh they're here for the first time, check
-	 * the first 16 bytes */
-	static const char hdr[] = "BEGIN:VCALENDAR";
-
 	if (UNLIKELY(buf == NULL)) {
 		/* huh? no buffer AND no context? */
-		return -1;
-	}
-
-	/* little probe first
-	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-	if (bsz < sizeof(hdr) ||
-	    memcmp(buf, hdr, strlenof(hdr)) ||
-	    !(buf[strlenof(hdr)] == '\n' ||
-	      buf[strlenof(hdr)] == '\r')) {
-		/* that's just rubbish, refuse to do anything */
 		return -1;
 	}
 	return 0;
