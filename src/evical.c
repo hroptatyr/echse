@@ -914,7 +914,7 @@ esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
 static int
 _ical_init_push(const char *buf, size_t bsz)
 {
-	if (UNLIKELY(buf == NULL)) {
+	if (UNLIKELY(buf == NULL || bsz == 0U)) {
 		/* huh? no buffer AND no context? */
 		return -1;
 	}
