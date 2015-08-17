@@ -313,14 +313,8 @@ make_echs_evstrm_from_file(const char *fn)
 {
 /* just try the usual readers for now,
  * DSO support and config files will come later */
-	echs_evstrm_t s;
-
-	if (0) {
-		;
-	} else if ((s = make_echs_evical(fn)) != NULL) {
-		;
-	}
-	return s;
+	(void)fn;
+	return NULL;
 }
 
 /* evstrm.c ends here */

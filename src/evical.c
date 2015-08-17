@@ -1218,70 +1218,6 @@ _ical_fini(struct ical_parser_s p[static 1U])
 	return;
 }
 
-static vearr_t
-read_ical(const char *fn)
-{
-	char buf[65536U];
-	size_t nve = 0UL;
-	vearr_t a = NULL;
-	struct ical_parser_s pp = {.buf = NULL};
-	ssize_t nrd;
-	int fd;
-
-	if (fn == NULL/*stdio*/) {
-		fd = STDIN_FILENO;
-	} else if ((fd = open(fn, O_RDONLY)) < 0) {
-		return NULL;
-	}
-
-redo:
-	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		struct ical_vevent_s *ve;
-
-	default:
-		if (UNLIKELY(pp.buf == NULL && _ical_init_push(buf, nrd) < 0)) {
-			/* buffer completely unsuitable for pushing */
-			break;
-		}
-
-		_ical_push(&pp, buf, nrd);
-	case 0:
-		while ((ve = _ical_pull(&pp)) != NULL) {
-			if (UNLIKELY(ve == ICAL_EOP)) {
-				/* oh jolly good */
-				goto undo;
-			}
-			/* just add to vearray */
-			if (a == NULL || nve >= a->nev) {
-				/* resize */
-				const size_t nu = 2 * nve ?: 64U;
-				size_t nz = nu * sizeof(*a->ev);
-
-				a = realloc(a, nz + sizeof(a));
-				a->nev = nu;
-			}
-			/* assign */
-			a->ev[nve++] = *ve;
-		}
-		if (LIKELY(nrd > 0)) {
-			goto redo;
-		}
-		/*@fallthrough@*/
-	undo:
-	case -1:
-		_ical_fini(&pp);
-		break;
-	}
-
-	/* massage result array */
-	if (LIKELY(a != NULL)) {
-		a->nev = nve;
-	}
-
-	close(fd);
-	return a;
-}
-
 
 /* sending is like printing but into a file descriptor of choice */
 static void
@@ -2010,80 +1946,6 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 }
 
 
-echs_evstrm_t
-make_echs_evical(const char *fn)
-{
-	vearr_t a;
-
-	if ((a = read_ical(fn)) == NULL) {
-		return NULL;
-	}
-	/* now split into vevents and rrules */
-	with (echs_evstrm_t s[a->nev]) {
-		echs_event_t ev[a->nev];
-		size_t nev = 0UL;
-		size_t ns = 0UL;
-
-		/* rearrange so that pure vevents sit in ev,
-		 * and rrules somewhere else */
-		for (size_t i = 0U; i < a->nev; i++) {
-			echs_evstrm_t tmp;
-			echs_instant_t *xd;
-
-			if (!a->ev[i].rr.nr && !a->ev[i].rd.ndt) {
-				/* not an rrule but a normal vevent
-				 * just him to the list */
-				ev[nev++] = a->ev[i].e;
-				/* free all the bits and bobs that
-				 * might have been added */
-				if (a->ev[i].xr.nr) {
-					free(a->ev[i].xr.r);
-				}
-				if (a->ev[i].xd.ndt) {
-					free(a->ev[i].xd.dt);
-				}
-				if (a->ev[i].mr.nr) {
-					free(a->ev[i].mr.r);
-				}
-				assert(a->ev[i].rr.r == NULL);
-				continue;
-			}
-			/* it's an rrule, we won't check for
-			 * exdates or exrules because they make
-			 * no sense without an rrule to go with */
-			/* check for exdates here, and sort them */
-			if (UNLIKELY(a->ev[i].xd.ndt > 1UL &&
-				     (xd = a->ev[i].xd.dt) != NULL)) {
-				echs_instant_sort(xd, a->ev[i].xd.ndt);
-			}
-
-			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
-				s[ns++] = tmp;
-			}
-		}
-
-		/* noone's using A anymore, so free it,
-		 * we're reusing all the vevents in A so make sure
-		 * we don't free them */
-		free(a);
-		a = NULL;
-
-		if (nev) {
-			/* sort them */
-			echs_event_sort(ev, nev);
-			/* and materialise into event stream */
-			s[ns++] = make_evical_vevent(ev, nev);
-		}
-		if (UNLIKELY(!ns)) {
-			break;
-		} else if (ns == 1UL) {
-			return *s;
-		}
-		return make_echs_evmux(s, ns);
-	}
-	return NULL;
-}
-
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
