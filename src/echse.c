@@ -115,14 +115,16 @@ rem_strm(echs_evstrm_t s)
 static void
 condense_strms(void)
 {
-	size_t i;
+	size_t i, j;
 
 	for (i = 0U; i < nstrms && strms[i] != NULL; i++);
-	for (size_t j = i++; i < nstrms; i++) {
+	for (j = i++; i < nstrms; i++) {
 		if ((strms[j] = strms[i]) != NULL) {
 			j++;
 		}
 	}
+	/* at last, we've shortened the STRMS array down to J objects */
+	nstrms = j;
 	return;
 }
 
