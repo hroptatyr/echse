@@ -1751,19 +1751,19 @@ __make_evrrul(struct ical_vevent_s ve[static 1U], size_t seq)
 
 	if (ve->xr.nr) {
 		this->xr = ve->xr;
-		this->xr = (struct rrlst_s){NULL};
+		ve->xr = (struct rrlst_s){NULL};
 	} else {
 		this->xr.nr = 0U;
 	}
 	if (ve->rd.ndt) {
 		this->rd = ve->rd;
-		this->rd = (struct dtlst_s){NULL};
+		ve->rd = (struct dtlst_s){NULL};
 	} else {
 		this->rd.ndt = 0U;
 	}
 	if (ve->xd.ndt) {
 		this->xd = ve->xd;
-		this->xd = (struct dtlst_s){NULL};
+		ve->xd = (struct dtlst_s){NULL};
 	} else {
 		this->xd.ndt = 0U;
 	}
