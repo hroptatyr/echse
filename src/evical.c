@@ -1739,7 +1739,7 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
+__make_evrrul(struct ical_vevent_s ve[static 1U], size_t seq)
 {
 	struct evrrul_s *this = malloc(sizeof(*this));
 	echs_evstrm_t res;
@@ -1751,16 +1751,19 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 
 	if (ve->xr.nr) {
 		this->xr = ve->xr;
+		this->xr = (struct rrlst_s){NULL};
 	} else {
 		this->xr.nr = 0U;
 	}
 	if (ve->rd.ndt) {
 		this->rd = ve->rd;
+		this->rd = (struct dtlst_s){NULL};
 	} else {
 		this->rd.ndt = 0U;
 	}
 	if (ve->xd.ndt) {
 		this->xd = ve->xd;
+		this->xd = (struct dtlst_s){NULL};
 	} else {
 		this->xd.ndt = 0U;
 	}
@@ -1772,7 +1775,7 @@ __make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
 }
 
 static echs_evstrm_t
-make_evrrul(const struct ical_vevent_s ve[static 1U])
+make_evrrul(struct ical_vevent_s ve[static 1U])
 {
 /* here's the deal, we check how many rrules there are, and
  * if it's just one we return a normal evrrul_s object, if
