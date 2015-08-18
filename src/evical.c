@@ -1951,8 +1951,32 @@ static echs_event_t
 next_evfilt(echs_evstrm_t s)
 {
 	struct evfilt_s *this = (struct evfilt_s*)s;
+	echs_event_t e = echs_evstrm_next(this->e);
+	bool ex_in_past_p = false;
 
-	return echs_evstrm_next(this->e);
+check:
+	if (UNLIKELY(echs_nul_event_p(this->ex))) {
+		/* no more exceptions */
+		return e;
+	}
+
+	/* otherwise check if the current exception overlaps with E */
+	if ((echs_instant_le_p(e.from, this->ex.from) &&
+	     !echs_instant_le_p(e.till, this->ex.from)) ||
+	    ((ex_in_past_p = echs_instant_le_p(this->ex.from, e.from)) &&
+	     !echs_instant_le_p(this->ex.till, e.from))) {
+		/* yes it does */
+		e = echs_evstrm_next(this->e);
+		goto check;
+	} else if (ex_in_past_p) {
+		/* we can't say for sure because there could be
+		 * another exception in the range of E */
+		this->ex = echs_evstrm_next(this->x);
+		ex_in_past_p = false;
+		goto check;
+	}
+	/* otherwise it's certainly safe */
+	return e;
 }
 
 static void
