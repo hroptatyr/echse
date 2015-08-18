@@ -66,16 +66,30 @@ struct echs_evstrm_s {
 extern echs_evstrm_t make_echs_evstrm_from_file(const char *fn);
 
 /**
- * Muxer, produce an evstrm that iterates over all evstrms given. */
+ * Muxer, produce an evstrm that iterates over all evstrms given.
+ * The streams are repurposed in the mux and should not be used
+ * at the same time as the mux stream.
+ * For a cloning mux see `echs_evstrm_mux_clon()'. */
 extern echs_evstrm_t echs_evstrm_mux(echs_evstrm_t s, ...);
 
 /**
- * Muxer, same as `echs_evstrm_mux()' but for an array S of size N. */
+ * Muxer, produce an evstrm that iterates over all evstrms given.
+ * Like `echs_evstrm_mux()' but clone the streams before using
+ * them in the mux stream.  That way the input streams can be
+ * used independently of the mux stream afterwards. */
+extern echs_evstrm_t echs_evstrm_mux_clon(echs_evstrm_t s, ...);
+
+/**
+ * Muxer, same as `echs_evstrm_mux()' but for an array S of size N.
+ * Again, for a cloning version see `echs_evstrm_vmux_clon()'. */
 extern echs_evstrm_t echs_evstrm_vmux(const echs_evstrm_t s[], size_t n);
 
 /**
- * Muxer, same as `echs_evstrm_vmux()' but don't clone the event streams. */
-extern echs_evstrm_t make_echs_evmux(echs_evstrm_t s[], size_t n);
+ * Muxer, same as `echs_evstrm_mux_clon()' but for an array S of size N.
+ * Streams in S are cloned before putting them into the mux stream.
+ * That way the streams in S can be used independently of the resulting
+ * mux stream afterwards. */
+extern echs_evstrm_t echs_evstrm_vmux_clon(const echs_evstrm_t s[], size_t n);
 
 /**
  * Demuxer, put at most NTGT streams of S into TGT and return

@@ -619,7 +619,7 @@ echse: Error: cannot open file `%s'", fn);
 	}
 	/* there might be riff raff (NULLs) in the stream array */
 	condense_strms();
-	if (UNLIKELY((smux = make_echs_evmux(strms, nstrms)) == NULL)) {
+	if (UNLIKELY((smux = echs_evstrm_vmux(strms, nstrms)) == NULL)) {
 		/* return early */
 		return 1;
 	}

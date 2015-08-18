@@ -122,12 +122,16 @@ echs_instant_0_p(echs_instant_t x)
 static inline __attribute__((const, pure)) bool
 echs_instant_lt_p(echs_instant_t x, echs_instant_t y)
 {
+	x.H++, x.ms++;
+	y.H++, y.ms++;
 	return x.u < y.u;
 }
 
 static inline __attribute__((const, pure)) bool
 echs_instant_le_p(echs_instant_t x, echs_instant_t y)
 {
+	x.H++, x.ms++;
+	y.H++, y.ms++;
 	return !(x.u > y.u);
 }
 
