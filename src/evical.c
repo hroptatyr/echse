@@ -1736,7 +1736,7 @@ make_evrrul(const struct ical_vevent_s ve[static 1U])
 			     i++, nr++, ve_tmp.rr.r++) {
 				s[nr] = __make_evrrul(&ve_tmp, i);
 			}
-			res = make_echs_evmux(s, nr);
+			res = echs_evstrm_vmux(s, nr);
 		}
 		break;
 	}
