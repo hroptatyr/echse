@@ -1746,7 +1746,7 @@ free_evrrul(echs_evstrm_t s)
 	if (UNLIKELY(this->seq)) {
 		this -= this->seq;
 	}
-	if (--this->ref) {
+	if (!--this->ref) {
 		free(this);
 	}
 	return;
