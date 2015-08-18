@@ -1565,8 +1565,11 @@ static echs_evstrm_t
 make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 {
 	const size_t zev = nev * sizeof(*ev);
-	struct evical_s *res = malloc(sizeof(*res) + zev);
+	struct evical_s *res;
 
+	if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
+		return NULL;
+	}
 	res->class = &evical_cls;
 	res->i = 0U;
 	res->nev = nev;
@@ -1618,7 +1621,43 @@ static echs_evstrm_t
 __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 {
 /* this will degrade into an evical_vevent stream */
-	return NULL;
+	struct evical_s *res;
+	const size_t zev = nd * sizeof(*res->ev);
+	echs_idiff_t dur = echs_instant_diff(e.till, e.from);
+
+	if (nd == 0U) {
+		/* not worth it */
+		return NULL;
+	} else if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
+		/* not possible */
+		return NULL;
+	} else if (nd == 1U) {
+		/* no need to sort things, just spread the one instant */
+		e.from = d[0U];
+		e.till = echs_instant_add(e.from, dur);
+		res->ev[0U] = e;
+	} else {
+		/* blimey, use the bottom bit of res->ev to sort the
+		 * array of instants D and then spread them out in-situ */
+		echs_instant_t *rd =
+			(void*)(((uint8_t*)res->ev + zev) - nd * sizeof(*rd));
+
+		/* copy them instants here so we can sort them */
+		memcpy(rd, d, nd * sizeof(*rd));
+		/* now sort */
+		echs_instant_sort(rd, nd);
+		/* now spread out the instants as echs events */
+		for (size_t i = 0U; i < nd; i++) {
+			e.from = rd[i];
+			e.till = echs_instant_add(e.from, dur);
+			res->ev[i] = e;
+		}
+	}
+	/* just the rest of the book-keeping */
+	res->class = &evical_cls;
+	res->i = 0U;
+	res->nev = nd;
+	return (echs_evstrm_t)res;
 }
 
 
