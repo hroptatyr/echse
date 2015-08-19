@@ -390,7 +390,7 @@ snarf_rrule(const char *s, size_t z)
 					;
 				} else if ((w = snarf_wday(on)) == MIR) {
 					;
-				} else {
+				} else if (tmp >= -53 && tmp <= 53) {
 					/* otherwise assign */
 					ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 				}
