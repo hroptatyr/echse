@@ -500,7 +500,11 @@ snarf_mrule(const char *s, size_t z)
 		}
 		/* find the key-val separator (=) */
 		if (UNLIKELY((kv = strchr(sp, '=')) == NULL)) {
-			kz = eofld - sp;
+			/* hmm? this won't be no use to us, next */
+			continue;
+		} else if (kv > eofld) {
+			/* still no use */
+			continue;
 		} else {
 			kz = kv - sp;
 		}
