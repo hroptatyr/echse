@@ -225,20 +225,37 @@ snarf_freq(const char *spec)
 {
 	switch (*spec) {
 	case 'Y':
-		return FREQ_YEARLY;
-	case 'M':
-		if (UNLIKELY(spec[1] == 'I')) {
-			return FREQ_MINUTELY;
+		if (!strncmp(spec, "YEARLY", strlenof("YEARLY"))) {
+			return FREQ_YEARLY;
 		}
-		return FREQ_MONTHLY;
+		break;
+	case 'M':
+		if (!strncmp(spec, "MINUTELY", strlenof("MINUTELY"))) {
+			return FREQ_MINUTELY;
+		} else if (!strncmp(spec, "MONTHLY", strlenof("MONTHLY"))) {
+			return FREQ_MONTHLY;
+		}
+		break;
 	case 'W':
-		return FREQ_WEEKLY;
+		if (!strncmp(spec, "WEEKLY", strlenof("WEEKLY"))) {
+			return FREQ_WEEKLY;
+		}
+		break;
 	case 'D':
-		return FREQ_DAILY;
+		if (!strncmp(spec, "DAILY", strlenof("DAILY"))) {
+			return FREQ_DAILY;
+		}
+		break;
 	case 'H':
-		return FREQ_HOURLY;
+		if (!strncmp(spec, "HOURLY", strlenof("HOURLY"))) {
+			return FREQ_HOURLY;
+		}
+		break;
 	case 'S':
-		return FREQ_SECONDLY;
+		if (!strncmp(spec, "SECONDLY", strlenof("SECONDLY"))) {
+			return FREQ_SECONDLY;
+		}
+		break;
 	default:
 		break;
 	}
@@ -373,7 +390,7 @@ snarf_rrule(const char *s, size_t z)
 					;
 				} else if ((w = snarf_wday(on)) == MIR) {
 					;
-				} else {
+				} else if (tmp >= -53 && tmp <= 53) {
 					/* otherwise assign */
 					ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 				}
