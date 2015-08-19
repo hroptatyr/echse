@@ -1487,6 +1487,11 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		H_mask = ~H_mask;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
+
 	/* fill up the array the naive way */
 	for (unsigned int w = ymd_get_wday(y, m, d), yd = ymd_get_yd(y, m, d),
 		     maxd = __get_ndom(y, m), maxy = (y % 4U) ? 365 : 366;
@@ -1670,6 +1675,11 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're limiting results, allow all minutes when
 		 * the M bits aren't set */
 		M_mask = ~M_mask;
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
 	}
 
 	/* fill up the array the naive way */
@@ -1857,6 +1867,10 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		S_mask = ~S_mask;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
 
 	/* fill up the array the naive way */
 	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);
