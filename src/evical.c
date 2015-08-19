@@ -55,11 +55,13 @@
 #include "dt-strpf.h"
 #include "evrrul.h"
 #include "evmrul.h"
+#include "evfilt.h"
 #include "nifty.h"
 #include "evical-gp.c"
 #include "evrrul-gp.c"
 #include "evmrul-gp.c"
 #include "evmeth-gp.c"
+#include "evcomp-gp.c"
 #include "fdprnt.h"
 #include "echse-genuid.h"
 
@@ -161,21 +163,11 @@ struct cal_addr_s {
 	}
 
 static void
-add1_to_rrlst(struct rrlst_s *rl, struct rrulsp_s rr)
+add1_to_rrlst(struct rrlst_s *rl, const struct rrulsp_s *rr)
 {
 	CHECK_RESIZE(rl, r, 16U, 1U);
-	rl->r[rl->nr++] = rr;
+	rl->r[rl->nr++] = *rr;
 	return;
-}
-
-static struct rrlst_s
-clon_rrlst(struct rrlst_s rl)
-{
-	struct rrlst_s res = rl;
-
-	res.r = malloc(rl.zr * sizeof(*rl.r));
-	memcpy(res.r, rl.r, rl.nr * sizeof(*rl.r));
-	return res;
 }
 
 static void
@@ -192,16 +184,6 @@ add1_to_dtlst(struct dtlst_s *dl, echs_instant_t dt)
 	CHECK_RESIZE(dl, dt, 64U, 1);
 	dl->dt[dl->ndt++] = dt;
 	return;
-}
-
-static struct dtlst_s
-clon_dtlst(struct dtlst_s dl)
-{
-	struct dtlst_s res = dl;
-
-	res.dt = malloc(dl.zdt * sizeof(*dl.dt));
-	memcpy(res.dt, dl.dt, dl.ndt * sizeof(*dl.dt));
-	return res;
 }
 
 static void
@@ -243,20 +225,37 @@ snarf_freq(const char *spec)
 {
 	switch (*spec) {
 	case 'Y':
-		return FREQ_YEARLY;
-	case 'M':
-		if (UNLIKELY(spec[1] == 'I')) {
-			return FREQ_MINUTELY;
+		if (!strncmp(spec, "YEARLY", strlenof("YEARLY"))) {
+			return FREQ_YEARLY;
 		}
-		return FREQ_MONTHLY;
+		break;
+	case 'M':
+		if (!strncmp(spec, "MINUTELY", strlenof("MINUTELY"))) {
+			return FREQ_MINUTELY;
+		} else if (!strncmp(spec, "MONTHLY", strlenof("MONTHLY"))) {
+			return FREQ_MONTHLY;
+		}
+		break;
 	case 'W':
-		return FREQ_WEEKLY;
+		if (!strncmp(spec, "WEEKLY", strlenof("WEEKLY"))) {
+			return FREQ_WEEKLY;
+		}
+		break;
 	case 'D':
-		return FREQ_DAILY;
+		if (!strncmp(spec, "DAILY", strlenof("DAILY"))) {
+			return FREQ_DAILY;
+		}
+		break;
 	case 'H':
-		return FREQ_HOURLY;
+		if (!strncmp(spec, "HOURLY", strlenof("HOURLY"))) {
+			return FREQ_HOURLY;
+		}
+		break;
 	case 'S':
-		return FREQ_SECONDLY;
+		if (!strncmp(spec, "SECONDLY", strlenof("SECONDLY"))) {
+			return FREQ_SECONDLY;
+		}
+		break;
 	default:
 		break;
 	}
@@ -338,7 +337,11 @@ snarf_rrule(const char *s, size_t z)
 		}
 		/* find the key-val separator (=) */
 		if (UNLIKELY((kv = strchr(sp, '=')) == NULL)) {
-			kz = eofld - sp;
+			/* hmm? this won't be no use to us, next */
+			continue;
+		} else if (kv > eofld) {
+			/* still no use */
+			continue;
 		} else {
 			kz = kv - sp;
 		}
@@ -383,11 +386,14 @@ snarf_rrule(const char *s, size_t z)
 				echs_wday_t w;
 
 				tmp = strtol(++kv, &on, 10);
-				if (on == NULL || (w = snarf_wday(on)) == MIR) {
-					continue;
+				if (UNLIKELY(on == NULL)) {
+					;
+				} else if ((w = snarf_wday(on)) == MIR) {
+					;
+				} else if (tmp >= -53 && tmp <= 53) {
+					/* otherwise assign */
+					ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 				}
-				/* otherwise assign */
-				ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 			} while (on && (kv = strchr(on, ',')) != NULL);
 			break;
 		case BY_MON:
@@ -396,19 +402,30 @@ snarf_rrule(const char *s, size_t z)
 		case BY_SEC:
 			do {
 				on = NULL;
+				/* tmp == 0U is explicitly allowed sometimes
+				 * so do the naught check where it matters */
 				tmp = strtoul(++kv, &on, 10);
+
 				switch (c->key) {
 				case BY_MON:
-					rr.mon = ass_bui31(rr.mon, tmp);
+					if (LIKELY(tmp && tmp <= 12U)) {
+						rr.mon = ass_bui31(rr.mon, tmp);
+					}
 					break;
 				case BY_HOUR:
-					rr.H = ass_bui31(rr.H, tmp);
+					if (LIKELY(tmp <= 24U)) {
+						rr.H = ass_bui31(rr.H, tmp);
+					}
 					break;
 				case BY_MIN:
-					rr.M = ass_bui63(rr.M, tmp);
+					if (LIKELY(tmp < 60U)) {
+						rr.M = ass_bui63(rr.M, tmp);
+					}
 					break;
 				case BY_SEC:
-					rr.S = ass_bui63(rr.S, tmp);
+					if (LIKELY(tmp <= 60U)) {
+						rr.S = ass_bui63(rr.S, tmp);
+					}
 					break;
 				}
 			} while (on && *(kv = on) == ',');
@@ -418,6 +435,39 @@ snarf_rrule(const char *s, size_t z)
 		case BY_WEEK:
 		case BY_YDAY:
 		case BY_POS:
+			/* these ones take +/- values */
+			do {
+				on = NULL;
+				if (UNLIKELY(!(tmp = strtol(++kv, &on, 10)))) {
+					/* we never allow 0 */
+					continue;
+				}
+				switch (c->key) {
+				case BY_MDAY:
+					if (LIKELY(tmp < 32 && tmp > -32)) {
+						rr.dom = ass_bi31(rr.dom, tmp);
+					}
+					break;
+				case BY_WEEK:
+					if (LIKELY(tmp <= 53 && tmp >= -53)) {
+						rr.wk = ass_bi63(rr.wk, tmp);
+					}
+					break;
+				case BY_YDAY:
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.doy, tmp);
+					}
+					break;
+				case BY_POS:
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.pos, tmp);
+					}
+					break;
+				}
+			} while (on && *(kv = on) == ',');
+			break;
+
+			/* extensions */
 		case BY_EASTER:
 		case BY_ADD:
 			/* these ones take +/- values */
@@ -425,23 +475,15 @@ snarf_rrule(const char *s, size_t z)
 				on = NULL;
 				tmp = strtol(++kv, &on, 10);
 				switch (c->key) {
-				case BY_MDAY:
-					rr.dom = ass_bi31(rr.dom, tmp);
-					break;
-				case BY_WEEK:
-					rr.wk = ass_bi63(rr.wk, tmp);
-					break;
-				case BY_YDAY:
-					ass_bi383(&rr.doy, tmp);
-					break;
-				case BY_POS:
-					ass_bi383(&rr.pos, tmp);
-					break;
 				case BY_EASTER:
-					ass_bi383(&rr.easter, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.easter, tmp);
+					}
 					break;
 				case BY_ADD:
-					ass_bi383(&rr.add, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.add, tmp);
+					}
 					break;
 				}
 			} while (on && *(kv = on) == ',');
@@ -475,7 +517,11 @@ snarf_mrule(const char *s, size_t z)
 		}
 		/* find the key-val separator (=) */
 		if (UNLIKELY((kv = strchr(sp, '=')) == NULL)) {
-			kz = eofld - sp;
+			/* hmm? this won't be no use to us, next */
+			continue;
+		} else if (kv > eofld) {
+			/* still no use */
+			continue;
 		} else {
 			kz = kv - sp;
 		}
@@ -562,35 +608,20 @@ snarf_mailto(const char *line, size_t llen)
 }
 
 static int
-snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+snarf_fld(struct ical_vevent_s ve[static 1U],
+	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
-	const char *lp;
-	const char *const ep = line + llen;
-	const char *vp;
-	const struct ical_fld_cell_s *c;
+/* vevent field parser */
 
-	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return -1;
-	} else if (UNLIKELY((c = __evical_fld(line, lp - line)) == NULL)) {
-		return -1;
-	}
-
-	/* obtain the value pointer */
-	if (LIKELY(*(vp = lp) == ':' || (vp = strchr(lp, ':')) != NULL)) {
-		vp++;
-	} else {
-		return -1;
-	}
-
-	switch (c->fld) {
+	switch (fld) {
 	default:
 	case FLD_UNK:
 		/* how did we get here */
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
-		with (echs_instant_t i = snarf_value(lp)) {
-			switch (c->fld) {
+		with (echs_instant_t i = snarf_value(eof)) {
+			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
 				if (!echs_nul_instant_p(ve->e.till)) {
@@ -611,7 +642,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 			if (l.ndt == 0UL) {
 				break;
 			}
-			switch (c->fld) {
+			switch (fld) {
 			case FLD_XDATE:
 				ve->xd = l;
 				break;
@@ -626,14 +657,14 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		/* otherwise snarf him */
 		if_with (struct rrulsp_s r,
 			 (r = snarf_rrule(vp, ep - vp)).freq != FREQ_NONE) {
-			switch (c->fld) {
+			switch (fld) {
 			case FLD_RRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->rr, r);
+				add1_to_rrlst(&ve->rr, &r);
 				break;
 			case FLD_XRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->xr, r);
+				add1_to_rrlst(&ve->xr, &r);
 				break;
 			}
 		}
@@ -793,7 +824,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = snarf_value(lp);
+		ve->e.from = snarf_value(eof);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
@@ -805,20 +836,15 @@ snarf_fld(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 	return 0;
 }
 
-static void
-snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
+static int
+snarf_pro(struct ical_vevent_s ve[static 1U],
+	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
-/* prologue snarfer */
-	const struct ical_fld_cell_s *c;
-	const char *lp;
+/* prologue snarfer, should only be called whilst being in VCAL state */
+	(void)eof;
 
-	if (UNLIKELY((lp = strpbrk(line, ":;")) == NULL)) {
-		return;
-	} else if ((c = __evical_fld(line, lp - line)) == NULL) {
-		return;
-	}
-	/* otherwise inspect the field */
-	switch (c->fld) {
+	/* inspect the field */
+	switch (fld) {
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
 		 * too bad we had to turn these off (b480f83 still has them) */
@@ -829,7 +855,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		 * instructions ... */
 		const struct ical_meth_cell_s *m;
 
-		if ((lp++, m = __evical_meth(lp, llen - (lp - line))) == NULL) {
+		if ((m = __evical_meth(vp, ep - vp)) == NULL) {
 			/* nope, no methods given */
 			break;
 		}
@@ -837,7 +863,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(lp, NULL, 0)) {
+		with (long int i = strtol(vp, NULL, 0)) {
 			if (UNLIKELY(i < 0 || i >= 63)) {
 				ve->t.max_simul = 0U;
 			} else {
@@ -846,10 +872,17 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 		}
 		break;
 
+	case FLD_OWNER:
+		with (long int i = strtol(vp, NULL, 0)) {
+			/* off-by-one assignment here */
+			ve->t.owner = i + 1;
+		}
+		break;
+
 	default:
 		break;
 	}
-	return;
+	return 0;
 }
 
 
@@ -857,8 +890,9 @@ snarf_pro(struct ical_vevent_s ve[static 1U], const char *line, size_t llen)
 struct ical_parser_s {
 	enum {
 		ST_UNK,
-		ST_BODY,
+		ST_VCAL,
 		ST_VEVENT,
+		ST_VOTHER,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -925,22 +959,8 @@ esccpy(char *restrict tgt, size_t tz, const char *src, size_t sz)
 static int
 _ical_init_push(const char *buf, size_t bsz)
 {
-	/* oh they're here for the first time, check
-	 * the first 16 bytes */
-	static const char hdr[] = "BEGIN:VCALENDAR";
-
-	if (UNLIKELY(buf == NULL)) {
+	if (UNLIKELY(buf == NULL || bsz == 0U)) {
 		/* huh? no buffer AND no context? */
-		return -1;
-	}
-
-	/* little probe first
-	 * luckily BEGIN:VCALENDAR\n is exactly 16 bytes */
-	if (bsz < sizeof(hdr) ||
-	    memcmp(buf, hdr, strlenof(hdr)) ||
-	    !(buf[strlenof(hdr)] == '\n' ||
-	      buf[strlenof(hdr)] == '\r')) {
-		/* that's just rubbish, refuse to do anything */
 		return -1;
 	}
 	return 0;
@@ -962,44 +982,187 @@ _ical_proc(struct ical_parser_s p[static 1U])
  * the stash will contain a whole line which is assumed to be consumed */
 	const char *sp = p->stash;
 	const size_t sz = p->six;
+	const char *const ep = sp + sz;
 	struct ical_vevent_s *res = NULL;
+	const char *eofld;
+	const char *vp;
+	const struct ical_fld_cell_s *c;
+
+	if (UNLIKELY((eofld = strpbrk(sp, ":;")) == NULL)) {
+		goto out;
+	} else if (UNLIKELY((c = __evical_fld(sp, eofld - sp)) == NULL)) {
+		goto out;
+	}
+
+	/* obtain the value pointer */
+	if (LIKELY(*(vp = eofld) == ':' || (vp = strchr(eofld, ':')) != NULL)) {
+		vp++;
+	} else {
+		goto out;
+	}
 
 	switch (p->st) {
-		static const char beg[] = "BEGIN:VEVENT";
-		static const char end[] = "END:VEVENT";
+	case ST_UNK:
+		/* we're before or behind a VCALENDAR,
+		 * fingers crossed we find one and can finally start parsing */
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* all bullshit */
+			res = ICAL_EOP;
+			break;
+
+		case FLD_BEGIN:
+			/* oh oh oh, looks promising innit? */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VCAL) {
+				p->st = ST_VOTHER;
+			} else {
+				p->st = ST_VCAL;
+			}
+			break;
+		}
+		break;
 
 	default:
-	case ST_UNK:
-		/*@fallthrough@*/
-	case ST_BODY:
+	case ST_VOTHER:
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* whatever */
+			break;
+		case FLD_BEGIN:
+			/* just up the depth tracker */
+			p->st++;
+			break;
+
+		case FLD_END:
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VCAL) {
+				/* just down the depth tracker */
+				if (p->st-- == ST_VOTHER) {
+					/* and fall back to VCAL */
+					p->st = ST_VCAL;
+				}
+			} else {
+				/* oooh END:VCALENDAR?
+				 * well we better fuck off then */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+			}
+			break;
+		}
+		break;
+
+	case ST_VCAL:
 		/* check for globals */
-		snarf_pro(&p->globve, sp, sz);
-		/* check if line is a new vevent */
-		if (sz >= strlenof(beg) && !strncmp(sp, beg, strlenof(beg))) {
-			/* yep, rinse our bucket */
-			memset(&p->ve, 0, sizeof(p->ve));
-			/* copy global task properties */
-			p->ve.t = p->globve.t;
-			/* and set state to vevent */
-			p->st = ST_VEVENT;
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* we're in a vcalendar component, let the prologue
+			 * snarfer figure out what we want */
+			snarf_pro(&p->globve, c->fld, eofld, vp, ep);
+			break;
+
+		case FLD_BEGIN:
+		case FLD_END:
+			/* oh oh oh, looks promising innit? */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL) {
+				if (UNLIKELY(c->fld == FLD_END)) {
+					/* what's ending here? */
+					p->st = ST_UNK;
+					res = ICAL_EOP;
+					break;
+				} else if (c->fld == FLD_BEGIN) {
+					/* ah something else is starting */
+					p->st = ST_VOTHER;
+					break;
+				}
+				/* not reached */
+			}
+			switch (comp->comp) {
+			case COMP_VEVT:
+				if (LIKELY(c->fld == FLD_BEGIN)) {
+					/* FINALLY a vevent thing */
+					/* rinse our bucket */
+					memset(&p->ve, 0, sizeof(p->ve));
+					/* copy global task properties */
+					p->ve.t = p->globve.t;
+					/* and set state to vevent */
+					p->st = ST_VEVENT;
+					break;
+				}
+				/* otherwise we've ended a VEVENT whilst
+				 * being in a VCALENDAR container, that's
+				 * just plain wrong */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+
+			case COMP_VCAL:
+				if (LIKELY(c->fld == FLD_END)) {
+					/* yay, we're finished */
+					p->st = ST_UNK;
+					res = ICAL_EOP;
+					break;
+				}
+				/*@fallthrough@*/
+			default:
+				/* vcal in vcal? or, worse, some other field? */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+			}
+			break;
 		}
 		break;
 
 	case ST_VEVENT:
-		if (sz >= strlenof(end) && !strncmp(sp, end, strlenof(end))) {
-			/* yep, prepare to report success */
+		/* check for globals */
+		switch (c->fld) {
+			const struct ical_comp_cell_s *comp;
+
+		default:
+			/* pass on field parsing to helper routines */
+			if (snarf_fld(&p->ve, c->fld, eofld, vp, ep) < 0) {
+				/* no state change */
+				;
+			}
+			break;
+
+		case FLD_BEGIN:
+			/* that's utterly bogus, nothing can begin inside
+			 * a VEVENT component */
+			p->st = ST_UNK;
+			res = ICAL_EOP;
+			break;
+
+		case FLD_END:
+			/* yep, that might be legit */
+			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
+			    comp->comp != COMP_VEVT) {
+				/* nope it wasn't legit */
+				p->st = ST_UNK;
+				res = ICAL_EOP;
+				break;
+			}
+			/* return to VCAL state so we can be looking forward
+			 * to other vevents as well */
+
+			/* bang vital globals: owner, etc. */
+			p->ve.t.owner = p->globve.t.owner;
 			/* reset to unknown state */
-			p->st = ST_BODY;
+			p->st = ST_VCAL;
 			res = &p->ve;
 			/* success */
 			break;
 		}
-		/* no state change, interpret the line */
-		if (snarf_fld(&p->ve, sp, sz) < 0) {
-			;
-		}
 		break;
 	}
+out:
 	/* we've consumed him */
 	p->six = 0U;
 	return res;
@@ -1009,7 +1172,6 @@ static struct ical_vevent_s*
 _ical_pull(struct ical_parser_s p[static 1U])
 {
 /* pull-version of read_ical */
-	static const char ftr[] = "END:VCALENDAR";
 	struct ical_vevent_s *res = NULL;
 	const char *eol;
 
@@ -1057,11 +1219,6 @@ chop_more:
 			 * fact a complete line */
 			p->stash[p->six] = '\001';
 		}
-	} else if (UNLIKELY(eol >= BP + strlenof(ftr) &&
-			    !strncmp(BP, ftr, strlenof(ftr)))) {
-		/* oooh it's the end of the whole shebang,
-		 * indicate end-of-parsing */
-		res = ICAL_EOP;
 	} else {
 		const char *bp = BP;
 		const size_t llen = eol - bp;
@@ -1104,70 +1261,6 @@ _ical_fini(struct ical_parser_s p[static 1U])
 	/* dissolve all of it */
 	memset(p, 0, sizeof(*p));
 	return;
-}
-
-static vearr_t
-read_ical(const char *fn)
-{
-	char buf[65536U];
-	size_t nve = 0UL;
-	vearr_t a = NULL;
-	struct ical_parser_s pp = {.buf = NULL};
-	ssize_t nrd;
-	int fd;
-
-	if (fn == NULL/*stdio*/) {
-		fd = STDIN_FILENO;
-	} else if ((fd = open(fn, O_RDONLY)) < 0) {
-		return NULL;
-	}
-
-redo:
-	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		struct ical_vevent_s *ve;
-
-	default:
-		if (UNLIKELY(pp.buf == NULL && _ical_init_push(buf, nrd) < 0)) {
-			/* buffer completely unsuitable for pushing */
-			break;
-		}
-
-		_ical_push(&pp, buf, nrd);
-	case 0:
-		while ((ve = _ical_pull(&pp)) != NULL) {
-			if (UNLIKELY(ve == ICAL_EOP)) {
-				/* oh jolly good */
-				goto undo;
-			}
-			/* just add to vearray */
-			if (a == NULL || nve >= a->nev) {
-				/* resize */
-				const size_t nu = 2 * nve ?: 64U;
-				size_t nz = nu * sizeof(*a->ev);
-
-				a = realloc(a, nz + sizeof(a));
-				a->nev = nu;
-			}
-			/* assign */
-			a->ev[nve++] = *ve;
-		}
-		if (LIKELY(nrd > 0)) {
-			goto redo;
-		}
-		/*@fallthrough@*/
-	undo:
-	case -1:
-		_ical_fini(&pp);
-		break;
-	}
-
-	/* massage result array */
-	if (LIKELY(a != NULL)) {
-		a->nev = nve;
-	}
-
-	close(fd);
-	return a;
 }
 
 
@@ -1240,13 +1333,11 @@ send_ical_hdr(int whither)
 	fdbang(whither);
 
 	fdwrite(beg, strlenof(beg));
-	if (LIKELY(now)) {
-		;
-	} else {
+	if (UNLIKELY(now <= 0)) {
 		struct tm tm;
 		echs_instant_t nowi;
 
-		if (LIKELY((now = time(NULL), gmtime_r(&now, &tm) == NULL))) {
+		if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
 			/* screw up the singleton */
 			now = 0;
 			return;
@@ -1539,8 +1630,11 @@ static echs_evstrm_t
 make_evical_vevent(const struct echs_event_s *ev, size_t nev)
 {
 	const size_t zev = nev * sizeof(*ev);
-	struct evical_s *res = malloc(sizeof(*res) + zev);
+	struct evical_s *res;
 
+	if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
+		return NULL;
+	}
 	res->class = &evical_cls;
 	res->i = 0U;
 	res->nev = nev;
@@ -1587,6 +1681,50 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 	send_ev(whither, this->ev[0U]);
 	return;
 }
+
+static echs_evstrm_t
+__make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
+{
+/* this will degrade into an evical_vevent stream */
+	struct evical_s *res;
+	const size_t zev = nd * sizeof(*res->ev);
+	echs_idiff_t dur = echs_instant_diff(e.till, e.from);
+
+	if (nd == 0U) {
+		/* not worth it */
+		return NULL;
+	} else if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
+		/* not possible */
+		return NULL;
+	} else if (nd == 1U) {
+		/* no need to sort things, just spread the one instant */
+		e.from = d[0U];
+		e.till = echs_instant_add(e.from, dur);
+		res->ev[0U] = e;
+	} else {
+		/* blimey, use the bottom bit of res->ev to sort the
+		 * array of instants D and then spread them out in-situ */
+		echs_instant_t *rd =
+			(void*)(((uint8_t*)res->ev + zev) - nd * sizeof(*rd));
+
+		/* copy them instants here so we can sort them */
+		memcpy(rd, d, nd * sizeof(*rd));
+		/* now sort */
+		echs_instant_sort(rd, nd);
+		/* now spread out the instants as echs events */
+		for (size_t i = 0U; i < nd; i++) {
+			e.from = rd[i];
+			e.till = echs_instant_add(e.from, dur);
+			res->ev[i] = e;
+		}
+	}
+	/* just the rest of the book-keeping */
+	res->class = &evical_cls;
+	res->i = 0U;
+	res->nev = nd;
+	return (echs_evstrm_t)res;
+}
+
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
@@ -1599,13 +1737,11 @@ struct evrrul_s {
 
 	/* sequence counter */
 	size_t seq;
+	/* reference counter */
+	size_t ref;
 
 	/* rrul/xrul */
 	struct rrulsp_s rr;
-	struct rrlst_s xr;
-	/* rdat/xdat */
-	struct dtlst_s rd;
-	struct dtlst_s xd;
 
 	/* proto-duration */
 	echs_idiff_t dur;
@@ -1629,72 +1765,37 @@ static const struct echs_evstrm_class_s evrrul_cls = {
 };
 
 static echs_evstrm_t
-__make_evrrul(const struct ical_vevent_s ve[static 1U], size_t seq)
+__make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 {
-	struct evrrul_s *this = malloc(sizeof(*this));
-	echs_evstrm_t res;
+/* Mux NR rrules RR carried by event E into one stream. */
+	struct evrrul_s *this;
+	const size_t duo = sizeof(*this) + sizeof(this);
+	struct evrrul_s **that;
+
+	if (UNLIKELY(nr == 0U)) {
+		return NULL;
+	} else if (UNLIKELY((this = calloc(nr, duo)) == NULL)) {
+		return NULL;
+	}
+	/* initialise THAT array */
+	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
-	this->e = ve->e;
-	this->seq = seq;
-	this->rr = *ve->rr.r;
-
-	if (ve->xr.nr) {
-		this->xr = ve->xr;
-	} else {
-		this->xr.nr = 0U;
+	this->dur = echs_instant_diff(e.till, e.from);
+	this->e = e;
+	/* bang the first one */
+	this->rr = rr[0U];
+	this->seq = 0U;
+	this->ref = nr;
+	that[0U] = this;
+	/* bang the rest borrowing some fields from the first one */
+	for (size_t i = 1U; i < nr; i++) {
+		this[i] = this[0U];
+		this[i].rr = rr[i];
+		this[i].seq = i;
+		that[i] = this + i;
 	}
-	if (ve->rd.ndt) {
-		this->rd = ve->rd;
-	} else {
-		this->rd.ndt = 0U;
-	}
-	if (ve->xd.ndt) {
-		this->xd = ve->xd;
-	} else {
-		this->xd.ndt = 0U;
-	}
-	this->dur = echs_instant_diff(ve->e.till, ve->e.from);
-	this->rdi = 0UL;
-	this->ncch = 0UL;
-	res = (echs_evstrm_t)this;
-	return res;
-}
-
-static echs_evstrm_t
-make_evrrul(const struct ical_vevent_s ve[static 1U])
-{
-/* here's the deal, we check how many rrules there are, and
- * if it's just one we return a normal evrrul_s object, if
- * it's more than one we generate one evrrul_s object per
- * rrule and mux them together, sharing the resources in VE. */
-	echs_evstrm_t res;
-
-	switch (ve->rr.nr) {
-	case 0:
-		return NULL;
-	case 1:
-		res = __make_evrrul(ve, 0U);
-		break;
-	default:
-		with (echs_evstrm_t s[ve->rr.nr]) {
-			struct ical_vevent_s ve_tmp = *ve;
-			size_t nr = 0UL;
-
-			for (size_t i = 0U; i < ve->rr.nr;
-			     i++, nr++, ve_tmp.rr.r++) {
-				s[nr] = __make_evrrul(&ve_tmp, i);
-			}
-			res = make_echs_evmux(s, nr);
-		}
-		break;
-	}
-	/* we've materialised these */
-	free(ve->rr.r);
-	if (ve->mr.nr) {
-		free(ve->mr.r);
-	}
-	return res;
+	return echs_evstrm_vmux((const echs_evstrm_t*)that, nr);
 }
 
 static void
@@ -1702,16 +1803,12 @@ free_evrrul(echs_evstrm_t s)
 {
 	struct evrrul_s *this = (struct evrrul_s*)s;
 
-	if (this->xr.nr) {
-		free(this->xr.r);
+	if (UNLIKELY(this->seq)) {
+		this -= this->seq;
 	}
-	if (this->rd.ndt) {
-		free(this->rd.dt);
+	if (!--this->ref) {
+		free(this);
 	}
-	if (this->xd.ndt) {
-		free(this->xd.dt);
-	}
-	free(this);
 	return;
 }
 
@@ -1719,19 +1816,15 @@ static echs_evstrm_t
 clone_evrrul(echs_const_evstrm_t s)
 {
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
-	struct evrrul_s *clon = malloc(sizeof(*this));
+	struct evrrul_s *clon;
 
+	if (UNLIKELY((clon = malloc(sizeof(*this))) == NULL)) {
+		return NULL;
+	}
 	*clon = *this;
-	/* clone lists if applicable */
-	if (this->xr.nr) {
-		clon->xr = clon_rrlst(this->xr);
-	}
-	if (this->rd.ndt) {
-		clon->rd = clon_dtlst(this->rd);
-	}
-	if (this->xd.ndt) {
-		clon->xd = clon_dtlst(this->xd);
-	}
+	/* clones are not arranged as sequences anymore */
+	clon->seq = 0U;
+	clon->ref = 1U;
 	return (echs_evstrm_t)clon;
 }
 
@@ -1797,25 +1890,6 @@ refill(struct evrrul_s *restrict strm)
 	}
 	/* otherwise sort the array, just in case */
 	echs_instant_sort(strm->cch, strm->ncch);
-
-	/* also check if we need to rid some dates due to xdates */
-	if (UNLIKELY(strm->xd.ndt > 0UL)) {
-		const echs_instant_t *xd = strm->xd.dt;
-		echs_instant_t *restrict rd = strm->cch;
-		const echs_instant_t *const exd = xd + strm->xd.ndt;
-		const echs_instant_t *const erd = rd + strm->ncch;
-
-		assert(xd != NULL);
-		for (; xd < exd; xd++, rd++) {
-			/* fast forward to xd (we assume it's sorted) */
-			for (; rd < erd && echs_instant_lt_p(*rd, *xd); rd++);
-			/* now we're either on xd or past it */
-			if (echs_instant_eq_p(*rd, *xd)) {
-				/* leave rd out then */
-				*rd = echs_nul_instant();
-			}
-		}
-	}
 	return strm->ncch;
 }
 
@@ -1893,80 +1967,6 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 }
 
 
-echs_evstrm_t
-make_echs_evical(const char *fn)
-{
-	vearr_t a;
-
-	if ((a = read_ical(fn)) == NULL) {
-		return NULL;
-	}
-	/* now split into vevents and rrules */
-	with (echs_evstrm_t s[a->nev]) {
-		echs_event_t ev[a->nev];
-		size_t nev = 0UL;
-		size_t ns = 0UL;
-
-		/* rearrange so that pure vevents sit in ev,
-		 * and rrules somewhere else */
-		for (size_t i = 0U; i < a->nev; i++) {
-			echs_evstrm_t tmp;
-			echs_instant_t *xd;
-
-			if (!a->ev[i].rr.nr && !a->ev[i].rd.ndt) {
-				/* not an rrule but a normal vevent
-				 * just him to the list */
-				ev[nev++] = a->ev[i].e;
-				/* free all the bits and bobs that
-				 * might have been added */
-				if (a->ev[i].xr.nr) {
-					free(a->ev[i].xr.r);
-				}
-				if (a->ev[i].xd.ndt) {
-					free(a->ev[i].xd.dt);
-				}
-				if (a->ev[i].mr.nr) {
-					free(a->ev[i].mr.r);
-				}
-				assert(a->ev[i].rr.r == NULL);
-				continue;
-			}
-			/* it's an rrule, we won't check for
-			 * exdates or exrules because they make
-			 * no sense without an rrule to go with */
-			/* check for exdates here, and sort them */
-			if (UNLIKELY(a->ev[i].xd.ndt > 1UL &&
-				     (xd = a->ev[i].xd.dt) != NULL)) {
-				echs_instant_sort(xd, a->ev[i].xd.ndt);
-			}
-
-			if ((tmp = make_evrrul(a->ev + i)) != NULL) {
-				s[ns++] = tmp;
-			}
-		}
-
-		/* noone's using A anymore, so free it,
-		 * we're reusing all the vevents in A so make sure
-		 * we don't free them */
-		free(a);
-		a = NULL;
-
-		if (nev) {
-			/* sort them */
-			echs_event_sort(ev, nev);
-			/* and materialise into event stream */
-			s[ns++] = make_evical_vevent(ev, nev);
-		}
-		if (UNLIKELY(!ns)) {
-			break;
-		} else if (ns == 1UL) {
-			return *s;
-		}
-		return make_echs_evmux(s, ns);
-	}
-	return NULL;
-}
-
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
@@ -2012,6 +2012,8 @@ echs_read_rrul(const char *s, size_t z)
 static echs_task_t
 make_task(struct ical_vevent_s *ve)
 {
+/* turn our catch-all blob VE into one or more (TASK, STRM) tuples
+ * (the former contains the latter) based on slots set in VE */
 	struct echs_task_s *res;
 	echs_evstrm_t s;
 
@@ -2023,6 +2025,9 @@ make_task(struct ical_vevent_s *ve)
 	if (UNLIKELY(!ve->t.oid)) {
 		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
 	}
+	/* off-by-one correction of owner, this is to indicate
+	 * an unset owner by the value of -1 */
+	ve->t.owner--;
 
 	if (!ve->rr.nr && !ve->rd.ndt) {
 		/* not an rrule but a normal vevent */
@@ -2039,18 +2044,51 @@ make_task(struct ical_vevent_s *ve)
 			free(ve->mr.r);
 		}
 		assert(ve->rr.r == NULL);
+		assert(ve->rd.dt == NULL);
 		s = make_evical_vevent(&ve->e, 1U);
 	} else {
 		/* it's an rrule */
-		echs_instant_t *xd;
+		/* rrule stream (struct evrrul_s* really) */
+		echs_evstrm_t sr;
+		/* exception stream */
+		echs_evstrm_t sx;
 
-		/* check for exdates here, and sort them */
-		if (UNLIKELY(ve->xd.ndt > 1UL &&
-			     (xd = ve->xd.dt) != NULL)) {
-			echs_instant_sort(xd, ve->xd.ndt);
+		/* get a proto exrule stream, composed of all exrules
+		 * in a nicely evmux'd stream */
+		with (echs_evstrm_t xr, x1) {
+			xr = __make_evrrul(ve->e, ve->xr.r, ve->xr.nr);
+			x1 = __make_evrdat(ve->e, ve->xd.dt, ve->xd.ndt);
+
+			if (xr != NULL && x1 != NULL) {
+				/* mux them into one */
+				sx = echs_evstrm_mux(xr, x1, NULL);
+			} else if (xr != NULL) {
+				sx = xr;
+			} else {
+				sx = x1;
+			}
 		}
 
-		s = make_evrrul(ve);
+		with (echs_evstrm_t rr, r1) {
+			rr = __make_evrrul(ve->e, ve->rr.r, ve->rr.nr);
+			r1 = __make_evrdat(ve->e, ve->rd.dt, ve->rd.ndt);
+
+			if (rr != NULL && r1 != NULL) {
+				/* mux them into one */
+				sr = echs_evstrm_mux(rr, r1, NULL);
+			} else if (rr != NULL) {
+				sr = rr;
+			} else {
+				sr = r1;
+			}
+		}
+
+		/* free all resources in the vevent */
+		free_ical_vevent(ve);
+
+		/* special mux this one is, for the SX is an exception
+		 * stream, and SR is known to be a */
+		s = make_evfilt(sr, sx);
 	}
 	/* now massage the task specific fields in VE into an echs_task_t */
 	*res = ve->t;

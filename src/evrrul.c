@@ -875,7 +875,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		     m[nm++] = tmpm);
 
 		/* fill up with a default */
-		if (!nm && ymdp) {
+		if (!nm && ymdp && proto.m) {
 			m[nm++] = proto.m;
 		}
 	}
@@ -902,6 +902,11 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				wd_mask |= 0b1U;
 			}
 		}
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U)) {
+		goto fin;
 	}
 
 	/* fill up the array the hard way */
@@ -943,7 +948,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		fill_yly_eastr(&cand, y, &rr->easter);
 
 		/* extend by ymd */
-		if (!nm) {
+		if (UNLIKELY(!nm && !nd)) {
+			/* don't fill up any ymds */
+			;
+		} else if (!nm) {
 			fill_yly_ymd_all_m(&cand, y, d, nd, wd_mask);
 		} else if (!nd) {
 			fill_yly_ymd_all_d(&cand, y, m, nm, wd_mask);
@@ -1040,6 +1048,11 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				wd_mask |= 0b1U;
 			}
 		}
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U)) {
+		goto fin;
 	}
 
 	/* fill up the array the hard way */
@@ -1159,6 +1172,11 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're subtractive, allow all months in the m_mask if
 		 * all of the actual mask months are 0 */
 		m_mask |= 0b1111111111110U;
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
 	}
 
 	if (wd_mask) {
@@ -1326,6 +1344,11 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		negd_mask = 0b11111111111111111111111111111111U;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, w = ymd_get_wday(y, m, d),
 		     maxd = __get_ndom(y, m);
@@ -1474,6 +1497,11 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		H_mask = ~H_mask;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
+
 	/* fill up the array the naive way */
 	for (unsigned int w = ymd_get_wday(y, m, d), yd = ymd_get_yd(y, m, d),
 		     maxd = __get_ndom(y, m), maxy = (y % 4U) ? 365 : 366;
@@ -1517,7 +1545,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			int tmp;
 			for (bitint_iter_t doyi = 0UL;
 			     (tmp = bi383_next(&doyi, &rr->doy), doyi);) {
-				if (tmp > 0 && tmp == yd ||
+				if (tmp > 0 && (unsigned int)tmp == yd ||
 				    tmp < 0 && maxy - ++tmp == yd) {
 					/* that's clearly a match */
 					goto bang;
@@ -1657,6 +1685,11 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* because we're limiting results, allow all minutes when
 		 * the M bits aren't set */
 		M_mask = ~M_mask;
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
 	}
 
 	/* fill up the array the naive way */
@@ -1844,6 +1877,10 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		S_mask = ~S_mask;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
 
 	/* fill up the array the naive way */
 	for (unsigned int w = ymd_get_wday(y, m, d), maxd = __get_ndom(y, m);

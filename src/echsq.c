@@ -207,6 +207,7 @@ poll1(int fd, int timeo)
 			/* pushing more is insane */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 	drain:
 		ins = echs_evical_pull(&rp);
@@ -263,6 +264,7 @@ more:
 			/* pushing more brings nothing */
 			break;
 		}
+		/*@fallthrough@*/
 	case 0:
 		do {
 			ins = echs_evical_pull(&pp);
@@ -281,7 +283,7 @@ more:
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
-		break;
+		/*@fallthrough@*/
 	case -1:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
@@ -475,9 +477,11 @@ END:VCALENDAR\n";
 		}
 
 		fdwrite(ftr, strlenof(ftr));
+		nout++;
 	}
 	(void)fdputc;
 	fdflush();
+	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
 	return 0;

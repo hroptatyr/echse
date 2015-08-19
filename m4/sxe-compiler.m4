@@ -307,9 +307,6 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 	dnl SXE_CHECK_COMPILER_FLAG([-Wp64], [
 	dnl 	warnflags="$warnflags -Wp64"])
 
-	SXE_CHECK_COMPILER_FLAG([-Wstrict-aliasing], [
-		warnflags="$warnflags -Wstrict-aliasing"])
-
 	SXE_CHECK_COMPILER_FLAG([-w3], [
 		warnflags="$warnflags -w3"])
 

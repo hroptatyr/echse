@@ -46,10 +46,6 @@ typedef void *ical_parser_t;
 
 
 /**
- * Stream ctor, from .ics file FN. */
-extern echs_evstrm_t make_echs_evical(const char *fn);
-
-/**
  * Initialise ical printing. */
 extern void echs_prnt_ical_init(void);
 

@@ -179,7 +179,7 @@ free_evmux(echs_evstrm_t s)
 
 	if (LIKELY(this->s != NULL)) {
 		for (size_t i = 0; i < this->ns; i++) {
-			if (UNLIKELY(this->s[i] != NULL)) {
+			if (LIKELY(this->s[i] != NULL)) {
 				free_echs_evstrm(this->s[i]);
 			}
 		}
@@ -243,46 +243,106 @@ echs_evstrm_mux(echs_evstrm_t s, ...)
 }
 
 echs_evstrm_t
+echs_evstrm_mux_clon(echs_evstrm_t s, ...)
+{
+	va_list ap;
+	size_t nstrm = 0U;
+	echs_evstrm_t *strm;
+	size_t allocz;
+
+	if (UNLIKELY(s == NULL)) {
+		return NULL;
+	}
+	/* otherwise we've got at least 1 argument */
+	strm = malloc((allocz = 16U) + sizeof(*strm));
+	va_start(ap, s);
+	for (; s != NULL; s = va_arg(ap, echs_evstrm_t)) {
+		if (nstrm >= allocz) {
+			strm = realloc(strm, (allocz *= 2) * sizeof(*strm));
+		}
+		strm[nstrm++] = s;
+	}
+	va_end(ap);
+	return make_evmux(strm, nstrm);
+}
+
+echs_evstrm_t
 echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 {
 	echs_evstrm_t *strm;
-	size_t nstrm = 0UL;
+	size_t nstrm = n;
+	size_t strm1 = 0U;
 
-	if (UNLIKELY(s == NULL || n == 0UL)) {
+	if (UNLIKELY(s == NULL)) {
+		/* that was quick */
 		return NULL;
+	}
+
+	for (size_t i = 0U; i < n; i++) {
+		if (UNLIKELY(s[i] == NULL)) {
+			nstrm--;
+			if (UNLIKELY(i == strm1)) {
+				strm1++;
+			}
+		}
+	}
+
+	if (UNLIKELY(nstrm == 0UL)) {
+		return NULL;
+	} else if (UNLIKELY(nstrm == 1UL)) {
+		return s[strm1];
 	}
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
-	strm = malloc(n * sizeof(*strm));
-	for (size_t i = 0U; i < n; i++) {
-		echs_evstrm_t stmp;
-
-		if (UNLIKELY(s[i] == NULL)) {
-			;
-		} else if (UNLIKELY((stmp = clone_echs_evstrm(s[i])) == NULL)) {
-			;
-		} else {
-			strm[nstrm++] = stmp;
+	strm = malloc(nstrm * sizeof(*strm));
+	if (LIKELY(nstrm == n)) {
+		memcpy(strm, s, n * sizeof(*s));
+	} else {
+		for (size_t i = strm1, j = 0U; i < n; i++) {
+			if (s[i] != NULL) {
+				strm[j++] = s[i];
+			}
 		}
 	}
 	return make_evmux(strm, nstrm);
 }
 
 echs_evstrm_t
-make_echs_evmux(echs_evstrm_t s[], size_t n)
+echs_evstrm_vmux_clon(const echs_evstrm_t s[], size_t n)
 {
 	echs_evstrm_t *strm;
 	size_t nstrm = n;
+	size_t strm1 = 0U;
 
-	if (UNLIKELY(s == NULL || n == 0UL)) {
+	if (UNLIKELY(s == NULL)) {
+		/* that was quick */
 		return NULL;
-	} else if (UNLIKELY(n == 1UL)) {
-		return *s;
+	}
+
+	for (size_t i = 0U; i < n; i++) {
+		if (UNLIKELY(s[i] == NULL)) {
+			nstrm--;
+			if (UNLIKELY(i == strm1)) {
+				strm1++;
+			}
+		}
+	}
+
+	if (UNLIKELY(nstrm == 0UL)) {
+		return NULL;
+	} else if (UNLIKELY(nstrm == 1UL)) {
+		return s[strm1];
 	}
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
-	strm = malloc(n * sizeof(*strm));
-	memcpy(strm, s, n * sizeof(*s));
+	strm = malloc(nstrm * sizeof(*strm));
+	for (size_t i = strm1, j = 0U; i < n; i++) {
+		if (UNLIKELY(s[i] == NULL)) {
+			;
+		} else if ((strm[j] = clone_echs_evstrm(s[i])) != NULL) {
+			j++;
+		}
+	}
 	return make_evmux(strm, nstrm);
 }
 
@@ -313,14 +373,8 @@ make_echs_evstrm_from_file(const char *fn)
 {
 /* just try the usual readers for now,
  * DSO support and config files will come later */
-	echs_evstrm_t s;
-
-	if (0) {
-		;
-	} else if ((s = make_echs_evical(fn)) != NULL) {
-		;
-	}
-	return s;
+	(void)fn;
+	return NULL;
 }
 
 /* evstrm.c ends here */
