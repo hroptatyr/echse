@@ -418,8 +418,6 @@ snarf_rrule(const char *s, size_t z)
 		case BY_WEEK:
 		case BY_YDAY:
 		case BY_POS:
-		case BY_EASTER:
-		case BY_ADD:
 			/* these ones take +/- values */
 			do {
 				on = NULL;
@@ -448,6 +446,18 @@ snarf_rrule(const char *s, size_t z)
 						ass_bi383(&rr.pos, tmp);
 					}
 					break;
+				}
+			} while (on && *(kv = on) == ',');
+			break;
+
+			/* extensions */
+		case BY_EASTER:
+		case BY_ADD:
+			/* these ones take +/- values */
+			do {
+				on = NULL;
+				tmp = strtol(++kv, &on, 10);
+				switch (c->key) {
 				case BY_EASTER:
 					if (LIKELY(tmp <= 366 && tmp >= -366)) {
 						ass_bi383(&rr.easter, tmp);
