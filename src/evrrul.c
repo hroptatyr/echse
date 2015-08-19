@@ -1186,6 +1186,11 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, maxd = __get_ndom(y, m); res < nti;
 	     ({
@@ -1327,6 +1332,11 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		 * all of the actual day-of-months are 0 */
 		posd_mask = 0b11111111111111111111111111111111U;
 		negd_mask = 0b11111111111111111111111111111111U;
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
 	}
 
 	/* fill up the array the hard way */
