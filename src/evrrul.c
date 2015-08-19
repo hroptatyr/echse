@@ -1545,7 +1545,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			int tmp;
 			for (bitint_iter_t doyi = 0UL;
 			     (tmp = bi383_next(&doyi, &rr->doy), doyi);) {
-				if (tmp > 0 && tmp == yd ||
+				if (tmp > 0 && (unsigned int)tmp == yd ||
 				    tmp < 0 && maxy - ++tmp == yd) {
 					/* that's clearly a match */
 					goto bang;
