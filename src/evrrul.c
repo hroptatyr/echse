@@ -904,6 +904,11 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U)) {
+		goto fin;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
 		bitint383_t cand = {0U};
@@ -1045,6 +1050,11 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U)) {
+		goto fin;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries;
 	     ({
@@ -1164,6 +1174,11 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		m_mask |= 0b1111111111110U;
 	}
 
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
+		goto fin;
+	}
+
 	if (wd_mask) {
 		unsigned int w = ymd_get_wday(y, m, d);
 
@@ -1184,11 +1199,6 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				j += 4U;
 			}
 		}
-	}
-
-	/* check ranges before filling */
-	if (UNLIKELY(y < 1600U || !m || m > 12U || !d || d > 31U)) {
-		goto fin;
 	}
 
 	/* fill up the array the hard way */
