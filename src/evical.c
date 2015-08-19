@@ -369,11 +369,14 @@ snarf_rrule(const char *s, size_t z)
 				echs_wday_t w;
 
 				tmp = strtol(++kv, &on, 10);
-				if (on == NULL || (w = snarf_wday(on)) == MIR) {
-					continue;
+				if (UNLIKELY(on == NULL)) {
+					;
+				} else if ((w = snarf_wday(on)) == MIR) {
+					;
+				} else {
+					/* otherwise assign */
+					ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 				}
-				/* otherwise assign */
-				ass_bi447(&rr.dow, pack_cd(CD(tmp, w)));
 			} while (on && (kv = strchr(on, ',')) != NULL);
 			break;
 		case BY_MON:
@@ -382,19 +385,30 @@ snarf_rrule(const char *s, size_t z)
 		case BY_SEC:
 			do {
 				on = NULL;
+				/* tmp == 0U is explicitly allowed sometimes
+				 * so do the naught check where it matters */
 				tmp = strtoul(++kv, &on, 10);
+
 				switch (c->key) {
 				case BY_MON:
-					rr.mon = ass_bui31(rr.mon, tmp);
+					if (LIKELY(tmp && tmp <= 12U)) {
+						rr.mon = ass_bui31(rr.mon, tmp);
+					}
 					break;
 				case BY_HOUR:
-					rr.H = ass_bui31(rr.H, tmp);
+					if (LIKELY(tmp <= 24U)) {
+						rr.H = ass_bui31(rr.H, tmp);
+					}
 					break;
 				case BY_MIN:
-					rr.M = ass_bui63(rr.M, tmp);
+					if (LIKELY(tmp < 60U)) {
+						rr.M = ass_bui63(rr.M, tmp);
+					}
 					break;
 				case BY_SEC:
-					rr.S = ass_bui63(rr.S, tmp);
+					if (LIKELY(tmp <= 60U)) {
+						rr.S = ass_bui63(rr.S, tmp);
+					}
 					break;
 				}
 			} while (on && *(kv = on) == ',');
@@ -409,25 +423,40 @@ snarf_rrule(const char *s, size_t z)
 			/* these ones take +/- values */
 			do {
 				on = NULL;
-				tmp = strtol(++kv, &on, 10);
+				if (UNLIKELY(!(tmp = strtol(++kv, &on, 10)))) {
+					/* we never allow 0 */
+					continue;
+				}
 				switch (c->key) {
 				case BY_MDAY:
-					rr.dom = ass_bi31(rr.dom, tmp);
+					if (LIKELY(tmp < 32 && tmp > -32)) {
+						rr.dom = ass_bi31(rr.dom, tmp);
+					}
 					break;
 				case BY_WEEK:
-					rr.wk = ass_bi63(rr.wk, tmp);
+					if (LIKELY(tmp <= 53 && tmp >= -53)) {
+						rr.wk = ass_bi63(rr.wk, tmp);
+					}
 					break;
 				case BY_YDAY:
-					ass_bi383(&rr.doy, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.doy, tmp);
+					}
 					break;
 				case BY_POS:
-					ass_bi383(&rr.pos, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.pos, tmp);
+					}
 					break;
 				case BY_EASTER:
-					ass_bi383(&rr.easter, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.easter, tmp);
+					}
 					break;
 				case BY_ADD:
-					ass_bi383(&rr.add, tmp);
+					if (LIKELY(tmp <= 366 && tmp >= -366)) {
+						ass_bi383(&rr.add, tmp);
+					}
 					break;
 				}
 			} while (on && *(kv = on) == ',');
