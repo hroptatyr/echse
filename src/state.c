@@ -41,22 +41,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "boobs.h"
 #include "state.h"
 #include "nifty.h"
 
 /* a hash is the bucket locator and a chksum for collision detection */
-typedef struct {
-	size_t idx;
-	uint_fast32_t chk;
-} hash_t;
+typedef uint_fast32_t hash_t;
 
-/* the beef table */
+/* the beef table, seeing as we've got only 64 states to hand out,
+ * just make the hash table twice as big and never resize */
 static struct {
 	echs_state_t st;
-	uint_fast32_t ck;
-} *sstk;
-/* alloc size, 2-power */
-static size_t zstk;
+	hash_t hx;
+} sstk[128U];
 /* number of elements */
 static size_t nstk;
 
@@ -72,23 +69,71 @@ static size_t sti;
 static hash_t
 murmur(const uint8_t *str, size_t len)
 {
-/* tokyocabinet's hasher */
-	size_t idx = 19780211U;
-	uint_fast32_t hash = 751U;
-	const uint8_t *rp = str + len;
+/* See http://murmurhash.googlepages.com/ for info about the Murmur hash.
+ * Murmur is a non-cryptographic hashing hash  is by Austin Appleby. */
+	const uint_fast32_t c1 = 0xcc9e2d51U;
+	const uint_fast32_t c2 = 0x1b873593U;
+	const size_t nb = len / 4U;
+	const size_t nr = len % 4U;
+	const uint8_t *const tail = (const uint8_t*)(str + nb * 4U);
+#if BYTE_ORDER == LITTLE_ENDIAN
+	const uint32_t *b = (const uint32_t*)tail;
+#endif	/* LITTLE_ENDIAN */
+	hash_t h = 0U;
+	hash_t k;
 
-	while (len--) {
-		idx = idx * 37U + *str++;
-		hash = (hash * 31U) ^ *--rp;
+	for (ssize_t i = -nb; i; i++) {
+#if BYTE_ORDER == LITTLE_ENDIAN
+		k = b[i];
+#elif BYTE_ORDER == BIG_ENDIAN
+		k = 0U;
+		k ^= tail[4 * i + 0] << 0U;
+		k ^= tail[4 * i + 1] << 8U;
+		k ^= tail[4 * i + 2] << 16U;
+		k ^= tail[4 * i + 3] << 24U;
+#else
+# warning byte order detection failed, expect bogosity
+#endif	/* BYTE_ORDERS */
+		k *= c1;
+		k &= 0xffffffffU;
+		k = (k << 15U) ^ (k >> (32U - 15U));
+		k *= c2;
+		h ^= k;
+		h &= 0xffffffffU;
+		h = (h << 13U) ^ (h >> (32U - 13U));
+		h = (h * 5U) + 0xe6546b64U;
 	}
-	return (hash_t){idx, hash};
-}
+	/* reset k and process the tail */
+	k = 0U;
+	switch (nr) {
+	case 3U:
+		k ^= tail[2U] << 16U;
+		/*@fallthrough@*/
+	case 2U:
+		k ^= tail[1U] << 8U;
+		/*@fallthrough@*/
+	case 1U:
+		k ^= tail[0U] << 0U;
+		k *= c1;
+		k &= 0xffffffffU;
+		k = (k << 15U) | (k >> (32U - 15U));
+		k *= c2;
+		h ^= k;
+		/*@fallthrough@*/
+	case 0U:
+		break;
+	}
 
-static inline size_t
-get_off(size_t idx, size_t mod)
-{
-	/* no need to negate MOD as it's a 2-power */
-	return -idx % mod;
+	h ^= nb;
+	h &= 0xffffffffU;
+	h ^= h >> 16U;
+	h *= 0x85ebca6bU;
+	h &= 0xffffffffU;
+	h ^= h >> 13U;
+	h *= 0xc2b2ae35U;
+	h &= 0xffffffffU;
+	h ^= h >> 16U;
+	return h;
 }
 
 static void*
@@ -137,30 +182,22 @@ add_state(const char *str, size_t len)
 		/* don't bother */
 		return 0U;
 	}
-	for (const hash_t hx = murmur((const uint8_t*)str, len);;) {
-		/* just try what we've got */
-		for (size_t mod = SSTK_MINZ; mod <= zstk; mod *= 2U) {
-			size_t off = get_off(hx.idx, mod);
+	with (const hash_t hx = murmur((const uint8_t*)str, len)) {
+		const size_t off = hx % countof(sstk);
 
-			if (LIKELY(sstk[off].ck == hx.chk)) {
-				/* found him */
-				return sstk[off].st;
-			} else if (!sstk[off].st) {
-				/* found empty slot */
-				echs_state_t st = make_state(str, len);
-				sstk[off].st = st;
-				sstk[off].ck = hx.chk;
-				nstk++;
-				return st;
-			}
-		}
-		/* quite a lot of collisions, resize then */
-		with (size_t nu = (zstk * 2U) ?: SSTK_MINZ) {
-			sstk = recalloc(sstk, zstk, nu, sizeof(*sstk));
-			zstk = nu;
+		if (LIKELY(sstk[off].hx == hx)) {
+			/* found him (or super-collision) */
+			return sstk[off].st;
+		} else if (!sstk[off].hx) {
+			/* found empty slot */
+			echs_state_t st = make_state(str, len);
+			sstk[off].st = st;
+			sstk[off].hx = hx;
+			nstk++;
+			return st;
 		}
 	}
-	/* not reached */
+	return 0U;
 }
 
 echs_state_t
@@ -172,18 +209,14 @@ get_state(const char *str, size_t len)
 	}
 	/* just try what we've got */
 	with (const hash_t hx = murmur((const uint8_t*)str, len)) {
-		for (size_t mod = SSTK_MINZ; mod <= zstk; mod *= 2U) {
-			size_t off = get_off(hx.idx, mod);
+		const size_t off = hx % countof(sstk);
 
-			if (LIKELY(sstk[off].ck == hx.chk)) {
-				/* found him */
-				return sstk[off].st;
-			} else if (!sstk[off].st) {
-				/* found empty slot, means the state is nul */
-				break;
-			}
+		if (LIKELY(sstk[off].hx == hx)) {
+			/* found him */
+			return sstk[off].st;
 		}
 	}
+	/* couldn't find him */
 	return 0U;
 }
 
@@ -199,11 +232,7 @@ state_name(echs_state_t st)
 void
 clear_states(void)
 {
-	if (LIKELY(sstk != NULL)) {
-		free(sstk);
-	}
-	sstk = NULL;
-	zstk = 0U;
+	memset(sstk, 0, sizeof(sstk));
 	nstk = 0U;
 	if (LIKELY(sts != NULL)) {
 		free(sts);
