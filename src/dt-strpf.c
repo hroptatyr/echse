@@ -98,152 +98,158 @@ dt_strp(const char *str)
 		goto nul;
 	}
 	/* read the year */
-	for (; *sp >= '0' && *sp <= '9'; sp++) {
-		tmp *= 10U;
-		tmp += *sp - '0';
-	}
 	switch (*sp++) {
-	case '-':
-		/* just the year then? */
-		if (tmp < 1583U || tmp > 4095U) {
-			goto nul;
+		/* allow 19yy and 20yy */
+	case '1':
+		if ((uint8_t)(*sp ^ '0') == 9U) {
+			tmp = 1900U;
+			goto yr;
 		}
-		/* yep, just the year */
-		res.y = tmp;
-
-		/* snarf month */
-		switch (*sp++) {
-		case '0':
-			if (*sp > '0' && *sp <= '9') {
-				tmp = *sp++ - '0';
+		goto nul;
+	case '2':
+		if ((uint8_t)(*sp ^ '0') == 0U) {
+			tmp = 2000U;
+			goto yr;
+		}
+		goto nul;
+	yr:
+		if ((uint8_t)(*++sp ^ '0') < 10U) {
+			tmp += 10U * (*sp ^ '0');
+			if ((uint8_t)(*++sp ^ '0') < 10U) {
+				tmp += *sp++ ^ '0';
 				break;
 			}
-			goto nul;
-		case '1':
-			if (*sp >= '0' && *sp <= '2') {
-				tmp = 10U + *sp++ - '0';
-				break;
-			}
-			goto nul;
-		default:
-			goto nul;
 		}
-		res.m = tmp;
-
-		/* snarf mday, ... if there's a separator */
-		if (*sp++ != '-') {
-			goto nul;
-		}
-		switch (*sp++) {
-		case '0':
-			tmp = 0U;
-			break;
-		case '1':
-			tmp = 10U;
-			break;
-		case '2':
-			tmp = 20U;
-			break;
-		case '3':
-			tmp = 30U;
-			break;
-		default:
-			goto nul;
-		}
-		if (*sp >= '0' && *sp <= '9') {
-			tmp += *sp++ - '0';
-			res.d = tmp;
-		} else {
-			goto nul;
-		}
-		if (*sp != 'T' && *sp != ' ') {
-			res.H = ECHS_ALL_DAY;
-			goto res;
-		}
-		sp++;
-		/* fallthrough */
-	case 'T':
-	case ' ':
-		if (tmp >= 15830101U && tmp <= 40951231U) {
-			/* in case we had no separators */
-			res.y = tmp / 10000U;
-			res.m = (tmp / 100U) % 100U;
-			res.d = (tmp % 100U);
-		}
-		break;
-
+		goto nul;
 	default:
-		if (tmp >= 15830101U && tmp <= 40951231U) {
-			res.y = tmp / 10000U;
-			res.m = (tmp / 100U) % 100U;
-			res.d = (tmp % 100U);
-			res.H = ECHS_ALL_DAY;
+		/* rubbish */
+		goto nul;
+	}
+	/* year can be set now */
+	res.y = tmp;
+
+	/* advance over ISO-8601 dash */
+	if (*sp == '-') {
+		sp++;
+	}
+
+	/* snarf month */
+	switch (*sp++) {
+	case '0':
+		if ((uint8_t)(*sp ^ '0') < 10U) {
+			tmp = *sp++ ^ '0';
+			break;
 		}
+		goto nul;
+	case '1':
+		if ((uint8_t)(*sp ^ '0') < 10U) {
+			tmp = 10U + (*sp++ ^ '0');
+			break;
+		}
+		goto nul;
+	default:
+		goto nul;
+	}
+	/* that's the month gone */
+	res.m = tmp;
+
+	/* again, advance over ISO-8601 separator */
+	if (*sp == '-') {
+		sp++;
+	}
+
+	/* snarf mday, ... if there's a separator */
+	switch (*sp++) {
+	case '0':
+		tmp = 0U;
+		break;
+	case '1':
+		tmp = 10U;
+		break;
+	case '2':
+		tmp = 20U;
+		break;
+	case '3':
+		tmp = 30U;
+		break;
+	default:
+		goto nul;
+	}
+	if ((uint8_t)(*sp ^ '0') < 10U) {
+		tmp += *sp++ ^ '0';
+		res.d = tmp;
+	} else {
+		goto nul;
+	}
+
+	if (*sp != 'T' && *sp != ' ') {
+		res.H = ECHS_ALL_DAY;
 		goto res;
 	}
 
 	/* and now parse the time */
-	for (tmp = 0U; *sp >= '0' && *sp <= '9'; sp++) {
-		tmp *= 10U;
-		tmp += *sp - '0';
-	}
+	tmp = 0U, sp++;
 	switch (*sp++) {
-	case ':':
-		/* oh we're doing it the slow way */
-		if (tmp > 23U) {
-			goto nul;
+	case '2':
+		tmp = 20U;
+		if ((uint8_t)(*sp ^ '0') < 4U) {
+			tmp += *sp++ ^ '0';
+			break;
 		}
-		res.H = tmp;
-
-		/* parse minute */
-		if (sp[0] >= '0' && sp[0] <= '5' &&
-		    sp[1] >= '0' && sp[1] <= '9') {
-			res.M = 10 * (sp[0] - '0') + sp[1] - '0';
-		} else {
-			goto nul;
+		goto nul;
+	case '1':
+		tmp = 10U;
+	case '0':
+		if ((uint8_t)(*sp ^ '0') < 10U) {
+			tmp += *sp++ ^ '0';
+			break;
 		}
-		if (sp[2] != ':') {
-			goto nul;
-		}
-		sp += 3;
-		/* parse second */
-		if ((sp[0] >= '0' && sp[0] <= '5' &&
-		     sp[1] >= '0' && sp[1] <= '9') ||
-		    (sp[0] == '6' && sp[1] == '0')) {
-			res.S = 10 * (sp[0] - '0') + sp[1] - '0';
-		} else {
-			goto nul;
-		}
-		if (sp[2] != '.') {
-			res.ms = ECHS_ALL_SEC;
-			goto res;
-		}
-		/* fallthrough */
-		sp += 3;
-	case '.':
-		if (tmp <= 235960U) {
-			res.H = tmp / 10000U;
-			res.M = (tmp / 100U) % 100U;
-			res.S = tmp % 100U;
-			res.ms = ECHS_ALL_SEC;
-		}
-		break;
+		goto nul;
 	default:
-		if (tmp <= 235960U) {
-			res.H = tmp / 10000U;
-			res.M = (tmp / 100U) % 100U;
-			res.S = tmp % 100U;
-			res.ms = ECHS_ALL_SEC;
-		}
+		/* rubbish */
+		goto nul;
+	}
+	/* big success */
+	res.H = tmp;
+
+	/* furthermore, we demand minutes */
+	if (*sp == ':') {
+		sp++;
+	}
+	if ((uint8_t)(*sp ^ '0') < 6U &&
+	    (tmp = 10U * (*sp++ ^ '0'), (uint8_t)(*sp ^ '0') < 10U)) {
+		tmp += *sp++ ^ '0';
+	} else {
+		goto nul;
+	}
+	res.M = tmp;
+
+	/* seconds are optional */
+	if (*sp == ':') {
+		sp++;
+	}
+	if (sp[0U] == '6' && sp[1U] == '0') {
+		tmp = 60U;
+		sp += 2U;
+	} else if ((uint8_t)(*sp ^ '0') < 6U &&
+		   (tmp = 10U * (*sp++ ^ '0'), (uint8_t)(*sp ^ '0') < 10U)) {
+		tmp += *sp++ ^ '0';
+	} else {
+		tmp = 0U;
+	}
+	res.S = tmp;
+
+	if (*sp != '.') {
+		res.ms = ECHS_ALL_SEC;
 		goto res;
 	}
 
 	/* millisecond part */
-	for (tmp = 0U; tmp < 100U && *sp >= '0' && *sp <= '9'; sp++) {
+	for (tmp = 100U; tmp < 100000U && (uint8_t)(*sp ^ '0') < 10U; sp++) {
 		tmp *= 10U;
-		tmp += *sp - '0';
+		tmp += *sp ^ '0';
 	}
-	res.ms = tmp;
+	res.ms = tmp % 1000U;
 res:
 	return res;
 nul:

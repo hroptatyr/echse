@@ -208,18 +208,6 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 }
 
 
-static echs_instant_t
-snarf_value(const char *s)
-{
-	echs_instant_t res = {.u = 0U};
-	const char *sp;
-
-	if (LIKELY((sp = strchr(s, ':')) != NULL)) {
-		res = dt_strp(sp + 1);
-	}
-	return res;
-}
-
 static echs_freq_t
 snarf_freq(const char *spec)
 {
@@ -612,6 +600,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
 /* vevent field parser */
+	(void)eof;
 
 	switch (fld) {
 	default:
@@ -620,7 +609,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
-		with (echs_instant_t i = snarf_value(eof)) {
+		with (echs_instant_t i = dt_strp(vp)) {
 			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
@@ -824,7 +813,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = snarf_value(eof);
+		ve->e.from = dt_strp(vp);;
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
