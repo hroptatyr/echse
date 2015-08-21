@@ -12,12 +12,6 @@ compiler:
   - gcc
   - clang
 
-addons:
-  apt:
-    packages:
-      - gperf
-      - libev-dev
-
 before_script:
   - autoreconf -vfi
 
@@ -38,6 +32,10 @@ notifications:
     - devel@fresse.org
 
 addons:
+  apt:
+    packages:
+      - gperf
+      - libev-dev
   coverity_scan:
     project:
       name: "hroptatyr/echse"
