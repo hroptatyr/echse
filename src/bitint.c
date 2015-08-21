@@ -127,7 +127,9 @@ bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi)
 			res = ij * POS_BITZ + ip;
 			*iter = res + 1U;
 		}
-	} else if (*iter > countof(bi->pos) * POS_BITZ) {
+	} else if (*iter > countof(bi->pos) * POS_BITZ &&
+		   *iter < countof(bi->neg) * NEG_BITZ +
+		   countof(bi->pos) * POS_BITZ) {
 		/* negatives */
 		uint32_t tmp;
 
@@ -232,7 +234,9 @@ bi447_next(bitint_iter_t *restrict iter, const bitint447_t *bi)
 			res = ij * POS_BITZ + ip;
 			*iter = res + 1U;
 		}
-	} else if (*iter > countof(bi->pos) * POS_BITZ) {
+	} else if (*iter > countof(bi->pos) * POS_BITZ &&
+		   *iter < countof(bi->pos) * NEG_BITZ +
+		   countof(bi->pos) * POS_BITZ) {
 		/* negatives */
 		uint32_t tmp;
 
