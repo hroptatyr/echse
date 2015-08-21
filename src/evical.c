@@ -1380,10 +1380,12 @@ send_stset(int whither, echs_stset_t sts)
 	/* print list of states,
 	 * we should probably use an iter from state.h here */
 	while (st++, sts >>= 1U) {
+		const char *sn;
 		for (; sts && !(sts & 0b1U); sts >>= 1U, st++);
-		fdputc(',');
-		with (const char *sn = state_name(st)) {
+
+		if (LIKELY((sn = state_name(st)) != NULL)) {
 			size_t sz = strlen(sn);
+			fdputc(',');
 			fdwrite(sn, sz);
 		}
 	}
