@@ -278,6 +278,10 @@ yd_to_md(unsigned int y, int doy)
 	unsigned int beef;
 	unsigned int cake;
 
+	if (UNLIKELY(doy < 0)) {
+		doy += 366 + !(y % 4U);
+	}
+
 	/* get 32-adic doys */
 	m = (doy + 19) / 32U;
 	d = (doy + 19) % 32U;
