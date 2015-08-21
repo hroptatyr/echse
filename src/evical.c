@@ -671,7 +671,9 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			echs_state_t st;
 
 			eos = strchr(vp, ',') ?: ep;
-			st = add_state(vp, eos - vp);
+			if (!(st = add_state(vp, eos - vp))) {
+				continue;
+			}
 			ve->e.sts = stset_add_state(ve->e.sts, st);
 		}
 		break;
