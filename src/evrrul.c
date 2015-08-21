@@ -643,7 +643,7 @@ static void
 fill_mly_ymd(
 	bitint383_t *restrict cand,
 	const unsigned int y, const unsigned int mo,
-	const int d[static 31U], size_t nd,
+	const int d[static 2U * 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (size_t j = 0UL; j < nd; j++) {
@@ -673,7 +673,7 @@ static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
 	const unsigned int m[static 12U], size_t nm,
-	const int d[static 31U], size_t nd,
+	const int d[static 2U * 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
@@ -685,7 +685,7 @@ fill_yly_ymd(
 static void
 fill_yly_ymd_all_m(
 	bitint383_t *restrict cand, unsigned int y,
-	const int d[static 31U], size_t nd,
+	const int d[static 2U * 31U], size_t nd,
 	uint8_t wd_mask)
 {
 	for (unsigned int m = 1U; m <= 12U; m++) {
@@ -842,9 +842,13 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
 	const echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
+	/* unrolled month bui31 bitset */
 	unsigned int m[12U];
 	size_t nm;
-	int d[31U];
+	/* unrolled day bi31, we use 2 * 31 because by monthdays can
+	 * also be denoted negatively, thus 1, -1, 2, -2, ..., 31, -31 is
+	 * the biggest possible BYMONTHDAY value */
+	int d[2U * 31U];
 	size_t nd;
 	size_t res = 0UL;
 	size_t tries;
@@ -1001,7 +1005,10 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	const echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
-	int d[31U];
+	/* unrolled day bi31, we use 2 * 31 because by monthdays can
+	 * also be denoted negatively, thus 1, -1, 2, -2, ..., 31, -31 is
+	 * the biggest possible BYMONTHDAY value */
+	int d[2U * 31U];
 	size_t nd;
 	size_t res = 0UL;
 	size_t tries;
