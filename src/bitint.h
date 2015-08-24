@@ -267,7 +267,7 @@ bi31_next(bitint_iter_t *restrict iter, bitint31_t bi)
 			/* switch to negatives */
 			*iter = 33U;
 		}
-	} else if (*iter > 32 && (bi.neg >>= (*iter - 32U))) {
+	} else if (*iter > 32 && *iter < 64 && (bi.neg >>= (*iter - 32U))) {
 		/* we're doing negatives alright */
 		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
 		res = 32 - (*iter)++;
@@ -326,7 +326,7 @@ bi63_next(bitint_iter_t *restrict iter, bitint63_t bi)
 			/* switch to negatives */
 			*iter = 65U;
 		}
-	} else if (*iter > 64 && (bi.neg >>= (*iter - 64U))) {
+	} else if (*iter > 64 && *iter < 128 && (bi.neg >>= (*iter - 64U))) {
 		/* we're doing negatives alright */
 		for (; !(bi.neg & 0b1U); (*iter)++, bi.neg >>= 1U);
 		res = 64 - (*iter)++;
