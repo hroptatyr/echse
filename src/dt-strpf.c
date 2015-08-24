@@ -199,6 +199,7 @@ dt_strp(const char *str)
 		goto nul;
 	case '1':
 		tmp = 10U;
+		/*@fallthrough@*/
 	case '0':
 		if ((uint8_t)(*sp ^ '0') < 10U) {
 			tmp += *sp++ ^ '0';
