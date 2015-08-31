@@ -1,0 +1,16 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll "${srcdir}/sample_29.ics"
+2015-01-05T16:00:00.000	First monday
+2015-02-02T16:00:00.000	First monday
+2015-03-02T16:00:00.000	First monday
+2015-04-06T15:00:00.000	First monday
+2015-05-04T15:00:00.000	First monday
+2015-06-01T15:00:00.000	First monday
+2015-07-06T15:00:00.000	First monday
+2015-08-03T15:00:00.000	First monday
+2015-09-07T15:00:00.000	First monday
+2015-10-05T15:00:00.000	First monday
+2015-11-02T16:00:00.000	First monday
+2015-12-07T16:00:00.000	First monday
+$
