@@ -1,6 +1,6 @@
 /*** instant.h -- some echs_instant_t functionality
  *
- * Copyright (C) 2013 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -36,20 +36,17 @@
  ***/
 #if !defined INCLUDED_instant_h_
 #define INCLUDED_instant_h_
-
-#if defined HAVE_CONFIG_H
-# include "config.h"
-#endif	/* HAVE_CONFIG_H */
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "boobs.h"
 
 typedef struct echs_idiff_s echs_idiff_t;
 typedef union echs_instant_u echs_instant_t;
 
 union echs_instant_u {
 	struct {
-#if defined WORDS_BIGENDIAN
+#if BYTE_ORDER == BIG_ENDIAN
 		uint32_t y:16;
 		uint32_t m:8;
 		uint32_t d:8;
@@ -57,7 +54,7 @@ union echs_instant_u {
 		uint32_t M:8;
 		uint32_t S:6;
 		uint32_t ms:10;
-#else  /* !WORDS_BIGENDIAN */
+#elif BYTE_ORDER == LITTLE_ENDIAN
 		uint32_t ms:10;
 		uint32_t S:6;
 		uint32_t M:8;
@@ -65,16 +62,18 @@ union echs_instant_u {
 		uint32_t d:8;
 		uint32_t m:8;
 		uint32_t y:16;
-#endif	/* WORDS_BIGENDIAN */
+#else
+# warning endianness detection failed
+#endif
 	};
 	struct {
-#if defined WORDS_BIGENDIAN
+#if BYTE_ORDER == BIG_ENDIAN
 		uint32_t dpart;
 		uint32_t intra;
-#else  /* !WORDS_BIGENDIAN */
+#elif BYTE_ORDER == LITTLE_ENDIAN
 		uint32_t intra;
 		uint32_t dpart;
-#endif	/* WORDS_BIGENDIAN */
+#endif
 	};
 	uint64_t u;
 } __attribute__((transparent_union));
