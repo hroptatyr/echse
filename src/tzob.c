@@ -41,7 +41,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
+#include <sys/time.h>
 #include "tzob.h"
+#include "tzraw.h"
 #include "nifty.h"
 
 /* a hash is the bucket locator and a chksum for collision detection */
@@ -50,6 +53,7 @@ typedef uint_fast32_t hash_t;
 /* the beef table */
 static struct {
 	uint_fast32_t of;
+	uint_fast32_t ob;
 	hash_t hx;
 } *sstk;
 /* alloc size, 2-power */
@@ -67,6 +71,13 @@ static size_t obn;
 /* the hx obarray, specs and size just like the string obarray */
 static hash_t hxa[256U];
 static size_t hxn;
+
+/* MFU cache of zifs */
+static struct {
+	echs_tzob_t z;
+	size_t cnt;
+} tmfu[16U];
+static zif_t zmfu[16U];
 
 static hash_t
 murmur(const uint8_t *str, size_t len)
@@ -169,10 +180,6 @@ bang_zone(const char *str, size_t len)
 	}
 	/* paste the string in question */
 	memcpy(obs + (res = obn), str, len);
-	/* assemble the result */
-	res >>= 2U;
-	res <<= 8U;
-	res |= len;
 	/* inc the obn pointer */
 	obn += pad;
 	return res;
@@ -204,6 +211,77 @@ bang_tzob(hash_t hx)
 	/* just push the hx in question and advance the counter */
 	hxa[hxn++] = hx;
 	return make_tzob(hxn);
+}
+
+static hash_t
+retr_tzob(echs_tzob_t z)
+{
+	size_t i;
+
+	if (UNLIKELY((i = make_size(z)) >= countof(hxa))) {
+		/* huh? */
+		return 0U;
+	} else if (UNLIKELY(!i)) {
+		/* mega huh? */
+		return 0U;
+	}
+	/* otherwise just return what's in the array */
+	return hxa[i - 1U];
+}
+
+static zif_t
+__tzob_zif(echs_tzob_t zob)
+{
+/* return a zif_t object from ZOB. */
+#define SWP(x, y)					\
+	do {						\
+		__typeof(x) paste(__tmp, __LINE__) = x;	\
+		x = y;					\
+		y = paste(__tmp, __LINE__);		\
+	} while (0)
+	size_t i;
+
+	for (i = 0U; i < countof(tmfu) - 1U; i++) {
+		if (UNLIKELY(!tmfu[i].z)) {
+			/* found an empty guy */
+			break;
+		} else if (LIKELY(tmfu[i].z == zob)) {
+			/* found him */
+			if (i && tmfu[i - 1U].cnt < ++tmfu[i].cnt) {
+				/* swap with predecessor because
+				 * obviously item I is used more often now
+				 * this will slowly let the most used items
+				 * bubble up */
+				SWP(tmfu[i - 1U], tmfu[i]);
+				SWP(zmfu[i - 1U], zmfu[i]);
+				i--;
+			}
+			return zmfu[i];
+		}
+	}
+	/* `i' should be <=countof(tmfu) - 1U, so do the usual checks */
+	const char *fn;
+	zif_t this;
+
+	if (tmfu[i].z == zob) {
+		/* how lucky can we get? */
+		this = zmfu[i];
+	} else if (UNLIKELY((fn = echs_zone(zob)) == NULL)) {
+		/* yea, bollocks */
+		this = NULL;
+	} else if (UNLIKELY((this = zif_open(fn)) == NULL)) {
+		/* just resort to doing fuckall */
+		this = NULL;
+	} else {
+		if (zmfu[i] != NULL) {
+			/* clear the zif out */
+			zif_close(zmfu[i]);
+		}
+		zmfu[i] = this;
+		tmfu[i].z = zob;
+		tmfu[i].cnt = 1U;
+	}
+	return this;
 }
 
 
@@ -239,13 +317,14 @@ echs_tzob(const char *str, size_t len)
 
 		if (sstk[off].hx == hx) {
 			/* found him (or super-collision) */
-			return hx;
+			return sstk[off].ob;
 		} else if (!sstk[off].hx) {
 			/* found empty slot */
 			sstk[off].of = bang_zone(str, len);
+			sstk[off].ob = bang_tzob(hx);
 			sstk[off].hx = hx;
 			nstk++;
-			return bang_tzob(hx);
+			return sstk[off].ob;
 		}
 	}
 
@@ -269,13 +348,14 @@ echs_tzob(const char *str, size_t len)
 
 			if (sstk[off].hx == hx) {
 				/* found him (or super-collision) */
-				return hx;
+				return sstk[off].ob;
 			} else if (!sstk[off].hx) {
 				/* found empty slot */
 				sstk[off].of = bang_zone(str, len);
+				sstk[off].ob = bang_tzob(hx);
 				sstk[off].hx = hx;
 				nstk++;
-				return bang_tzob(hx);
+				return sstk[off].ob;
 			}
 		}
 	}
@@ -285,18 +365,14 @@ echs_tzob(const char *str, size_t len)
 const char*
 echs_zone(echs_tzob_t z)
 {
-	size_t hi;
 	hash_t hx;
 	hash_t k;
 	size_t o;
 
 	if (UNLIKELY(z == 0UL)) {
 		return "UTC";
-	} else if (UNLIKELY((hi = make_size(z)) >= countof(hxa))) {
+	} else if (UNLIKELY(!(k = hx = retr_tzob(z)))) {
 		/* huh? */
-		return NULL;
-	} else if (UNLIKELY((k = hx = hxa[hi]) == 0U)) {
-		/* even huh'er? */
 		return NULL;
 	}
 
@@ -348,7 +424,34 @@ clear_tzobs(void)
 	obs = NULL;
 	obz = 0U;
 	obn = 0U;
+
+	/* clear MFU cache */
+	for (size_t i = 0U; i < countof(zmfu); i++) {
+		if (UNLIKELY(zmfu[i] == NULL)) {
+			break;
+		}
+		zif_close(zmfu[i]);
+	}
+	memset(tmfu, 0, sizeof(tmfu));
+	memset(zmfu, 0, sizeof(zmfu));
 	return;
+}
+
+echs_instant_t
+echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
+{
+	zif_t z;
+
+	if (UNLIKELY(echs_instant_all_day_p(i))) {
+		/* just do fuckall */
+		;
+	} else if (LIKELY((z = __tzob_zif(zob)) != NULL)) {
+		time_t loc = __inst_to_epoch(i);
+		time_t nix = zif_utc_time(z, loc);
+
+		i = echs_instant_add(i, (echs_idiff_t){1000U * (nix - loc)});
+	}
+	return echs_instant_detach_tzob(i);
 }
 
 /* tzob.c ends here */
