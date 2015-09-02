@@ -64,6 +64,10 @@ static size_t obz;
 /* next ob */
 static size_t obn;
 
+/* the hx obarray, specs and size just like the string obarray */
+static hash_t hxa[256U];
+static size_t hxn;
+
 static hash_t
 murmur(const uint8_t *str, size_t len)
 {
@@ -145,7 +149,7 @@ recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
 }
 
 static uint_fast32_t
-bang_tzob(const char *str, size_t len)
+bang_zone(const char *str, size_t len)
 {
 /* put STR (of length LEN) into string obarray, don't check for dups */
 #define OBAR_MINZ	(1024U)
@@ -172,6 +176,34 @@ bang_tzob(const char *str, size_t len)
 	/* inc the obn pointer */
 	obn += pad;
 	return res;
+}
+
+static inline echs_tzob_t
+make_tzob(size_t x)
+{
+	x &= 0xffU;
+	return ((x << 6U) ^ (x << 10U) ^ (x << 24U)) & 0xffffffffU;
+}
+
+static inline size_t
+make_size(echs_tzob_t z)
+{
+	return ((z >> 24U) ^ (z >> 10U) ^ (z >> 6U)) & 0xffU;
+}
+
+static echs_tzob_t
+bang_tzob(hash_t hx)
+{
+/* put HX into global tzob obarray and return its index
+ * readily shifted to the needs of ECHS_DMASK and ECHS_IMASK */
+	if (UNLIKELY(hxn >= countof(hxa))) {
+		/* nope, let's do fuckall instead
+		 * more than 256 timezones?  we're not THAT international */
+		return 0U;
+	}
+	/* just push the hx in question and advance the counter */
+	hxa[hxn++] = hx;
+	return make_tzob(hxn);
 }
 
 
@@ -210,10 +242,10 @@ echs_tzob(const char *str, size_t len)
 			return hx;
 		} else if (!sstk[off].hx) {
 			/* found empty slot */
-			sstk[off].of = bang_tzob(str, len);
+			sstk[off].of = bang_zone(str, len);
 			sstk[off].hx = hx;
 			nstk++;
-			return hx;
+			return bang_tzob(hx);
 		}
 	}
 
@@ -240,14 +272,65 @@ echs_tzob(const char *str, size_t len)
 				return hx;
 			} else if (!sstk[off].hx) {
 				/* found empty slot */
-				sstk[off].of = bang_tzob(str, len);
+				sstk[off].of = bang_zone(str, len);
 				sstk[off].hx = hx;
 				nstk++;
-				return hx;
+				return bang_tzob(hx);
 			}
 		}
 	}
 	return 0U;
+}
+
+const char*
+echs_zone(echs_tzob_t z)
+{
+	size_t hi;
+	hash_t hx;
+	hash_t k;
+	size_t o;
+
+	if (UNLIKELY(z == 0UL)) {
+		return "UTC";
+	} else if (UNLIKELY((hi = make_size(z)) >= countof(hxa))) {
+		/* huh? */
+		return NULL;
+	} else if (UNLIKELY((k = hx = hxa[hi]) == 0U)) {
+		/* even huh'er? */
+		return NULL;
+	}
+
+	/* here's the initial probe then */
+	for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+		const size_t off = k & 0xffU;
+
+		if (sstk[off].hx == hx) {
+			/* found him (or super-collision) */
+			o = sstk[off].of;
+			goto yep;
+		}
+	}
+
+	for (size_t i = SSTK_NSLOT, m = 0x3ffU; i < zstk;
+	     i <<= 2U, m <<= 2U, m |= 3U) {
+		/* reset k */
+		k = hx;
+
+		/* here we probe within the top entries of the stack */
+		for (size_t j = 0U; j < 9U; j++, k >>= 3U) {
+			const size_t off = (i | k) & m;
+
+			if (sstk[off].hx == hx) {
+				/* found him (or super-collision) */
+				o = sstk[off].of;
+				goto yep;
+			}
+		}
+	}
+	return NULL;
+
+yep:
+	return obs + o;
 }
 
 void

@@ -53,6 +53,10 @@ typedef uint_fast32_t echs_tzob_t;
 extern echs_tzob_t echs_tzob(const char *zn, size_t nzn);
 
 /**
+ * Return (the interned) zone name from an tzob_t object Z. */
+extern const char *echs_zone(echs_tzob_t z);
+
+/**
  * Clear all interned tz objects and free associated resources. */
 extern void clear_tzobs(void);
 
