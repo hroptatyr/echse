@@ -124,6 +124,7 @@ EXTRA_DIST += sample_26.ics
 EXTRA_DIST += sample_27.ics
 EXTRA_DIST += sample_28.ics
 EXTRA_DIST += sample_29.ics
+EXTRA_DIST += sample_30.ics
 
 TESTS += rrul_01.clit
 TESTS += rrul_02.clit
@@ -160,6 +161,7 @@ TESTS += rrul_32.clit
 TESTS += rrul_33.clit
 TESTS += rrul_34.clit
 TESTS += rrul_35.clit
+TESTS += rrul_36.clit
 
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit
