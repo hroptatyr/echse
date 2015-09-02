@@ -45,8 +45,7 @@ typedef uint_fast32_t echs_tzob_t;
  * echs_instants are 64bit values with some bits unused to facilitate
  * aligned access, we now put the bits of tzob_t onto echs_instant
  * rendering it useless for ordinary echs_instant operations */
-#define ECHS_DMASK	0xf000f0e0U
-#define ECHS_IMASK	0xe0c00000U
+#define ECHS_DMASK	0xc000f0c0U
 
 /**
  * Return interned representaton of zone ZN (of length NZN). */
@@ -60,16 +59,17 @@ extern const char *echs_zone(echs_tzob_t z);
  * Clear all interned tz objects and free associated resources. */
 extern void clear_tzobs(void);
 
+/**
+ * Convert instant I to UTC time from zone Z. */
+extern echs_instant_t echs_instant_utc(echs_instant_t i, echs_tzob_t z);
+
 
 /**
  * Extract tz information from instant I. */
 static inline __attribute__((pure, const)) echs_tzob_t
 echs_instant_tzob(echs_instant_t i)
 {
-	echs_tzob_t r = 0U;
-
-	r |= i.dpart & ECHS_DMASK;
-	r |= i.intra & ECHS_IMASK;
+	echs_tzob_t r = i.dpart & ECHS_DMASK;
 	return r;
 }
 
@@ -79,7 +79,6 @@ static inline __attribute__((pure, const)) echs_instant_t
 echs_instant_detach_tzob(echs_instant_t i)
 {
 	i.dpart &= ~ECHS_DMASK;
-	i.intra &= ~ECHS_IMASK;
 	return i;
 }
 
@@ -91,7 +90,6 @@ echs_instant_attach_tzob(echs_instant_t i, echs_tzob_t tz)
 	/* rinse I first */
 	i = echs_instant_detach_tzob(i);
 	i.dpart ^= (tz & ECHS_DMASK);
-	i.intra ^= (tz & ECHS_IMASK);
 	return i;
 }
 
