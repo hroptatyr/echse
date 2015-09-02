@@ -284,6 +284,28 @@ __tzob_zif(echs_tzob_t zob)
 	return this;
 }
 
+static time_t
+__inst_to_epoch(echs_instant_t i)
+{
+	static const uint16_t __mon_yday[] = {
+		/* this is \sum ml,
+		 * first element is a bit set of leap days to add */
+		0U, 0U,
+		31U, 59U, 90U, 120U, 151U, 181U,
+		212U, 243U, 273U, 304U, 334U, 365U
+	};
+	unsigned int by = i.y - 1917U;
+	/* no bullshit years in our lifetime */
+	unsigned int j0 = by * 365U + by / 4U;
+	/* yday by lookup */
+	unsigned int yd = (LIKELY(i.m <= 12U))
+		? __mon_yday[i.m] + i.d + UNLIKELY(!(i.y % 4U) && i.m >= 3U)
+		: 0U;
+
+	return ((((j0 + yd - 19359U/*our epoch v unix epoch*/) * 24U +
+		  (LIKELY(i.H <= 24U) ? i.H : 24U)) * 60U + i.M) * 60U) + i.S;
+}
+
 
 echs_tzob_t
 echs_tzob(const char *str, size_t len)
@@ -442,6 +464,7 @@ echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
 {
 	zif_t z;
 
+	i = echs_instant_detach_tzob(i);
 	if (UNLIKELY(echs_instant_all_day_p(i))) {
 		/* just do fuckall */
 		;
@@ -451,7 +474,7 @@ echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
 
 		i = echs_instant_add(i, (echs_idiff_t){1000U * (nix - loc)});
 	}
-	return echs_instant_detach_tzob(i);
+	return i;
 }
 
 /* tzob.c ends here */
