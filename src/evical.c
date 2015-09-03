@@ -598,20 +598,36 @@ snarf_dt(const char *eof, const char *vp, const char *const UNUSED(ep))
 }
 
 static struct dtlst_s
-snarf_dtlst(const char *line, size_t llen)
+snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
+	echs_tzob_t z;
 
-	for (const char *sp = line, *const ep = line + llen, *eod;
-	     sp < ep; sp = eod + 1U) {
+	if (*eof++ == ';') {
+		/* we've got a field modifier, the only modifier
+		 * we can do with (atm) is TZID so try and read that */
+		static const char tzid[] = "TZID=";
+
+		if (!strncmp(eof, tzid, strlenof(tzid))) {
+			/* yep, got him */
+			const char *const zn = eof + strlenof(tzid);
+			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
+			const size_t nzn = eoz - zn;
+
+			z = echs_tzob(zn, nzn);
+		}
+	}
+	for (const char *eod; vp < ep; vp = eod + 1U) {
 		echs_instant_t in;
 
-		if (UNLIKELY((eod = strchr(sp, ',')) == NULL)) {
+		if (UNLIKELY((eod = strchr(vp, ',')) == NULL)) {
 			eod = ep;
 		}
-		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
+		if (UNLIKELY(echs_instant_0_p(in = dt_strp(vp)))) {
 			continue;
 		}
+		/* attach zone (if any) */
+		in = echs_instant_attach_tzob(in, z);
 		add1_to_dtlst(&dl, in);
 	}
 	return dl;
@@ -663,7 +679,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	case FLD_XDATE:
 	case FLD_RDATE:
 		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_dtlst(vp, ep - vp)) {
+		with (struct dtlst_s l = snarf_dtlst(eof, vp, ep)) {
 			if (l.ndt == 0UL) {
 				break;
 			}
