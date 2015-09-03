@@ -986,6 +986,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1116,6 +1117,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1253,6 +1255,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
@@ -1402,6 +1405,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = e.H[iH],
 				.M = e.M[iM],
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
@@ -1575,6 +1579,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = H,
 				.M = e.M[iM],
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
@@ -1753,6 +1758,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = H,
 				.M = M,
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
