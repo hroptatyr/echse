@@ -64,6 +64,7 @@
 #include "evcomp-gp.c"
 #include "fdprnt.h"
 #include "echse-genuid.h"
+#include "tzob.h"
 
 #if !defined assert
 # define assert(x)
@@ -559,6 +560,29 @@ snarf_mrule(const char *s, size_t z)
 	return mr;
 }
 
+static echs_instant_t
+snarf_dt(const char *eof, const char *vp, const char *const UNUSED(ep))
+{
+	echs_instant_t res = dt_strp(vp);
+
+	if (*eof++ == ';') {
+		/* we've got a field modifier, the only modifier
+		 * we can do with (atm) is TZID so try and read that */
+		static const char tzid[] = "TZID=";
+
+		if (!strncmp(eof, tzid, strlenof(tzid))) {
+			/* yep, got him */
+			const char *const zn = eof + strlenof(tzid);
+			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
+			const size_t nzn = eoz - zn;
+			echs_tzob_t z = echs_tzob(zn, nzn);
+
+			res = echs_instant_attach_tzob(res, z);
+		}
+	}
+	return res;
+}
+
 static struct dtlst_s
 snarf_dtlst(const char *line, size_t llen)
 {
@@ -600,8 +624,6 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
 /* vevent field parser */
-	(void)eof;
-
 	switch (fld) {
 	default:
 	case FLD_UNK:
@@ -609,7 +631,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
-		with (echs_instant_t i = dt_strp(vp)) {
+		with (echs_instant_t i = snarf_dt(eof, vp, ep)) {
 			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
