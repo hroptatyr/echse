@@ -208,6 +208,20 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	return;
 }
 
+static inline echs_event_t
+echs_event_utc(echs_event_t e)
+{
+	echs_tzob_t z;
+
+	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
+		e.from = echs_instant_utc(e.from, z);
+	}
+	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
+		e.till = echs_instant_utc(e.till, z);
+	}
+	return e;
+}
+
 
 static echs_freq_t
 snarf_freq(const char *spec)
@@ -1703,7 +1717,8 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
-	echs_idiff_t dur = echs_instant_diff(e.till, e.from);
+	echs_idiff_t dur;
+	echs_tzob_t z;
 
 	if (nd == 0U) {
 		/* not worth it */
@@ -1711,9 +1726,22 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	} else if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
 		/* not possible */
 		return NULL;
-	} else if (nd == 1U) {
+	}
+
+	/* let the work begin */
+	e = echs_event_utc(e);
+	dur = echs_instant_diff(e.till, e.from);
+
+	/* the thing with rdates is that there's just one timezone for
+	 * all of them so get the tzob here and apply later if applicable */
+	z = echs_instant_tzob(d[0]);
+
+	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
 		e.from = d[0U];
+		if (UNLIKELY(z)) {
+			e.from = echs_instant_utc(e.from, z);
+		}
 		e.till = echs_instant_add(e.from, dur);
 		res->ev[0U] = e;
 	} else {
@@ -1724,6 +1752,13 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 		/* copy them instants here so we can sort them */
 		memcpy(rd, d, nd * sizeof(*rd));
+		if (UNLIKELY(z)) {
+			/* also UTCify the instants because in rare cases
+			 * timezone changes can actually change the order */
+			for (size_t i = 0U; i < nd; i++) {
+				rd[i] = echs_instant_utc(rd[i], z);
+			}
+		}
 		/* now sort */
 		echs_instant_sort(rd, nd);
 		/* now spread out the instants as echs events */
@@ -1743,14 +1778,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 static echs_evstrm_t
 __make_evvevt(echs_event_t e)
 {
-	echs_tzob_t z;
-
-	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
-		e.from = echs_instant_utc(e.from, z);
-	}
-	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
-		e.till = echs_instant_utc(e.till, z);
-	}
+	e = echs_event_utc(e);
 	return make_evical_vevent(&e, 1U);
 }
 
