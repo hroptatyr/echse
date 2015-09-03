@@ -1854,6 +1854,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
+	e = echs_event_utc(e);
 	this->dur = echs_instant_diff(e.till, e.from);
 	this->e = e;
 	/* bang the first one */
