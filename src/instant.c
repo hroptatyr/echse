@@ -52,6 +52,8 @@ static const unsigned int doy[] = {
 #define MSECS_PER_SEC	(1000U)
 #define SECS_PER_DAY	(HOURS_PER_DAY * MINS_PER_HOUR * SECS_PER_MIN)
 #define MSECS_PER_DAY	(SECS_PER_DAY * MSECS_PER_SEC)
+#define DAYS_PER_WEEK	(7U)
+#define DAYS_PER_YEAR	(365U)
 
 static __attribute__((const, pure)) inline unsigned int
 __get_ndom(unsigned int y, unsigned int m)
@@ -190,7 +192,7 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 		if (echs_instant_lt_p(beg, end) && extra_df < 0) {
 			df_y--;
 		}
-		extra_df += df_y * 365 + (df_y - 1) / 4;
+		extra_df += df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 	}
 
 	return (echs_idiff_t){extra_df, intra_df};
@@ -234,9 +236,9 @@ fixup_S:
 		dd += msd;
 
 	fixup_d:
-		y = bas.y + dd / 365;
+		y = bas.y + dd / (int)DAYS_PER_YEAR;
 		if ((df_y = y - bas.y)) {
-			dd -= df_y * 365 + (df_y - 1) / 4;
+			dd -= df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 		}
 
 		m = bas.m + dd / 31;
