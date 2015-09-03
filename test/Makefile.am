@@ -162,6 +162,8 @@ TESTS += rrul_33.clit
 TESTS += rrul_34.clit
 TESTS += rrul_35.clit
 TESTS += rrul_36.clit
+TESTS += rrul_37.clit
+TESTS += rrul_38.clit
 
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit
