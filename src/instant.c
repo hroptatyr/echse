@@ -210,20 +210,20 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 		goto fixup_d;
 	} else if (UNLIKELY(echs_instant_all_sec_p(bas))) {
 		/* just fix up the sec, min, ... portions */
-		msd /= MSECS_PER_SEC;
+		msd /= (int)MSECS_PER_SEC;
 		goto fixup_S;
 	}
 
 
-	res.ms += msd % MSECS_PER_SEC;
-	msd /= MSECS_PER_SEC;
+	res.ms += msd % (int)MSECS_PER_SEC;
+	msd /= (int)MSECS_PER_SEC;
 fixup_S:
-	res.S += msd % SECS_PER_MIN;
-	msd /= SECS_PER_MIN;
-	res.M += msd % MINS_PER_HOUR;
-	msd /= MINS_PER_HOUR;
-	res.H += msd % HOURS_PER_DAY;
-	msd /= HOURS_PER_DAY;
+	res.S += msd % (int)SECS_PER_MIN;
+	msd /= (int)SECS_PER_MIN;
+	res.M += msd % (int)MINS_PER_HOUR;
+	msd /= (int)MINS_PER_HOUR;
+	res.H += msd % (int)HOURS_PER_DAY;
+	msd /= (int)HOURS_PER_DAY;
 
 	/* get ready to adjust the day */
 	if (UNLIKELY(msd)) {
