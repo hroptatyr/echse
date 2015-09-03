@@ -41,6 +41,7 @@
 #include <string.h>
 #include "evrrul.h"
 #include "nifty.h"
+#include "tzob.h"
 
 struct md_s {
 	unsigned int m;
