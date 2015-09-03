@@ -1740,6 +1740,20 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	return (echs_evstrm_t)res;
 }
 
+static echs_evstrm_t
+__make_evvevt(echs_event_t e)
+{
+	echs_tzob_t z;
+
+	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
+		e.from = echs_instant_utc(e.from, z);
+	}
+	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
+		e.till = echs_instant_utc(e.till, z);
+	}
+	return make_evical_vevent(&e, 1U);
+}
+
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
@@ -2060,7 +2074,7 @@ make_task(struct ical_vevent_s *ve)
 		}
 		assert(ve->rr.r == NULL);
 		assert(ve->rd.dt == NULL);
-		s = make_evical_vevent(&ve->e, 1U);
+		s = __make_evvevt(ve->e);
 	} else {
 		/* it's an rrule */
 		/* rrule stream (struct evrrul_s* really) */
