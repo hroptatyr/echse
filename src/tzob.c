@@ -471,8 +471,9 @@ echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
 	} else if (LIKELY((z = __tzob_zif(zob)) != NULL)) {
 		time_t loc = __inst_to_epoch(i);
 		time_t nix = zif_utc_time(z, loc);
+		echs_idiff_t d = {.msd = 1000 * (nix - loc)};
 
-		i = echs_instant_add(i, (echs_idiff_t){1000U * (nix - loc)});
+		i = echs_instant_add(i, d);
 	}
 	return i;
 }
