@@ -83,6 +83,7 @@ static const echs_wday_t __jan01_28y_wday[] = {
 struct enum_s {
 	size_t nel;
 	uint8_t nH, nM, nS;
+	uint8_t fl;
 	uint8_t H[24U];
 	uint8_t M[60U];
 	uint8_t S[60U];
@@ -415,6 +416,7 @@ make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
 	size_t nM = 0U;
 	size_t nS = 0U;
 	unsigned int tmp;
+	bool conv_tz_p = false;
 
 	/* get all hours */
 	for (bitint_iter_t Hi = 0UL;
@@ -423,6 +425,7 @@ make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
 	}
 	if (!nH) {
 		tgt->H[nH++] = (uint8_t)proto.H;
+		conv_tz_p = true;
 	}
 	/* get all minutes */
 	for (bitint_iter_t Mi = 0UL;
@@ -443,6 +446,7 @@ make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
 	tgt->nH = nH;
 	tgt->nM = nM;
 	tgt->nS = nS;
+	tgt->fl = conv_tz_p;
 	return 0;
 }
 
@@ -842,10 +846,11 @@ add_poss(bitint383_t *restrict cand, const unsigned int y, const bitint383_t *p)
 	return;
 }
 
+
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	/* unrolled month bui31 bitset */
 	unsigned int m[12U];
@@ -860,12 +865,16 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint8_t wd_mask = 0U;
 	bool ymdp;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
 	}
+
+	/* extract zone info */
+	z = echs_instant_tzob(proto);
 
 	/* check if we're ymd only */
 	ymdp = !bi63_has_bits_p(rr->wk) &&
@@ -916,6 +925,11 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* check ranges before filling */
 	if (UNLIKELY(y < 1600U)) {
 		goto fin;
+	}
+
+	/* convert the proto, maybe */
+	if (UNLIKELY(z && e.fl)) {
+		proto = echs_instant_utc(proto, z);
 	}
 
 	/* fill up the array the hard way */
@@ -990,6 +1004,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.ms = proto.ms,
 				};
 
+				if (UNLIKELY(z && e.fl)) {
+					x = echs_instant_utc(x, z);
+				}
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
 					goto fin;
 				}
@@ -1008,7 +1025,7 @@ fin:
 size_t
 rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	/* unrolled day bi31, we use 2 * 31 because by monthdays can
@@ -1021,6 +1038,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint8_t wd_mask = 0U;
 	bool ymdp;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
@@ -1030,6 +1048,9 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* upgrade to YEARLY */
 		return rrul_fill_yly(tgt, nti, rr);
 	}
+
+	/* extract zone info */
+	z = echs_instant_tzob(proto);
 
 	/* check if we're ymd only */
 	ymdp = !bi447_has_bits_p(&rr->dow) &&
@@ -1066,6 +1087,11 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* check ranges before filling */
 	if (UNLIKELY(y < 1600U || !m || m > 12U)) {
 		goto fin;
+	}
+
+	/* convert the proto, maybe */
+	if (UNLIKELY(z && e.fl)) {
+		proto = echs_instant_utc(proto, z);
 	}
 
 	/* fill up the array the hard way */
@@ -1121,6 +1147,9 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.ms = proto.ms,
 				};
 
+				if (UNLIKELY(z && e.fl)) {
+					x = echs_instant_utc(x, z);
+				}
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
 					goto fin;
 				}
@@ -1139,7 +1168,7 @@ fin:
 size_t
 rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
@@ -1151,12 +1180,16 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* increments induced by wd_mask */
 	uint_fast32_t wd_incs = 0UL;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
 	}
+
+	/* extract zone info */
+	z = echs_instant_tzob(proto);
 
 	/* generate a set of minutes and seconds */
 	(void)make_enum(&e, proto, rr);
@@ -1215,6 +1248,11 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* convert the proto, maybe */
+	if (UNLIKELY(z && e.fl)) {
+		proto = echs_instant_utc(proto, z);
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, maxd = __get_ndom(y, m); res < nti;
 	     ({
@@ -1259,6 +1297,9 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.ms = proto.ms,
 				};
 
+				if (UNLIKELY(z && e.fl)) {
+					x = echs_instant_utc(x, z);
+				}
 				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 					continue;
 				}
@@ -1282,7 +1323,7 @@ fin:
 size_t
 rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
@@ -1295,12 +1336,16 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	/* number of days in the current month */
 	unsigned int maxd;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
 	}
+
+	/* extract zone info */
+	z = echs_instant_tzob(proto);
 
 	/* set up the wday mask */
 	with (int tmp) {
@@ -1364,6 +1409,10 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		goto fin;
 	}
 
+	/* convert the proto, maybe */
+	if (UNLIKELY(z && e.fl)) {
+		proto = echs_instant_utc(proto, z);
+	}
 	/* fill up the array the hard way */
 	for (res = 0UL, w = ymd_get_wday(y, m, d),
 		     maxd = __get_ndom(y, m);
@@ -1408,6 +1457,10 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.S = e.S[iS],
 				.ms = proto.ms,
 			};
+
+			if (UNLIKELY(z && e.fl)) {
+				x = echs_instant_utc(x, z);
+			}
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
 			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1423,7 +1476,7 @@ fin:
 size_t
 rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
@@ -1435,10 +1488,20 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t negd_mask = 0U;
 	uint_fast32_t H_mask = 0U;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
+		}
+	}
+
+	/* extract zone info */
+	if (UNLIKELY((z = echs_instant_tzob(proto)))) {
+		proto = echs_instant_utc(proto, z);
+		/* roll out this proto */
+		for (size_t i = 1U; i < nti; i++) {
+			tgt[i] = proto;
 		}
 	}
 
@@ -1583,6 +1646,9 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.ms = proto.ms,
 			};
 
+			if (UNLIKELY(z && e.fl)) {
+				x = echs_instant_utc(x, z);
+			}
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
 			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1598,7 +1664,7 @@ fin:
 size_t
 rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
@@ -1612,10 +1678,20 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t H_mask = 0U;
 	uint_fast64_t M_mask = 0U;
 	struct enum_s e;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
+		}
+	}
+
+	/* extract zone info */
+	if (UNLIKELY((z = echs_instant_tzob(proto)))) {
+		proto = echs_instant_utc(proto, z);
+		/* roll out this proto */
+		for (size_t i = 1U; i < nti; i++) {
+			tgt[i] = proto;
 		}
 	}
 
@@ -1762,6 +1838,9 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.ms = proto.ms,
 			};
 
+			if (UNLIKELY(z && e.fl)) {
+				x = echs_instant_utc(x, z);
+			}
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
 			} else if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1777,7 +1856,7 @@ fin:
 size_t
 rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
-	const echs_instant_t proto = *tgt;
+	echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
 	unsigned int m = proto.m;
 	unsigned int d = proto.d;
@@ -1792,10 +1871,20 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t H_mask = 0U;
 	uint_fast64_t M_mask = 0U;
 	uint_fast64_t S_mask = 0U;
+	echs_tzob_t z;
 
 	if (UNLIKELY(rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
+		}
+	}
+
+	/* extract zone info */
+	if (UNLIKELY((z = echs_instant_tzob(proto)))) {
+		proto = echs_instant_utc(proto, z);
+		/* roll out this proto */
+		for (size_t i = 1U; i < nti; i++) {
+			tgt[i] = proto;
 		}
 	}
 
