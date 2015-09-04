@@ -42,7 +42,7 @@
 
 /**
  * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str);
+extern echs_instant_t dt_strp(const char *str, char **on, size_t len);
 
 /**
  * Print INST into BUF (of size BSZ) and return its length. */
