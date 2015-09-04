@@ -1735,6 +1735,34 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 	return;
 }
 
+static echs_instant_t
+instant_soup(echs_instant_t broth, echs_instant_t water, echs_tzob_t z, int eof)
+{
+	echs_instant_t soup;
+	echs_tzob_t fz;
+
+	if (UNLIKELY(echs_instant_all_day_p(water))) {
+		/* oh we have to paste the missing intra
+		 * bits from the proto-event */
+		int fof;
+
+		water.intra = broth.intra;
+		fof = echs_instant_tzof(water, z);
+		soup = echs_instant_detach_tzob(water);
+
+		if (fof != eof) {
+			/* we need to add the discrepancy onto from */
+			echs_idiff_t df = {.msd = (eof - fof) * 1000U};
+			soup = echs_instant_add(soup, df);
+		}
+	} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
+		soup = echs_instant_utc(water, fz);
+	} else {
+		soup = water;
+	}
+	return soup;
+}
+
 static echs_evstrm_t
 __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 {
@@ -1759,37 +1787,9 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	eof = echs_instant_tzof(e.from, z);
 	dur = echs_instant_diff(e.till, e.from);
 
-	auto inline echs_instant_t
-	cook_instant_soup(echs_instant_t broth, echs_instant_t water)
-	{
-		echs_instant_t soup;
-		echs_tzob_t fz;
-
-		if (UNLIKELY(echs_instant_all_day_p(water))) {
-			/* oh we have to paste the missing intra
-			 * bits from the proto-event */
-			int fof;
-
-			water.intra = broth.intra;
-			fof = echs_instant_tzof(water, z);
-			soup = echs_instant_detach_tzob(water);
-
-			if (fof != eof) {
-				/* we need to add the discrepancy onto from */
-				echs_idiff_t df = {.msd = (eof - fof) * 1000U};
-				soup = echs_instant_add(soup, df);
-			}
-		} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
-			soup = echs_instant_utc(water, fz);
-		} else {
-			soup = water;
-		}
-		return soup;
-	}
-
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
-		e.from = cook_instant_soup(e.from, d[0U]);
+		e.from = instant_soup(e.from, d[0U], z, eof);
 		e.till = echs_instant_add(e.from, dur);
 		res->ev[0U] = e;
 	} else {
@@ -1804,7 +1804,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 		 * before the actual sorting because in rare cases timezone
 		 * changes can actually change the order */
 		for (size_t i = 0U; i < nd; i++) {
-			rd[i] = cook_instant_soup(e.from, d[i]);
+			rd[i] = instant_soup(e.from, d[i], z, eof);
 		}
 		/* now sort */
 		echs_instant_sort(rd, nd);
