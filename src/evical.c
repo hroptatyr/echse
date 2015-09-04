@@ -1745,20 +1745,28 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	}
 
 	/* let the work begin */
-	e = echs_event_utc(e);
-	dur = echs_instant_diff(e.till, e.from);
-
-	/* the thing with rdates is that there's just one timezone for
-	 * all of them so get the tzob here and apply later if applicable */
-	z = echs_instant_tzob(d[0]);
+	z = echs_instant_tzob(e.from);
+	with (echs_event_t eutc = echs_event_utc(e)) {
+		dur = echs_instant_diff(eutc.till, eutc.from);
+	}
 
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
-		e.from = d[0U];
-		if (UNLIKELY(z)) {
-			e.from = echs_instant_utc(e.from, z);
+		echs_instant_t from = d[0U];
+		echs_tzob_t fz;
+
+		if (UNLIKELY(echs_instant_all_day_p(from))) {
+			/* oh we have to paste the missing intra
+			 * bits from the proto-event */
+			from.intra = e.from.intra;
+			/* also paste zoneinfo */
+			from = echs_instant_attach_tzob(from, z);
 		}
-		e.till = echs_instant_add(e.from, dur);
+		if (UNLIKELY((fz = echs_instant_tzob(from)))) {
+			from = echs_instant_utc(from, fz);
+		}
+		e.from = from;
+		e.till = echs_instant_add(from, dur);
 		res->ev[0U] = e;
 	} else {
 		/* blimey, use the bottom bit of res->ev to sort the
@@ -1768,12 +1776,24 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 		/* copy them instants here so we can sort them */
 		memcpy(rd, d, nd * sizeof(*rd));
-		if (UNLIKELY(z)) {
-			/* also UTCify the instants because in rare cases
-			 * timezone changes can actually change the order */
-			for (size_t i = 0U; i < nd; i++) {
-				rd[i] = echs_instant_utc(rd[i], z);
+		/* also proto-paste the events in the list and UTCify them
+		 * before the actual sorting because in rare cases timezone
+		 * changes can actually change the order */
+		for (size_t i = 0U; i < nd; i++) {
+			echs_instant_t from = d[i];
+			echs_tzob_t fz;
+
+			if (UNLIKELY(echs_instant_all_day_p(from))) {
+				/* oh we have to paste the missing intra
+				 * bits from the proto-event */
+				from.intra = e.from.intra;
+				/* also paste zoneinfo */
+				from = echs_instant_attach_tzob(from, z);
 			}
+			if (UNLIKELY((fz = echs_instant_tzob(from)))) {
+				from = echs_instant_utc(from, fz);
+			}
+			rd[i] = from;
 		}
 		/* now sort */
 		echs_instant_sort(rd, nd);
