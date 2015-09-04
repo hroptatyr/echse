@@ -1,6 +1,6 @@
 /*** instant.c -- some echs_instant_t functionality
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -52,6 +52,8 @@ static const unsigned int doy[] = {
 #define MSECS_PER_SEC	(1000U)
 #define SECS_PER_DAY	(HOURS_PER_DAY * MINS_PER_HOUR * SECS_PER_MIN)
 #define MSECS_PER_DAY	(SECS_PER_DAY * MSECS_PER_SEC)
+#define DAYS_PER_WEEK	(7U)
+#define DAYS_PER_YEAR	(365U)
 
 static __attribute__((const, pure)) inline unsigned int
 __get_ndom(unsigned int y, unsigned int m)
@@ -190,7 +192,7 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 		if (echs_instant_lt_p(beg, end) && extra_df < 0) {
 			df_y--;
 		}
-		extra_df += df_y * 365 + (df_y - 1) / 4;
+		extra_df += df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 	}
 
 	return (echs_idiff_t){extra_df, intra_df};
@@ -199,69 +201,71 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 echs_instant_t
 echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 {
-	echs_instant_t res = echs_nul_instant();
+	echs_instant_t res = bas;
 	int dd = add.dd;
 	int msd = add.msd;
-	int df_y;
-	int df_m;
-	int y;
-	int m;
-	int d;
 
 	if (UNLIKELY(echs_instant_all_day_p(bas))) {
 		/* just fix up the day, dom and year portion */
-		res.H = ECHS_ALL_DAY;
 		goto fixup_d;
 	} else if (UNLIKELY(echs_instant_all_sec_p(bas))) {
 		/* just fix up the sec, min, ... portions */
-		res.ms = ECHS_ALL_SEC;
-		msd /= MSECS_PER_SEC;
+		msd /= (int)MSECS_PER_SEC;
 		goto fixup_S;
 	}
 
 
-	res.ms = (bas.ms + msd) % MSECS_PER_SEC;
-	msd = (bas.ms + msd) / MSECS_PER_SEC;
+	res.ms += msd % (int)MSECS_PER_SEC;
+	msd /= (int)MSECS_PER_SEC;
 fixup_S:
-	res.S = (bas.S + msd) % SECS_PER_MIN;
-	msd = (bas.S + msd) / SECS_PER_MIN;
-	res.M = (bas.M + msd) % MINS_PER_HOUR;
-	msd = (bas.M + msd) / MINS_PER_HOUR;
-	res.H = (bas.H + msd) % HOURS_PER_DAY;
-	msd = (bas.H + msd) / HOURS_PER_DAY;
-	/* get ready for the end-of-day bit */
-	dd += msd;
+	res.S += msd % (int)SECS_PER_MIN;
+	msd /= (int)SECS_PER_MIN;
+	res.M += msd % (int)MINS_PER_HOUR;
+	msd /= (int)MINS_PER_HOUR;
+	res.H += msd % (int)HOURS_PER_DAY;
+	msd /= (int)HOURS_PER_DAY;
 
-fixup_d:
-	y = bas.y + dd / 365;
-	if ((df_y = y - bas.y)) {
-		dd -= df_y * 365 + (df_y - 1) / 4;
-	}
+	/* get ready to adjust the day */
+	if (UNLIKELY(msd)) {
+		int df_y;
+		int df_m;
+		int y;
+		int m;
+		int d;
 
-	m = bas.m + dd / 31;
-	if ((df_m = m - bas.m)) {
-		dd -= doy[bas.m + df_m] - doy[bas.m + 1];
-	}
+		dd += msd;
 
-	d = bas.d + dd;
-	while (d <= 0) {
-		while (--m <= 0) {
-			y--;
-			m = 12U;
+	fixup_d:
+		y = bas.y + dd / (int)DAYS_PER_YEAR;
+		if ((df_y = y - bas.y)) {
+			dd -= df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 		}
-		d += __get_ndom(y, m);
-	}
-	while ((unsigned int)d > __get_ndom(y, m)) {
-		d -= __get_ndom(y, m);
-		while (++m > 12) {
-			y++;
-			m = 1U;
-		}
-	}
 
-	res.d = d;
-	res.m = m;
-	res.y = y;
+		m = bas.m + dd / 31;
+		if ((df_m = m - bas.m)) {
+			dd -= doy[bas.m + df_m] - doy[bas.m + 1];
+		}
+
+		d = bas.d + dd;
+		while (d <= 0) {
+			while (--m <= 0) {
+				y--;
+				m = 12U;
+			}
+			d += __get_ndom(y, m);
+		}
+		while ((unsigned int)d > __get_ndom(y, m)) {
+			d -= __get_ndom(y, m);
+			while (++m > 12) {
+				y++;
+				m = 1U;
+			}
+		}
+
+		res.d = d;
+		res.m = m;
+		res.y = y;
+	}
 	return res;
 }
 

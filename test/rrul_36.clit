@@ -1,0 +1,5 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format '%b\t%e\t%s' "${srcdir}/sample_30.ics"
+2015-01-05T16:00:00	2015-01-05T16:30:00	Just one Monday
+$

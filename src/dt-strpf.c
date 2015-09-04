@@ -87,14 +87,17 @@ ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 
 
 echs_instant_t
-dt_strp(const char *str)
+dt_strp(const char *str, char **on, size_t len)
 {
 /* code dupe, see __strpd_std() */
 	echs_instant_t res = {.u = 0U};
 	unsigned int tmp = 0U;
-	const char *sp;
+	const char *restrict sp = str;
+	const char *const ep = str + (len ?: 23U);
 
-	if (UNLIKELY((sp = str) == NULL)) {
+	if (UNLIKELY(sp == NULL)) {
+		goto nul;
+	} else if (UNLIKELY(len && len < 8U)) {
 		goto nul;
 	}
 	/* read the year */
@@ -157,6 +160,9 @@ dt_strp(const char *str)
 	if (*sp == '-') {
 		sp++;
 	}
+	if (UNLIKELY(sp >= ep)) {
+		goto nul;
+	}
 
 	/* snarf mday, ... if there's a separator */
 	switch (*sp++) {
@@ -175,20 +181,24 @@ dt_strp(const char *str)
 	default:
 		goto nul;
 	}
-	if ((uint8_t)(*sp ^ '0') < 10U) {
+	if (UNLIKELY(sp >= ep)) {
+		goto nul;
+	} else if ((uint8_t)(*sp ^ '0') < 10U) {
 		tmp += *sp++ ^ '0';
 		res.d = tmp;
 	} else {
 		goto nul;
 	}
 
-	if (*sp != 'T' && *sp != ' ') {
+	if (sp >= ep || *sp != 'T' && *sp != ' ') {
 		res.H = ECHS_ALL_DAY;
 		goto res;
+	} else if (UNLIKELY(sp++ + 4U >= ep)) {
+		goto nul;
 	}
 
 	/* and now parse the time */
-	tmp = 0U, sp++;
+	tmp = 0U;
 	switch (*sp++) {
 	case '2':
 		tmp = 20U;
@@ -217,6 +227,9 @@ dt_strp(const char *str)
 	if (*sp == ':') {
 		sp++;
 	}
+	if (UNLIKELY(sp + 2U > ep)) {
+		goto nul;
+	}
 	if ((uint8_t)(*sp ^ '0') < 6U &&
 	    (tmp = 10U * (*sp++ ^ '0'), (uint8_t)(*sp ^ '0') < 10U)) {
 		tmp += *sp++ ^ '0';
@@ -226,8 +239,11 @@ dt_strp(const char *str)
 	res.M = tmp;
 
 	/* seconds are optional */
-	if (*sp == ':') {
+	if (sp >= ep || *sp == ':') {
 		sp++;
+	}
+	if (UNLIKELY(sp + 2U > ep)) {
+		goto res;
 	}
 	if (sp[0U] == '6' && sp[1U] == '0') {
 		tmp = 60U;
@@ -240,7 +256,7 @@ dt_strp(const char *str)
 	}
 	res.S = tmp;
 
-	if (*sp != '.') {
+	if (sp >= ep || *sp != '.') {
 		res.ms = ECHS_ALL_SEC;
 		goto res;
 	}
@@ -252,6 +268,9 @@ dt_strp(const char *str)
 	}
 	res.ms = tmp % 1000U;
 res:
+	if (on != NULL) {
+		*on = deconst(sp);
+	}
 	return res;
 nul:
 	return (echs_instant_t){.u = 0U};

@@ -64,6 +64,7 @@
 #include "evcomp-gp.c"
 #include "fdprnt.h"
 #include "echse-genuid.h"
+#include "tzob.h"
 
 #if !defined assert
 # define assert(x)
@@ -205,6 +206,20 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 		free(ve->mr.r);
 	}
 	return;
+}
+
+static inline echs_event_t
+echs_event_utc(echs_event_t e)
+{
+	echs_tzob_t z;
+
+	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
+		e.from = echs_instant_utc(e.from, z);
+	}
+	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
+		e.till = echs_instant_utc(e.till, z);
+	}
+	return e;
 }
 
 
@@ -363,7 +378,7 @@ snarf_rrule(const char *s, size_t z)
 			break;
 
 		case KEY_UNTIL:
-			rr.until = dt_strp(++kv);
+			rr.until = dt_strp(++kv, NULL, 0U);
 			break;
 
 		case BY_WDAY:
@@ -559,20 +574,67 @@ snarf_mrule(const char *s, size_t z)
 	return mr;
 }
 
+static echs_instant_t
+snarf_dt(const char *eof, const char *vp, const char *const ep)
+{
+	char *on = NULL;
+	echs_instant_t res = dt_strp(vp, &on, ep - vp);
+
+	if (*eof++ == ';') {
+		/* we've got a field modifier, the only modifier
+		 * we can do with (atm) is TZID so try and read that */
+		static const char tzid[] = "TZID=";
+
+		if (on < ep && *on == 'Z') {
+			/* don't worry about the zone spec */
+			;
+		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
+			/* yep, got him */
+			const char *const zn = eof + strlenof(tzid);
+			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
+			const size_t nzn = eoz - zn;
+			echs_tzob_t z = echs_tzob(zn, nzn);
+
+			res = echs_instant_attach_tzob(res, z);
+		}
+	}
+	return res;
+}
+
 static struct dtlst_s
-snarf_dtlst(const char *line, size_t llen)
+snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
+	echs_tzob_t z;
 
-	for (const char *sp = line, *const ep = line + llen, *eod;
-	     sp < ep; sp = eod + 1U) {
+	if (*eof++ == ';') {
+		/* we've got a field modifier, the only modifier
+		 * we can do with (atm) is TZID so try and read that */
+		static const char tzid[] = "TZID=";
+
+		if (!strncmp(eof, tzid, strlenof(tzid))) {
+			/* yep, got him */
+			const char *const zn = eof + strlenof(tzid);
+			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
+			const size_t nzn = eoz - zn;
+
+			z = echs_tzob(zn, nzn);
+		}
+	}
+	for (const char *eod; vp < ep; vp = eod + 1U) {
 		echs_instant_t in;
+		char *on = NULL;
 
-		if (UNLIKELY((eod = strchr(sp, ',')) == NULL)) {
+		if (UNLIKELY((eod = strchr(vp, ',')) == NULL)) {
 			eod = ep;
 		}
-		if (UNLIKELY(echs_instant_0_p(in = dt_strp(sp)))) {
+		in = dt_strp(vp, &on, eod - vp);
+		if (UNLIKELY(echs_instant_0_p(in))) {
 			continue;
+		}
+		/* attach zone (if any) and only if there's no zone indicator */
+		if (on >= eod || *on != 'Z') {
+			in = echs_instant_attach_tzob(in, z);
 		}
 		add1_to_dtlst(&dl, in);
 	}
@@ -600,8 +662,6 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
 /* vevent field parser */
-	(void)eof;
-
 	switch (fld) {
 	default:
 	case FLD_UNK:
@@ -609,7 +669,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
-		with (echs_instant_t i = dt_strp(vp)) {
+		with (echs_instant_t i = snarf_dt(eof, vp, ep)) {
 			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
@@ -627,7 +687,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	case FLD_XDATE:
 	case FLD_RDATE:
 		/* otherwise snarf */
-		with (struct dtlst_s l = snarf_dtlst(vp, ep - vp)) {
+		with (struct dtlst_s l = snarf_dtlst(eof, vp, ep)) {
 			if (l.ndt == 0UL) {
 				break;
 			}
@@ -815,7 +875,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = dt_strp(vp);;
+		ve->e.from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
@@ -1681,7 +1741,9 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
-	echs_idiff_t dur = echs_instant_diff(e.till, e.from);
+	echs_idiff_t dur;
+	echs_tzob_t z;
+	int eof;
 
 	if (nd == 0U) {
 		/* not worth it */
@@ -1689,9 +1751,45 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	} else if (UNLIKELY((res = malloc(sizeof(*res) + zev)) == NULL)) {
 		/* not possible */
 		return NULL;
-	} else if (nd == 1U) {
+	}
+
+	/* let the work begin */
+	z = echs_instant_tzob(e.from);
+	e = echs_event_utc(e);
+	eof = echs_instant_tzof(e.from, z);
+	dur = echs_instant_diff(e.till, e.from);
+
+	static echs_instant_t
+	cook_instant_soup(echs_instant_t broth, echs_instant_t water)
+	{
+		echs_instant_t soup;
+		echs_tzob_t fz;
+
+		if (UNLIKELY(echs_instant_all_day_p(water))) {
+			/* oh we have to paste the missing intra
+			 * bits from the proto-event */
+			int fof;
+
+			water.intra = broth.intra;
+			fof = echs_instant_tzof(water, z);
+			soup = echs_instant_detach_tzob(water);
+
+			if (fof != eof) {
+				/* we need to add the discrepancy onto from */
+				echs_idiff_t df = {.msd = (eof - fof) * 1000U};
+				soup = echs_instant_add(soup, df);
+			}
+		} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
+			soup = echs_instant_utc(water, fz);
+		} else {
+			soup = water;
+		}
+		return soup;
+	}
+
+	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
-		e.from = d[0U];
+		e.from = cook_instant_soup(e.from, d[0U]);
 		e.till = echs_instant_add(e.from, dur);
 		res->ev[0U] = e;
 	} else {
@@ -1702,6 +1800,12 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 		/* copy them instants here so we can sort them */
 		memcpy(rd, d, nd * sizeof(*rd));
+		/* also proto-paste the events in the list and UTCify them
+		 * before the actual sorting because in rare cases timezone
+		 * changes can actually change the order */
+		for (size_t i = 0U; i < nd; i++) {
+			rd[i] = cook_instant_soup(e.from, d[i]);
+		}
 		/* now sort */
 		echs_instant_sort(rd, nd);
 		/* now spread out the instants as echs events */
@@ -1718,6 +1822,13 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	return (echs_evstrm_t)res;
 }
 
+static echs_evstrm_t
+__make_evvevt(echs_event_t e)
+{
+	e = echs_event_utc(e);
+	return make_evical_vevent(&e, 1U);
+}
+
 
 struct evrrul_s {
 	echs_evstrm_class_t class;
@@ -1727,6 +1838,12 @@ struct evrrul_s {
 
 	/* proto-event */
 	echs_event_t e;
+	/* proto-duration */
+	echs_idiff_t dur;
+	/* proto-zone */
+	echs_tzob_t z;
+	/* proto-offset */
+	int pof;
 
 	/* sequence counter */
 	size_t seq;
@@ -1736,8 +1853,6 @@ struct evrrul_s {
 	/* rrul/xrul */
 	struct rrulsp_s rr;
 
-	/* proto-duration */
-	echs_idiff_t dur;
 	/* iterator state */
 	size_t rdi;
 	/* unrolled cache */
@@ -1764,6 +1879,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	struct evrrul_s *this;
 	const size_t duo = sizeof(*this) + sizeof(this);
 	struct evrrul_s **that;
+	echs_tzob_t z;
 
 	if (UNLIKELY(nr == 0U)) {
 		return NULL;
@@ -1774,8 +1890,11 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
+	this->z = z = echs_instant_tzob(e.from);
+	this->e = e = echs_event_utc(e);
+	this->pof = echs_instant_tzof(e.from, z);
 	this->dur = echs_instant_diff(e.till, e.from);
-	this->e = e;
+
 	/* bang the first one */
 	this->rr = rr[0U];
 	this->seq = 0U;
@@ -1880,6 +1999,16 @@ refill(struct evrrul_s *restrict strm)
 	}
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
+	}
+	/* utcify them all */
+	for (size_t i = 0U; i < strm->ncch; i++) {
+		int eof = echs_instant_tzof(strm->cch[i], strm->z);
+
+		if (UNLIKELY(eof != strm->pof)) {
+			/* discrepancy, convert defo */
+			echs_idiff_t d = {.msd = (strm->pof - eof) * 1000U};
+			strm->cch[i] = echs_instant_add(strm->cch[i], d);
+		}
 	}
 	/* otherwise sort the array, just in case */
 	echs_instant_sort(strm->cch, strm->ncch);
@@ -2038,7 +2167,7 @@ make_task(struct ical_vevent_s *ve)
 		}
 		assert(ve->rr.r == NULL);
 		assert(ve->rd.dt == NULL);
-		s = make_evical_vevent(&ve->e, 1U);
+		s = __make_evvevt(ve->e);
 	} else {
 		/* it's an rrule */
 		/* rrule stream (struct evrrul_s* really) */
