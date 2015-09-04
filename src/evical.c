@@ -585,7 +585,10 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 		 * we can do with (atm) is TZID so try and read that */
 		static const char tzid[] = "TZID=";
 
-		if (!strncmp(eof, tzid, strlenof(tzid))) {
+		if (on < ep && *on == 'Z') {
+			/* don't worry about the zone spec */
+			;
+		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
 			/* yep, got him */
 			const char *const zn = eof + strlenof(tzid);
 			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
@@ -629,8 +632,10 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 		if (UNLIKELY(echs_instant_0_p(in))) {
 			continue;
 		}
-		/* attach zone (if any) */
-		in = echs_instant_attach_tzob(in, z);
+		/* attach zone (if any) and only if there's no zone indicator */
+		if (on >= eod || *on != 'Z') {
+			in = echs_instant_attach_tzob(in, z);
+		}
 		add1_to_dtlst(&dl, in);
 	}
 	return dl;
@@ -1776,6 +1781,8 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 			}
 		} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
 			soup = echs_instant_utc(water, fz);
+		} else {
+			soup = water;
 		}
 		return soup;
 	}
