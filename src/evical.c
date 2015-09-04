@@ -1759,7 +1759,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	eof = echs_instant_tzof(e.from, z);
 	dur = echs_instant_diff(e.till, e.from);
 
-	static echs_instant_t
+	auto inline echs_instant_t
 	cook_instant_soup(echs_instant_t broth, echs_instant_t water)
 	{
 		echs_instant_t soup;
