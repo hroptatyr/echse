@@ -478,4 +478,22 @@ echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
 	return i;
 }
 
+int
+echs_tzob_offs(echs_tzob_t z, echs_instant_t i, int x)
+{
+	time_t nix;
+	zif_t _z;
+
+	i = echs_instant_detach_tzob(i);
+	if (UNLIKELY(echs_instant_all_day_p(i))) {
+		/* nah, all-day shit isn't offset at all */
+		return 0;
+	} else if (UNLIKELY((_z = __tzob_zif(z)) == NULL)) {
+		return 0;
+	}
+	/* just convert the instant now */
+	nix = __inst_to_epoch(i);
+	return zif_find_zrng(_z, nix + x).offs;
+}
+
 /* tzob.c ends here */
