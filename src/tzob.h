@@ -97,4 +97,12 @@ echs_instant_attach_tzob(echs_instant_t i, echs_tzob_t tz)
 	return i;
 }
 
+/**
+ * Just convenience when UTC-offset of Z to UTC at instant I is enough. */
+static inline int
+echs_instant_tzof(echs_instant_t i, echs_tzob_t z)
+{
+	return echs_tzob_offs(z, i, 0);
+}
+
 #endif	/* INCLUDED_tzob_h_ */
