@@ -378,7 +378,7 @@ snarf_rrule(const char *s, size_t z)
 			break;
 
 		case KEY_UNTIL:
-			rr.until = dt_strp(++kv);
+			rr.until = dt_strp(++kv, NULL, 0U);
 			break;
 
 		case BY_WDAY:
@@ -575,9 +575,10 @@ snarf_mrule(const char *s, size_t z)
 }
 
 static echs_instant_t
-snarf_dt(const char *eof, const char *vp, const char *const UNUSED(ep))
+snarf_dt(const char *eof, const char *vp, const char *const ep)
 {
-	echs_instant_t res = dt_strp(vp);
+	char *on = NULL;
+	echs_instant_t res = dt_strp(vp, &on, ep - vp);
 
 	if (*eof++ == ';') {
 		/* we've got a field modifier, the only modifier
@@ -619,11 +620,13 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 	}
 	for (const char *eod; vp < ep; vp = eod + 1U) {
 		echs_instant_t in;
+		char *on = NULL;
 
 		if (UNLIKELY((eod = strchr(vp, ',')) == NULL)) {
 			eod = ep;
 		}
-		if (UNLIKELY(echs_instant_0_p(in = dt_strp(vp)))) {
+		in = dt_strp(vp, &on, eod - vp);
+		if (UNLIKELY(echs_instant_0_p(in))) {
 			continue;
 		}
 		/* attach zone (if any) */
@@ -867,7 +870,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = dt_strp(vp);;
+		ve->e.from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();

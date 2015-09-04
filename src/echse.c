@@ -564,7 +564,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	echs_evstrm_t smux = NULL;
 
 	if (argi->from_arg) {
-		p.from = dt_strp(argi->from_arg);
+		p.from = dt_strp(argi->from_arg, NULL, 0U);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
 		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
@@ -577,7 +577,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	}
 
 	if (argi->till_arg) {
-		p.till = dt_strp(argi->till_arg);
+		p.till = dt_strp(argi->till_arg, NULL, 0U);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
 		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
