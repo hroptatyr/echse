@@ -1828,6 +1828,12 @@ struct evrrul_s {
 
 	/* proto-event */
 	echs_event_t e;
+	/* proto-duration */
+	echs_idiff_t dur;
+	/* proto-zone */
+	echs_tzob_t z;
+	/* proto-offset */
+	int pof;
 
 	/* sequence counter */
 	size_t seq;
@@ -1837,8 +1843,6 @@ struct evrrul_s {
 	/* rrul/xrul */
 	struct rrulsp_s rr;
 
-	/* proto-duration */
-	echs_idiff_t dur;
 	/* iterator state */
 	size_t rdi;
 	/* unrolled cache */
@@ -1865,6 +1869,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	struct evrrul_s *this;
 	const size_t duo = sizeof(*this) + sizeof(this);
 	struct evrrul_s **that;
+	echs_tzob_t z;
 
 	if (UNLIKELY(nr == 0U)) {
 		return NULL;
@@ -1875,10 +1880,11 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
-	with (echs_event_t eutc = echs_event_utc(e)) {
-		this->dur = echs_instant_diff(eutc.till, eutc.from);
-	}
-	this->e = e;
+	this->z = z = echs_instant_tzob(e.from);
+	this->e = e = echs_event_utc(e);
+	this->pof = echs_instant_tzof(e.from, z);
+	this->dur = echs_instant_diff(e.till, e.from);
+
 	/* bang the first one */
 	this->rr = rr[0U];
 	this->seq = 0U;
@@ -1983,6 +1989,16 @@ refill(struct evrrul_s *restrict strm)
 	}
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
+	}
+	/* utcify them all */
+	for (size_t i = 0U; i < strm->ncch; i++) {
+		int eof = echs_instant_tzof(strm->cch[i], strm->z);
+
+		if (UNLIKELY(eof != strm->pof)) {
+			/* discrepancy, convert defo */
+			echs_idiff_t d = {.msd = (strm->pof - eof) * 1000U};
+			strm->cch[i] = echs_instant_add(strm->cch[i], d);
+		}
 	}
 	/* otherwise sort the array, just in case */
 	echs_instant_sort(strm->cch, strm->ncch);
