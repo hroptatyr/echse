@@ -1364,9 +1364,11 @@ guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r = ECHS_CMD_UNK;
 
-	if ((r = cmd_ical_p(param, buf, bsz))) {
+	if (0) {
 		;
 	} else if ((r = cmd_list_p(param, buf, bsz))) {
+		;
+	} else if ((r = cmd_ical_p(param, buf, bsz))) {
 		;
 	}
 	return r;
