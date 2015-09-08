@@ -126,6 +126,10 @@ EXTRA_DIST += sample_27.ics
 EXTRA_DIST += sample_28.ics
 EXTRA_DIST += sample_29.ics
 EXTRA_DIST += sample_30.ics
+EXTRA_DIST += sample_31.ics
+EXTRA_DIST += sample_32.ics
+EXTRA_DIST += sample_33.ics
+EXTRA_DIST += sample_34.ics
 
 TESTS += rrul_01.clit
 TESTS += rrul_02.clit
