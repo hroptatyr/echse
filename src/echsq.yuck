@@ -23,3 +23,5 @@ optionally followed by whitespace and INSTANCEs.
 Usage: echsq list
 
 List jobs in the queue.
+
+  -u, --user=NAME|UID   Request queue for user NAME or user id UID.

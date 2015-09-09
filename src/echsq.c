@@ -319,20 +319,39 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 /* try and request the queues */
 	char buf[4096U];
 	char cmd[64];
-	const char *e;
 	ssize_t cmz;
 	/* assume failure */
 	int rc = 1;
 
 	/* just build the request */
-	{
+	if (argi->user_arg == NULL) {
 		static const char req[] = "GET /echsq.ics HTTP/1.1\r\n\r\n";
 		cmz = xstrlncpy(cmd, sizeof(cmd), req, strlenof(req));
+	} else {
+		uid_t u;
+		char *on = NULL;
+
+		u = strtoul(argi->user_arg, &on, 10);
+		if (on == NULL || *on) {
+			struct passwd *p;
+
+			if ((p = getpwnam(argi->user_arg)) == NULL) {
+				serror("\
+Error: cannot resolve user name `%s'", argi->user_arg);
+				return rc;
+			}
+			u = p->pw_uid;
+		}
+		cmz = snprintf(
+			cmd, sizeof(cmd),
+			"GET /echsq_%u.ics HTTP/1.1\r\n\r\n", u);
 	}
 
 	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
-		if (UNLIKELY(!(e = get_esock(false)))) {
+		const char *e;
+
+		if (UNLIKELY((e = get_esock(false)) == NULL)) {
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
@@ -349,7 +368,9 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 
 	/* global queue */
 	with (int s) {
-		if (UNLIKELY(!(e = get_esock(true)))) {
+		const char *e;
+
+		if (UNLIKELY((e = get_esock(true)) == NULL)) {
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
