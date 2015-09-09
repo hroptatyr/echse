@@ -316,32 +316,54 @@ more:
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-	(void)argi;
+/* try and request the queues */
+	char buf[4096U];
+	char cmd[64];
+	const char *e;
+	ssize_t cmz;
+	/* assume failure */
+	int rc = 1;
 
-	/* try and request the queues */
+	/* just build the request */
+	{
+		static const char req[] = "GET /echsq.ics HTTP/1.1\r\n\r\n";
+		cmz = xstrlncpy(cmd, sizeof(cmd), req, strlenof(req));
+	}
+
+	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
-		char buf[4096U];
-		char cmd[64];
-		const char *e;
-		ssize_t cmz;
-
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(false))) {
+		if (UNLIKELY(!(e = get_esock(false)))) {
 			break;
-		} else if ((s = make_conn(e)) < 0) {
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
 			break;
 		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq.ics HTTP/1.1\r\n\r\n");
 		write(s, cmd, cmz);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
 		}
 		free_conn(s);
+		rc = 0;
 	}
-	return 0;
+
+	/* global queue */
+	with (int s) {
+		if (UNLIKELY(!(e = get_esock(true)))) {
+			break;
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
+			serror("Error: cannot connect to `%s'", e);
+			break;
+		}
+		write(s, cmd, cmz);
+
+		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
+			write(STDOUT_FILENO, buf, nrd);
+		}
+		free_conn(s);
+		rc = 0;
+	}
+	return rc;
 }
 
 static int
