@@ -1131,8 +1131,8 @@ typedef enum {
 } echs_cmd_t;
 
 struct echs_cmd_list_s {
-	const char *fn;
-	size_t len;
+	/* just store the uid that we want listed */
+	uid_t uid;
 };
 
 struct echs_cmdparam_s {
@@ -1151,19 +1151,42 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	static const char ht_verb[] = "GET ";
 	static const char ht_vers[] = " HTTP/1.1\r\n";
+	static const char prfx[] = "/echsq";
+	static const char sufx[] = ".ics";
+	const char *const eob = buf + bsz;
+	const char *bp;
 	const char *ep;
+	const char *vp;
 
-	if (!memcmp(buf, ht_verb, strlenof(ht_verb)) &&
-	    (ep = xmemmem(buf, bsz, ht_vers, strlenof(ht_vers)))) {
-		/* aaaah http shit and looks like a GET request */
-		const char *bp;
+	if ((bp = buf,
+	     memcmp(bp, ht_verb, strlenof(ht_verb)))) {
+		/* not a GET / request, make sure to exit quickly */
+		;
+	} else if ((bp += strlenof(ht_verb)) >= eob ||
+		   memcmp(bp, prfx, strlenof(prfx))) {
+		/* not a request for echsq, so can't be a LIST command */
+		;
+	} else if ((bp += strlenof(prfx)) >= eob ||
+		   (ep = xmemmem(bp, eob - bp, sufx, strlenof(sufx))) == NULL) {
+		/* not ending in .ics */
+		;
+	} else if ((vp = xmemmem(ep, eob - ep,
+				 ht_vers, strlenof(ht_vers))) == NULL) {
+		/* wrong http version number, we're arseholes today */
+		;
+	} else {
+		/* aaaah it's everything we asked for */
+		char *on = NULL;
 
-		for (; ep > buf && ep[-1] == ' '; ep--);
-		for (bp = ep; bp > buf && bp[-1] != '/'; bp--);
-		param->cmd = ECHS_CMD_LIST;
-		param->list = (struct echs_cmd_list_s){bp, ep - bp};
-		return xmemmem(ep, bsz - (ep - buf), "\r\n\r\n", 4U)
-			? ECHS_CMD_LIST : ECHS_CMD_MORE;
+		if (LIKELY(bp == ep)) {
+			param->list.uid = -1;
+		} else if (UNLIKELY(*bp++ != '_')) {
+			param->list.uid = 0;
+		} else if (param->list.uid = strtoul(bp, &on, 10), on != ep) {
+			/* they've asked for echsq_UID.ics, but fucked it */
+			param->list.uid = 0;
+		}
+		return ECHS_CMD_LIST;
 	}
 	return ECHS_CMD_UNK;
 }
@@ -1181,24 +1204,28 @@ cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 }
 
 static ssize_t
-cmd_list(int ofd, const struct echs_cmd_list_s cmd[static 1U])
+cmd_list(EV_P_ int ofd, const struct echs_cmd_list_s cmd[static 1U], ncred_t c)
 {
 	static const char rpl403[] = "\
 HTTP/1.1 403 Forbidden\r\n\r\n";
 	static const char rpl404[] = "\
 HTTP/1.1 404 Not Found\r\n\r\n";
+	static const char rpl500[] = "\
+HTTP/1.1 500 Internal Server Error\r\n\r\n";
 	static const char rpl200[] = "\
 HTTP/1.1 200 Ok\r\n\r\n";
-	char fn[cmd->len + 1U];
+	char fn[PATH_MAX];
 	const char *rpl;
 	size_t rpz;
 	struct stat st;
 	int fd = -1;
 	ssize_t nwr = 0;
 
-	memcpy(fn, cmd->fn, cmd->len);
-	fn[cmd->len] = '\0';
-	if (fstatat(qdirfd, fn, &st, 0) < 0) {
+	if (UNLIKELY(c.u & (unsigned)cmd->uid != c.u)) {
+		rpl = rpl403, rpz = strlenof(rpl403);
+	} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", cmd->uid) < 0) {
+		rpl = rpl500, rpz = strlenof(rpl500);
+	} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
 		rpl = rpl404, rpz = strlenof(rpl404);
 	} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
 		rpl = rpl403, rpz = strlenof(rpl403);
@@ -1629,7 +1656,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	/* check the command we're supposed to obey */
 	switch (guess_cmd(c->cmd, c->buf, nrd)) {
 	case ECHS_CMD_LIST:
-		(void)cmd_list(fd, &c->cmd->list);
+		(void)cmd_list(EV_A_ fd, &c->cmd->list, c->cred);
 		/* always shut him down */
 		goto shut;
 
