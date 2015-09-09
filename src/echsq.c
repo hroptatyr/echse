@@ -311,22 +311,14 @@ more:
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-	unsigned char q;
+	(void)argi;
 
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
-	} else {
-		q = 'a';
-	}
 	/* try and request the queues */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
+	with (int s) {
 		char buf[4096U];
 		char cmd[64];
 		const char *e;
 		ssize_t cmz;
-		int s;
 
 		/* let's try the local echsd and then the system-wide one */
 		if (!(e = get_esock(false))) {
@@ -336,41 +328,7 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 			break;
 		}
 		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
-		write(s, cmd, cmz);
-
-		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
-			write(STDOUT_FILENO, buf, nrd);
-		}
-		free_conn(s);
-	}
-
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
-	} else {
-		q = 'a';
-	}
-	/* try the global queues now */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
-		char buf[4096U];
-		char cmd[64];
-		const char *e;
-		ssize_t cmz;
-		int s;
-
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(true))) {
-			break;
-		} else if ((s = make_conn(e)) < 0) {
-			serror("Error: cannot connect to `%s'", e);
-			break;
-		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
+			       "GET /echsq.ics HTTP/1.1\r\n\r\n");
 		write(s, cmd, cmz);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
