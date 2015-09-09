@@ -1214,13 +1214,15 @@ HTTP/1.1 200 Ok\r\n\r\n";
 	char fn[PATH_MAX];
 	const char *rpl;
 	size_t rpz;
+	uid_t u;
 	struct stat st;
 	int fd = -1;
 	ssize_t nwr = 0;
 
-	if (UNLIKELY(c.u & (unsigned)cmd->uid != c.u)) {
+	if (UNLIKELY((u = c.u & (unsigned)cmd->uid) != c.u)) {
 		rpl = rpl403, rpz = strlenof(rpl403);
-	} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", cmd->uid) < 0) {
+	} else if (u = u ?: cmd->uid,
+		   snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
 		rpl = rpl500, rpz = strlenof(rpl500);
 	} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
 		rpl = rpl404, rpz = strlenof(rpl404);
