@@ -87,16 +87,21 @@ serror(const char *fmt, ...)
 	return;
 }
 
-static size_t
-xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 {
-	size_t ssz = strlen(src);
-	if (ssz > dsz) {
+	if (UNLIKELY(ssz > dsz)) {
 		ssz = dsz - 1U;
 	}
 	memcpy(dst, src, ssz);
 	dst[ssz] = '\0';
 	return ssz;
+}
+
+static size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
 
