@@ -60,6 +60,7 @@ typedef enum {
 	 * This verb is also used to denote a successful CREA or UPDT,
 	 * in that case the oid is set but the stream is not. */
 	INSVERB_RESC,
+	INSVERB_SUCC = INSVERB_RESC,
 	/**
 	 * Reschedule one event in task with oid O, cancel the event at
 	 * date/time FROM and instead move it to data/time TO.
@@ -72,6 +73,7 @@ typedef enum {
 	 * This verb is also used to denote a failed CREA or UPDT,
 	 * in that case the oid is set. */
 	INSVERB_UNSC,
+	INSVERB_FAIL = INSVERB_UNSC,
 } echs_insverb_t;
 
 struct echs_instruc_s {
