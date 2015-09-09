@@ -1125,9 +1125,6 @@ typedef enum {
 	ECHS_CMD_UNK,
 	ECHS_CMD_LIST,
 	ECHS_CMD_ICAL,
-
-	/* to indicate that we need more data to finish the command */
-	ECHS_CMD_MORE = -1
 } echs_cmd_t;
 
 struct echs_cmd_list_s {
@@ -1665,9 +1662,6 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		if (UNLIKELY(nrd == 0)) {
 			goto shut;
 		}
-		break;
-
-	case ECHS_CMD_MORE:
 		break;
 
 	default:
