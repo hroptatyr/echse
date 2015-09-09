@@ -1367,16 +1367,16 @@ fini:
 static echs_cmd_t
 guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
-	echs_cmd_t r = ECHS_CMD_UNK;
+	echs_cmd_t r;
 
-	if (0) {
-		;
+	if ((r = param->cmd)) {
+		return r;
 	} else if ((r = cmd_list_p(param, buf, bsz))) {
 		;
 	} else if ((r = cmd_ical_p(param, buf, bsz))) {
 		;
 	}
-	return r;
+	return param->cmd = r;
 }
 
 static void
