@@ -87,16 +87,21 @@ serror(const char *fmt, ...)
 	return;
 }
 
-static size_t
-xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 {
-	size_t ssz = strlen(src);
-	if (ssz > dsz) {
+	if (UNLIKELY(ssz > dsz)) {
 		ssz = dsz - 1U;
 	}
 	memcpy(dst, src, ssz);
 	dst[ssz] = '\0';
 	return ssz;
+}
+
+static size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
 
@@ -311,74 +316,75 @@ more:
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-	unsigned char q;
+/* try and request the queues */
+	char buf[4096U];
+	char cmd[64];
+	ssize_t cmz;
+	/* assume failure */
+	int rc = 1;
 
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
+	/* just build the request */
+	if (argi->user_arg == NULL) {
+		static const char req[] = "GET /echsq.ics HTTP/1.1\r\n\r\n";
+		cmz = xstrlncpy(cmd, sizeof(cmd), req, strlenof(req));
 	} else {
-		q = 'a';
-	}
-	/* try and request the queues */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
-		char buf[4096U];
-		char cmd[64];
-		const char *e;
-		ssize_t cmz;
-		int s;
+		uid_t u;
+		char *on = NULL;
 
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(false))) {
+		u = strtoul(argi->user_arg, &on, 10);
+		if (on == NULL || *on) {
+			struct passwd *p;
+
+			if ((p = getpwnam(argi->user_arg)) == NULL) {
+				serror("\
+Error: cannot resolve user name `%s'", argi->user_arg);
+				return rc;
+			}
+			u = p->pw_uid;
+		}
+		cmz = snprintf(
+			cmd, sizeof(cmd),
+			"GET /echsq_%u.ics HTTP/1.1\r\n\r\n", u);
+	}
+
+	/* let's try the local echsd and then the system-wide one */
+	with (int s) {
+		const char *e;
+
+		if (UNLIKELY((e = get_esock(false)) == NULL)) {
 			break;
-		} else if ((s = make_conn(e)) < 0) {
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
 			break;
 		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
 		write(s, cmd, cmz);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
 		}
 		free_conn(s);
+		rc = 0;
 	}
 
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
-	} else {
-		q = 'a';
-	}
-	/* try the global queues now */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
-		char buf[4096U];
-		char cmd[64];
+	/* global queue */
+	with (int s) {
 		const char *e;
-		ssize_t cmz;
-		int s;
 
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(true))) {
+		if (UNLIKELY((e = get_esock(true)) == NULL)) {
 			break;
-		} else if ((s = make_conn(e)) < 0) {
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
 			break;
 		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
 		write(s, cmd, cmz);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
 		}
 		free_conn(s);
+		rc = 0;
 	}
-	return 0;
+	return rc;
 }
 
 static int
