@@ -1120,6 +1120,102 @@ free_chld(ev_child *c)
 }
 
 
+/* checkpoint handling
+ * this one's quite limited, just 16 slots wide, but it's static and
+ * instead of introducing complexity by managing this array we just
+ * say that if all checkpoint slots have been used we make a complete
+ * dump of every single user. */
+static uid_t chkpnts[16U];
+static size_t ichkpnts;
+
+static inline bool
+chkpntedp(uid_t u)
+{
+	for (size_t i = 0U; i < ichkpnts; i++) {
+		if (chkpnts[i] == u) {
+			return true;
+		}
+	}
+	return !(ichkpnts < countof(chkpnts));
+}
+
+static void
+add_chkpnt(uid_t u)
+{
+	if (LIKELY(ichkpnts < countof(chkpnts))) {
+		chkpnts[ichkpnts++] = u;
+	}
+	return;
+}
+
+static int
+chkpnt1(uid_t u)
+{
+	char fn[PATH_MAX];
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	bool inittedp = false;
+	int fd;
+
+	if (UNLIKELY(snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0)) {
+		return -1;
+	} else if ((fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+		ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+		return -1;
+	}
+
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		if (!task_ht[i].oid) {
+			continue;
+		} else if (task_ht[i].t->t->owner != u) {
+			continue;
+		} else if (!inittedp) {
+			echs_instruc_t ins = {
+				INSVERB_CREA, 0U,
+				.t = task_ht[i].t->t,
+			};
+			echs_icalify_init(fd, ins);
+			inittedp = true;
+		}
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
+	}
+	if (LIKELY(inittedp)) {
+		echs_icalify_fini(fd);
+	} else {
+		/* oh oh oh, is this wise? */
+		unlink(fn);
+	}
+	return close(fd);
+}
+
+static int
+chkpnta(void)
+{
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		if (!task_ht[i].oid) {
+			continue;
+		}
+	}
+	return 0;
+}
+
+static int
+chkpnt(void)
+{
+	int rc = 0;
+
+	if (ichkpnts >= countof(chkpnts)) {
+		return chkpnta();
+	}
+	/* otherwise just go through the list of checkpoint users */
+	for (size_t i = 0U; i < ichkpnts; i++) {
+		rc += chkpnt1(chkpnts[i]);
+	}
+	return rc;
+}
+
+
 /* s2c communication */
 typedef enum {
 	ECHS_CMD_UNK,
@@ -1225,6 +1321,8 @@ HTTP/1.1 200 Ok\r\n\r\n";
 		rpl = rpl403, rpz = strlenof(rpl403);
 	} else if (u = u ?: cmd->uid,
 		   snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
+		rpl = rpl500, rpz = strlenof(rpl500);
+	} else if (chkpntedp(u) && chkpnt() < 0) {
 		rpl = rpl500, rpz = strlenof(rpl500);
 	} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
 		rpl = rpl404, rpz = strlenof(rpl404);
@@ -1335,6 +1433,7 @@ static ssize_t
 cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
 	ssize_t nwr = 0;
+	bool need_dump_p = false;
 
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
@@ -1385,10 +1484,18 @@ unknown instruction received from %d", ofd);
 		}
 		/* now serialise the actual reply */
 		nwr += cmd_ical_rpl(ofd, ins);
+		/* and keep track whether to checkpoint this user soon */
+		if (ins.v == INSVERB_SUCC) {
+			need_dump_p = true;
+		}
 	} while (1);
 fini:
 	/* this flushes all replies */
 	cmd_ical_rpl_flush(ofd);
+	/* keep a note about checkpointing */
+	if (need_dump_p) {
+		add_chkpnt(cred.u);
+	}
 	return nwr;
 }
 
@@ -1815,6 +1922,9 @@ foul:
 static void
 free_echsd(struct _echsd_s *ctx)
 {
+	/* final checkpointing */
+	chkpnt();
+
 	if (UNLIKELY(ctx == NULL)) {
 		return;
 	}
