@@ -1840,14 +1840,14 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 need root privileges to run task as user %d", u);
 		return -1;
 	} else if (UNLIKELY((c = compl_uid(u),
-			     c.sh == NULL || c.wd == NULL ||
-			     c.u != t->owner))) {
+			     c.sh == NULL || c.wd == NULL))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("\
 ignoring task update for (non-existing) user %u", u);
 		return -1;
-	} else if ((res = get_task(t->oid)) != NULL &&
-		   res->t->owner != u) {
+	} else if (!echs_task_owned_by_p(t, c.u) ||
+		   (res = get_task(t->oid)) != NULL &&
+		   !echs_task_owned_by_p(res->t, c.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
@@ -1891,7 +1891,7 @@ _eject_task1(EV_P_ echs_toid_t oid, uid_t uid)
 		ECHS_ERR_LOG("\
 cannot update task: no task with oid 0x%x found", oid);
 		return -1;
-	} else if (UNLIKELY(res->t->owner != uid)) {
+	} else if (UNLIKELY(!echs_task_owned_by_p(res->t, uid))) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
