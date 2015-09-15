@@ -1155,7 +1155,9 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	const char *ep;
 	const char *vp;
 
-	if ((bp = buf,
+	if (UNLIKELY(param->cmd == ECHS_CMD_LIST)) {
+		return ECHS_CMD_LIST;
+	} else if ((bp = buf,
 	     memcmp(bp, ht_verb, strlenof(ht_verb)))) {
 		/* not a GET / request, make sure to exit quickly */
 		;
@@ -1391,16 +1393,22 @@ fini:
 }
 
 static echs_cmd_t
-guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r;
 
-	if ((r = param->cmd)) {
-		return r;
-	} else if ((r = cmd_list_p(param, buf, bsz))) {
-		;
-	} else if ((r = cmd_ical_p(param, buf, bsz))) {
-		;
+	switch (param->cmd) {
+	case ECHS_CMD_UNK:
+	case ECHS_CMD_LIST:
+		if ((r = cmd_list_p(param, buf, bsz))) {
+			break;
+		}
+	case ECHS_CMD_ICAL:
+		if ((r = cmd_ical_p(param, buf, bsz))) {
+			break;
+		}
+	default:
+		break;
 	}
 	return param->cmd = r;
 }
@@ -1653,7 +1661,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, nrd)) {
+	switch (feed_cmd(c->cmd, c->buf, nrd)) {
 	case ECHS_CMD_LIST:
 		(void)cmd_list(EV_A_ fd, &c->cmd->list, c->cred);
 		/* always shut him down */
