@@ -2326,4 +2326,62 @@ echs_task_icalify(int whither, echs_task_t t)
 	return;
 }
 
+void
+echs_icalify_init(int whither, echs_instruc_t i)
+{
+	static const char hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n";
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+	/* definitely the head of the header */
+	fdwrite(hdr, strlenof(hdr));
+
+	switch (i.v/*erb*/) {
+		static const char meth_crea[] = "METHOD:PUBLISH\n";
+		static const char meth_unsc[] = "METHOD:CANCEL\n";
+
+	case INSVERB_CREA:
+		fdwrite(meth_crea, strlenof(meth_crea));
+		if (UNLIKELY(i.t == NULL)) {
+			break;
+		}
+		/* use specifics in T to declare defaults */
+		if (i.t->max_simul) {
+			fdprintf("X-ECHS-MAX-SIMUL:%u\n", i.t->max_simul - 1U);
+		}
+		if (i.t->owner) {
+			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
+		}
+		break;
+	case INSVERB_UNSC:
+		fdwrite(meth_unsc, strlenof(meth_unsc));
+		break;
+	default:
+		break;
+	}
+
+	/* no flushing this one as the user is expected to call
+	 * `echs_icalify_fini()' when the time is ripe */
+	return;
+}
+
+void
+echs_icalify_fini(int whither)
+{
+	static const char ftr[] = "\
+END:VCALENDAR\n";
+
+	/* tell the bufferer we want to write to WHITHER */
+	fdbang(whither);
+	/* just the footer please */
+	fdwrite(ftr, strlenof(ftr));
+	/* that's the last thing in line, just send it off */
+	fdflush();
+	return;
+}
+
 /* evical.c ends here */
