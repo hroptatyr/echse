@@ -1265,13 +1265,16 @@ chkpnta(void)
 		} else if ((fd = seenp(&sntr, u)) >= 0) {
 			/* seen him */
 			;
+		} else if (fd < -1) {
+			/* there's been a problem opening this user's file */
+			continue;
 		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0 ||
 			   (fd = openat(qdirfd, fn, fl, 0600)) < 0) {
 			/* oh my god */
 			ECHS_ERR_LOG("\
 cannot checkpoint user %u's queue", u);
-			rc = -1;
-			continue;
+			fd = INT_MIN;
+			goto bang;
 		} else {
 			echs_instruc_t ins = {
 				INSVERB_CREA, 0U,
@@ -1279,6 +1282,8 @@ cannot checkpoint user %u's queue", u);
 			};
 
 			echs_icalify_init(fd, ins);
+
+		bang:
 			/* boast about having seen this one */
 			if (UNLIKELY(nsnds >= zsnds)) {
 				/* resize this guy */
@@ -1304,6 +1309,15 @@ cannot checkpoint user %u's queue", u);
 		echs_task_icalify(fd, task_ht[i].t->t);
 	}
 	for (size_t i = 0U; i < nsnds; i++) {
+		if (UNLIKELY(snds[i].fd < -1)) {
+			/* just do them one by one here
+			 * and keep our fingers crossed that we
+			 * closed enough file descriptors already */
+			for (; i < nsnds; i++) {
+				rc += chkpnt1(snds[i].key);
+			}
+			break;
+		}
 		echs_icalify_fini(snds[i].fd);
 		rc += close(snds[i].fd);
 	}
