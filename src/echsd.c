@@ -1121,14 +1121,7 @@ free_chld(ev_child *c)
 }
 
 
-/* checkpoint handling
- * this one's quite limited, just 16 slots wide, but it's static and
- * instead of introducing complexity by managing this array we just
- * say that if all checkpoint slots have been used we make a complete
- * dump of every single user. */
-static uid_t chkpnts[16U];
-static size_t ichkpnts;
-
+/* checkpoint handling */
 typedef struct ndnd_s ndnd_t;
 
 struct ndnd_s {
@@ -1138,6 +1131,14 @@ struct ndnd_s {
 };
 
 NEDTRIE_HEAD(ndtr_t, ndnd_t);
+
+/* this one's quite limited, just 16 slots wide, but it's static and
+ * instead of introducing complexity by managing this array we just
+ * say that if all checkpoint slots have been used we make a complete
+ * dump of every single user. */
+static ndtr_t chkpntr;
+static ndnd_t chkpnts[16U];
+static size_t ichkpnts;
 
 static inline uid_t
 ndnd_key(const ndnd_t *r)
@@ -1176,19 +1177,19 @@ add_seen(ndtr_t *tr, ndnd_t *nd)
 static inline bool
 chkpntedp(uid_t u)
 {
-	for (size_t i = 0U; i < ichkpnts; i++) {
-		if (chkpnts[i] == u) {
-			return true;
-		}
+	if (NEDTRIE_FIND(ndtr_t, &chkpntr, &(ndnd_t){.key = u}) != NULL) {
+		return true;
 	}
-	return !(ichkpnts < countof(chkpnts));
+	return false;
 }
 
 static void
 add_chkpnt(uid_t u)
 {
 	if (LIKELY(ichkpnts < countof(chkpnts))) {
-		chkpnts[ichkpnts++] = u;
+		const size_t i = ichkpnts++;
+		chkpnts[i].key = u;
+		NEDTRIE_INSERT(ndtr_t, &chkpntr, chkpnts + i);
 	}
 	return;
 }
@@ -1296,7 +1297,7 @@ cannot checkpoint user %u's queue", u);
 				zsnds = nuz;
 			}
 			snds[nsnds] = (ndnd_t){.key = u, .fd = fd};
-			add_seen(&sntr, &snds[nsnds++]);
+			add_seen(&sntr, snds + nsnds++);
 		}
 
 		/* let evical module handle the printing */
@@ -1321,7 +1322,7 @@ chkpnt(void)
 	}
 	/* otherwise just go through the list of checkpoint users */
 	for (size_t i = 0U; i < ichkpnts; i++) {
-		rc += chkpnt1(chkpnts[i]);
+		rc += chkpnt1(chkpnts[i].key);
 	}
 fin:
 	/* all checkpoints cleared hopefully */
