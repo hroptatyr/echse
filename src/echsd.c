@@ -120,6 +120,9 @@ struct _echsd_s {
 	ev_signal sigterm;
 	ev_signal sigpipe;
 
+	/* checkpoint timer */
+	ev_timer cptim;
+
 	ev_io ctlsock;
 
 	struct ev_loop *loop;
@@ -1232,6 +1235,7 @@ cannot checkpoint user %u's queue", u);
 		/* oh oh oh, is this wise? */
 		unlink(fn);
 	}
+	ECHS_NOTI_LOG("checkpointed user %u", u);
 	return close(fd);
 }
 
@@ -1320,6 +1324,7 @@ cannot checkpoint user %u's queue", u);
 		}
 		echs_icalify_fini(snds[i].fd);
 		rc += close(snds[i].fd);
+		ECHS_NOTI_LOG("checkpointed user %u", snds[i].key);
 	}
 	free(snds);
 	return rc;
@@ -1330,6 +1335,7 @@ chkpnt(void)
 {
 	int rc = 0;
 
+	ECHS_NOTI_LOG("checkpoint");
 	if (ichkpnts >= countof(chkpnts)) {
 		rc = chkpnta();
 		goto fin;
@@ -1342,6 +1348,13 @@ fin:
 	/* all checkpoints cleared hopefully */
 	ichkpnts = 0U;
 	return rc;
+}
+
+static void
+cptim_cb(EV_P_ ev_timer *UNUSED(w), int UNUSED(revents))
+{
+	chkpnt();
+	return;
 }
 
 
@@ -2039,6 +2052,10 @@ make_echsd(void)
 	ev_signal_start(EV_A_ &res->sigterm);
 	ev_signal_init(&res->sigpipe, sigpipe_cb, SIGPIPE);
 	ev_signal_start(EV_A_ &res->sigpipe);
+
+	/* just do minutely checkpointing */
+	ev_timer_init(&res->cptim, cptim_cb, 60.0, 60.0);
+	ev_timer_start(EV_A_ &res->cptim);
 
 	res->loop = EV_A;
 	return res;
