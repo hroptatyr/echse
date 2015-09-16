@@ -77,6 +77,7 @@
 #include "logger.h"
 #include "fdprnt.h"
 #include "nifty.h"
+#include "nedtrie.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -118,6 +119,9 @@ struct _echsd_s {
 	ev_signal sighup;
 	ev_signal sigterm;
 	ev_signal sigpipe;
+
+	/* checkpoint timer */
+	ev_timer cptim;
 
 	ev_io ctlsock;
 
@@ -1120,6 +1124,259 @@ free_chld(ev_child *c)
 }
 
 
+/* checkpoint handling */
+typedef struct ndnd_s ndnd_t;
+
+struct ndnd_s {
+	NEDTRIE_ENTRY(ndnd_t) link;
+	uid_t key;
+	int fd;
+};
+
+NEDTRIE_HEAD(ndtr_t, ndnd_t);
+
+/* this one's quite limited, just 16 slots wide, but it's static and
+ * instead of introducing complexity by managing this array we just
+ * say that if all checkpoint slots have been used we make a complete
+ * dump of every single user. */
+static ndtr_t chkpntr;
+static ndnd_t chkpnts[16U];
+static size_t ichkpnts;
+
+static inline uid_t
+ndnd_key(const ndnd_t *r)
+{
+	return r->key;
+}
+
+NEDTRIE_GENERATE(
+	static, ndtr_t, ndnd_t, link, ndnd_key, NEDTRIE_NOBBLEZEROS(ndtr_t));
+
+static inline void
+seen_init(ndtr_t *restrict x)
+{
+	NEDTRIE_INIT(x);
+	return;
+}
+
+static int
+seenp(ndtr_t *tr, uid_t u)
+{
+	ndnd_t *tmp;
+
+	if ((tmp = NEDTRIE_FIND(ndtr_t, tr, &(ndnd_t){.key = u})) == NULL) {
+		return -1;
+	}
+	return tmp->fd;
+}
+
+static void
+add_seen(ndtr_t *tr, ndnd_t *nd)
+{
+	NEDTRIE_INSERT(ndtr_t, tr, nd);
+	return;
+}
+
+static inline bool
+chkpntedp(uid_t u)
+{
+	if (NEDTRIE_FIND(ndtr_t, &chkpntr, &(ndnd_t){.key = u}) != NULL) {
+		return true;
+	}
+	return false;
+}
+
+static void
+add_chkpnt(uid_t u)
+{
+	if (LIKELY(ichkpnts < countof(chkpnts))) {
+		const size_t i = ichkpnts++;
+		chkpnts[i].key = u;
+		NEDTRIE_INSERT(ndtr_t, &chkpntr, chkpnts + i);
+	}
+	return;
+}
+
+static int
+chkpnt1(uid_t u)
+{
+	char fn[PATH_MAX];
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	bool inittedp = false;
+	int fd;
+
+	if (UNLIKELY(snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0)) {
+		goto err;
+	} else if ((fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+		goto err;
+	}
+
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		if (!task_ht[i].oid) {
+			continue;
+		} else if (task_ht[i].t->t->owner != u) {
+			continue;
+		} else if (!inittedp) {
+			echs_instruc_t ins = {
+				INSVERB_CREA, 0U,
+				.t = task_ht[i].t->t,
+			};
+			echs_icalify_init(fd, ins);
+			inittedp = true;
+		}
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
+	}
+	if (UNLIKELY(!inittedp)) {
+		echs_icalify_init(fd, (echs_instruc_t){INSVERB_UNK});
+	}
+	echs_icalify_fini(fd);
+	if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+		int x = errno;
+		(void)unlinkat(qdirfd, fn, 0);
+		errno = x;
+		goto err;
+	}
+	ECHS_NOTI_LOG("checkpointed user %u", u);
+	return 0;
+err:
+	ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+	return -1;
+}
+
+static int
+chkpnta(void)
+{
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	char fn[PATH_MAX];
+	/* seen tree and seen nodes */
+	ndtr_t sntr;
+	ndnd_t *snds;
+	size_t nsnds = 0UL;
+	size_t zsnds = countof(chkpnts);
+	int rc = 0;
+
+	if (UNLIKELY((snds = malloc(zsnds * sizeof(*snds))) == NULL)) {
+		/* no use starting the whole procedure */
+		return -1;
+	}
+
+	seen_init(&sntr);
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		int fd;
+		uid_t u;
+
+		if (!task_ht[i].oid) {
+			continue;
+		} else if ((u = task_ht[i].t->t->owner) == (uid_t)-1) {
+			/* grml, no owner */
+			continue;
+		} else if ((fd = seenp(&sntr, u)) >= 0) {
+			/* seen him */
+			;
+		} else if (fd < -1) {
+			/* there's been a problem opening this user's file */
+			continue;
+		} else if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0 ||
+			   (fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+			/* oh my god */
+			fd = INT_MIN;
+			goto bang;
+		} else {
+			echs_instruc_t ins = {
+				INSVERB_CREA, 0U,
+				.t = task_ht[i].t->t,
+			};
+
+			echs_icalify_init(fd, ins);
+
+		bang:
+			/* boast about having seen this one */
+			if (UNLIKELY(nsnds >= zsnds)) {
+				/* resize this guy */
+				const size_t nuz = zsnds * 2U;
+				void *nup;
+
+				nup = realloc(snds, nuz * sizeof(*snds));
+				if (UNLIKELY(snds == NULL)) {
+					/* finish up */
+					rc = -1;
+					break;
+				}
+
+				/* reassign */
+				snds = nup;
+				zsnds = nuz;
+			}
+			snds[nsnds] = (ndnd_t){.key = u, .fd = fd};
+			add_seen(&sntr, snds + nsnds++);
+		}
+
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
+	}
+	for (size_t i = 0U; i < nsnds; i++) {
+		const int fd = snds[i].fd;
+		const uid_t u = snds[i].key;
+
+		if (UNLIKELY(fd < -1)) {
+			/* just do them one by one here
+			 * and keep our fingers crossed that we
+			 * closed enough file descriptors already */
+			for (; i < nsnds; i++) {
+				rc += chkpnt1(u);
+			}
+			break;
+		}
+		echs_icalify_fini(fd);
+		if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0) {
+			/* oh fuck, there's really nothing we can do */
+			rc = -1;
+			continue;
+		}
+		if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+			ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+			(void)unlinkat(qdirfd, fn, 0);
+			rc = -1;
+		} else {
+			ECHS_NOTI_LOG("\
+checkpointed user %u", u);
+		}
+	}
+	free(snds);
+	return rc;
+}
+
+static int
+chkpnt(void)
+{
+	int rc = 0;
+
+	ECHS_NOTI_LOG("checkpoint");
+	if (ichkpnts >= countof(chkpnts)) {
+		rc = chkpnta();
+		goto fin;
+	}
+	/* otherwise just go through the list of checkpoint users */
+	for (size_t i = 0U; i < ichkpnts; i++) {
+		rc += chkpnt1(chkpnts[i].key);
+	}
+fin:
+	/* all checkpoints cleared hopefully */
+	ichkpnts = 0U;
+	return rc;
+}
+
+static void
+cptim_cb(EV_P_ ev_timer *UNUSED(w), int UNUSED(revents))
+{
+	chkpnt();
+	return;
+}
+
+
 /* s2c communication */
 typedef enum {
 	ECHS_CMD_UNK,
@@ -1155,7 +1412,9 @@ cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	const char *ep;
 	const char *vp;
 
-	if ((bp = buf,
+	if (UNLIKELY(param->cmd == ECHS_CMD_LIST)) {
+		return ECHS_CMD_LIST;
+	} else if ((bp = buf,
 	     memcmp(bp, ht_verb, strlenof(ht_verb)))) {
 		/* not a GET / request, make sure to exit quickly */
 		;
@@ -1223,6 +1482,8 @@ HTTP/1.1 200 Ok\r\n\r\n";
 		rpl = rpl403, rpz = strlenof(rpl403);
 	} else if (u = u ?: cmd->uid,
 		   snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
+		rpl = rpl500, rpz = strlenof(rpl500);
+	} else if (chkpntedp(u) && chkpnt() < 0) {
 		rpl = rpl500, rpz = strlenof(rpl500);
 	} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
 		rpl = rpl404, rpz = strlenof(rpl404);
@@ -1333,6 +1594,7 @@ static ssize_t
 cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
 	ssize_t nwr = 0;
+	bool need_dump_p = false;
 
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
@@ -1383,24 +1645,38 @@ unknown instruction received from %d", ofd);
 		}
 		/* now serialise the actual reply */
 		nwr += cmd_ical_rpl(ofd, ins);
+		/* and keep track whether to checkpoint this user soon */
+		if (ins.v == INSVERB_SUCC) {
+			need_dump_p = true;
+		}
 	} while (1);
 fini:
 	/* this flushes all replies */
 	cmd_ical_rpl_flush(ofd);
+	/* keep a note about checkpointing */
+	if (need_dump_p) {
+		add_chkpnt(cred.u);
+	}
 	return nwr;
 }
 
 static echs_cmd_t
-guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
 	echs_cmd_t r;
 
-	if ((r = param->cmd)) {
-		return r;
-	} else if ((r = cmd_list_p(param, buf, bsz))) {
-		;
-	} else if ((r = cmd_ical_p(param, buf, bsz))) {
-		;
+	switch (param->cmd) {
+	case ECHS_CMD_UNK:
+	case ECHS_CMD_LIST:
+		if ((r = cmd_list_p(param, buf, bsz))) {
+			break;
+		}
+	case ECHS_CMD_ICAL:
+		if ((r = cmd_ical_p(param, buf, bsz))) {
+			break;
+		}
+	default:
+		break;
 	}
 	return param->cmd = r;
 }
@@ -1524,6 +1800,7 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 	_task_t t = (void*)w;
 
 	ECHS_NOTI_LOG("taking event off of schedule");
+	add_chkpnt(t->t->owner);
 	ev_periodic_stop(EV_A_ w);
 	free_task(t);
 	return;
@@ -1653,7 +1930,7 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, nrd)) {
+	switch (feed_cmd(c->cmd, c->buf, nrd)) {
 	case ECHS_CMD_LIST:
 		(void)cmd_list(EV_A_ fd, &c->cmd->list, c->cred);
 		/* always shut him down */
@@ -1796,6 +2073,10 @@ make_echsd(void)
 	ev_signal_init(&res->sigpipe, sigpipe_cb, SIGPIPE);
 	ev_signal_start(EV_A_ &res->sigpipe);
 
+	/* just do minutely checkpointing */
+	ev_timer_init(&res->cptim, cptim_cb, 60.0, 60.0);
+	ev_timer_start(EV_A_ &res->cptim);
+
 	res->loop = EV_A;
 	return res;
 
@@ -1807,6 +2088,9 @@ foul:
 static void
 free_echsd(struct _echsd_s *ctx)
 {
+	/* final checkpointing */
+	chkpnt();
+
 	if (UNLIKELY(ctx == NULL)) {
 		return;
 	}
@@ -1832,14 +2116,14 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 need root privileges to run task as user %d", u);
 		return -1;
 	} else if (UNLIKELY((c = compl_uid(u),
-			     c.sh == NULL || c.wd == NULL ||
-			     c.u != t->owner))) {
+			     c.sh == NULL || c.wd == NULL))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("\
 ignoring task update for (non-existing) user %u", u);
 		return -1;
-	} else if ((res = get_task(t->oid)) != NULL &&
-		   res->t->owner != u) {
+	} else if (!echs_task_owned_by_p(t, c.u) ||
+		   (res = get_task(t->oid)) != NULL &&
+		   !echs_task_owned_by_p(res->t, c.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
@@ -1883,7 +2167,7 @@ _eject_task1(EV_P_ echs_toid_t oid, uid_t uid)
 		ECHS_ERR_LOG("\
 cannot update task: no task with oid 0x%x found", oid);
 		return -1;
-	} else if (UNLIKELY(res->t->owner != uid)) {
+	} else if (UNLIKELY(!echs_task_owned_by_p(res->t, uid))) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",

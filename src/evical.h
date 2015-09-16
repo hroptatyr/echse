@@ -65,6 +65,14 @@ extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
  * Helper for echsq(1) et al */
 extern void echs_task_icalify(int whither, echs_task_t t);
 
+/**
+ * Send the ical header along with a method and other fields. */
+extern void echs_icalify_init(int whither, echs_instruc_t i);
+
+/**
+ * Send the ical footer. */
+extern void echs_icalify_fini(int whither);
+
 /* The pull parser */
 /**
  * Feed the pull parser P a buffer BUF of size BSZ.
