@@ -1781,6 +1781,7 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 	_task_t t = (void*)w;
 
 	ECHS_NOTI_LOG("taking event off of schedule");
+	add_chkpnt(t->t->owner);
 	ev_periodic_stop(EV_A_ w);
 	free_task(t);
 	return;
