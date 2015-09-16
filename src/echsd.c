@@ -1205,12 +1205,10 @@ chkpnt1(uid_t u)
 	bool inittedp = false;
 	int fd;
 
-	if (UNLIKELY(snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0)) {
-		return -1;
+	if (UNLIKELY(snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0)) {
+		goto err;
 	} else if ((fd = openat(qdirfd, fn, fl, 0600)) < 0) {
-		ECHS_ERR_LOG("\
-cannot checkpoint user %u's queue", u);
-		return -1;
+		goto err;
 	}
 
 	for (size_t i = 0U; i < ztask_ht; i++) {
@@ -1229,14 +1227,22 @@ cannot checkpoint user %u's queue", u);
 		/* let evical module handle the printing */
 		echs_task_icalify(fd, task_ht[i].t->t);
 	}
-	if (LIKELY(inittedp)) {
-		echs_icalify_fini(fd);
-	} else {
-		/* oh oh oh, is this wise? */
-		unlink(fn);
+	if (UNLIKELY(!inittedp)) {
+		echs_icalify_init(fd, (echs_instruc_t){INSVERB_UNK});
+	}
+	echs_icalify_fini(fd);
+	if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+		int x = errno;
+		(void)unlinkat(qdirfd, fn, 0);
+		errno = x;
+		goto err;
 	}
 	ECHS_NOTI_LOG("checkpointed user %u", u);
-	return close(fd);
+	return 0;
+err:
+	ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+	return -1;
 }
 
 static int
@@ -1272,11 +1278,9 @@ chkpnta(void)
 		} else if (fd < -1) {
 			/* there's been a problem opening this user's file */
 			continue;
-		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0 ||
+		} else if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0 ||
 			   (fd = openat(qdirfd, fn, fl, 0600)) < 0) {
 			/* oh my god */
-			ECHS_ERR_LOG("\
-cannot checkpoint user %u's queue", u);
 			fd = INT_MIN;
 			goto bang;
 		} else {
@@ -1313,18 +1317,33 @@ cannot checkpoint user %u's queue", u);
 		echs_task_icalify(fd, task_ht[i].t->t);
 	}
 	for (size_t i = 0U; i < nsnds; i++) {
-		if (UNLIKELY(snds[i].fd < -1)) {
+		const int fd = snds[i].fd;
+		const uid_t u = snds[i].key;
+
+		if (UNLIKELY(fd < -1)) {
 			/* just do them one by one here
 			 * and keep our fingers crossed that we
 			 * closed enough file descriptors already */
 			for (; i < nsnds; i++) {
-				rc += chkpnt1(snds[i].key);
+				rc += chkpnt1(u);
 			}
 			break;
 		}
-		echs_icalify_fini(snds[i].fd);
-		rc += close(snds[i].fd);
-		ECHS_NOTI_LOG("checkpointed user %u", snds[i].key);
+		echs_icalify_fini(fd);
+		if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0) {
+			/* oh fuck, there's really nothing we can do */
+			rc = -1;
+			continue;
+		}
+		if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+			ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+			(void)unlinkat(qdirfd, fn, 0);
+			rc = -1;
+		} else {
+			ECHS_NOTI_LOG("\
+checkpointed user %u", u);
+		}
 	}
 	free(snds);
 	return rc;
