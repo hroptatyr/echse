@@ -1316,12 +1316,16 @@ chkpnt(void)
 	int rc = 0;
 
 	if (ichkpnts >= countof(chkpnts)) {
-		return chkpnta();
+		rc = chkpnta();
+		goto fin;
 	}
 	/* otherwise just go through the list of checkpoint users */
 	for (size_t i = 0U; i < ichkpnts; i++) {
 		rc += chkpnt1(chkpnts[i]);
 	}
+fin:
+	/* all checkpoints cleared hopefully */
+	ichkpnts = 0U;
 	return rc;
 }
 
