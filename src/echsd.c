@@ -77,6 +77,7 @@
 #include "logger.h"
 #include "fdprnt.h"
 #include "nifty.h"
+#include "nedtrie.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -1128,6 +1129,50 @@ free_chld(ev_child *c)
 static uid_t chkpnts[16U];
 static size_t ichkpnts;
 
+typedef struct ndnd_s ndnd_t;
+
+struct ndnd_s {
+	NEDTRIE_ENTRY(ndnd_t) link;
+	uid_t key;
+	int fd;
+};
+
+NEDTRIE_HEAD(ndtr_t, ndnd_t);
+
+static inline uid_t
+ndnd_key(const ndnd_t *r)
+{
+	return r->key;
+}
+
+NEDTRIE_GENERATE(
+	static, ndtr_t, ndnd_t, link, ndnd_key, NEDTRIE_NOBBLEZEROS(ndtr_t));
+
+static inline void
+seen_init(ndtr_t *restrict x)
+{
+	NEDTRIE_INIT(x);
+	return;
+}
+
+static int
+seenp(ndtr_t *tr, uid_t u)
+{
+	ndnd_t *tmp;
+
+	if ((tmp = NEDTRIE_FIND(ndtr_t, tr, &(ndnd_t){.key = u})) == NULL) {
+		return -1;
+	}
+	return tmp->fd;
+}
+
+static void
+seen(ndtr_t *tr, ndnd_t *nd)
+{
+	NEDTRIE_INSERT(ndtr_t, tr, nd);
+	return;
+}
+
 static inline bool
 chkpntedp(uid_t u)
 {
@@ -1192,12 +1237,77 @@ cannot checkpoint user %u's queue", u);
 static int
 chkpnta(void)
 {
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	char fn[PATH_MAX];
+	/* seen tree and seen nodes */
+	ndtr_t sntr;
+	ndnd_t *snds;
+	size_t nsnds = 1UL;
+	size_t zsnds = countof(chkpnts);
+	int rc = 0;
+
+	if (UNLIKELY((snds = malloc(zsnds * sizeof(*snds))) == NULL)) {
+		/* no use starting the whole procedure */
+		return -1;
+	}
+
+	seen_init(&sntr);
 	for (size_t i = 0U; i < ztask_ht; i++) {
+		int fd;
+		uid_t u;
+
 		if (!task_ht[i].oid) {
 			continue;
+		} else if ((u = task_ht[i].t->t->owner) == (uid_t)-1) {
+			/* grml, no owner */
+			continue;
+		} else if ((fd = seenp(&sntr, u)) >= 0) {
+			/* seen him */
+			;
+		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0 ||
+			   (fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+			/* oh my god */
+			ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+			rc = -1;
+			continue;
+		} else {
+			echs_instruc_t ins = {
+				INSVERB_CREA, 0U,
+				.t = task_ht[i].t->t,
+			};
+
+			echs_icalify_init(fd, ins);
+			/* boast about having seen this one */
+			if (UNLIKELY(nsnds >= zsnds)) {
+				/* resize this guy */
+				const size_t nuz = zsnds * 2U;
+				void *nup;
+
+				nup = realloc(snds, nuz * sizeof(*snds));
+				if (UNLIKELY(snds == NULL)) {
+					/* finish up */
+					rc = -1;
+					break;
+				}
+
+				/* reassign */
+				snds = nup;
+				zsnds = nuz;
+			}
+			snds[nsnds] = (ndnd_t){.key = u, .fd = fd};
+			seen(&sntr, &snds[nsnds++]);
 		}
+
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
 	}
-	return 0;
+	for (size_t i = 0U; i < nsnds; i++) {
+		echs_icalify_fini(snds[i].fd);
+		rc += close(snds[i].fd);
+	}
+	free(snds);
+	return rc;
 }
 
 static int
