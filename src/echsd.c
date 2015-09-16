@@ -1167,7 +1167,7 @@ seenp(ndtr_t *tr, uid_t u)
 }
 
 static void
-seen(ndtr_t *tr, ndnd_t *nd)
+add_seen(ndtr_t *tr, ndnd_t *nd)
 {
 	NEDTRIE_INSERT(ndtr_t, tr, nd);
 	return;
@@ -1296,7 +1296,7 @@ cannot checkpoint user %u's queue", u);
 				zsnds = nuz;
 			}
 			snds[nsnds] = (ndnd_t){.key = u, .fd = fd};
-			seen(&sntr, &snds[nsnds++]);
+			add_seen(&sntr, &snds[nsnds++]);
 		}
 
 		/* let evical module handle the printing */
