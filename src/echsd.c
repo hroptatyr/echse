@@ -1247,7 +1247,7 @@ chkpnta(void)
 	/* seen tree and seen nodes */
 	ndtr_t sntr;
 	ndnd_t *snds;
-	size_t nsnds = 1UL;
+	size_t nsnds = 0UL;
 	size_t zsnds = countof(chkpnts);
 	int rc = 0;
 
