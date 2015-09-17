@@ -2184,9 +2184,7 @@ task update from user %d for task from user %d failed: permission denied",
 	/* otherwise proceed with the evacuation */
 	ECHS_NOTI_LOG("cancelling task 0x%x", oid);
 	ev_periodic_stop(EV_A_ &res->w);
-	free(deconst(res->dflt_cred.wd));
-	free(deconst(res->dflt_cred.sh));
-	free_echs_task(res->t);
+	free_task(res);
 	return 0;
 }
 
