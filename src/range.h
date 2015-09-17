@@ -1,6 +1,6 @@
-/*** echse.h -- testing echse concept
+/*** range.h -- ranges over instants or idiffs
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,20 +34,28 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
-
-#include <stdlib.h>
-#include <stdint.h>
+#if !defined INCLUDED_range_h_
+#define INCLUDED_range_h_
+#include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include "instant.h"
-#include "range.h"
-#include "dt-strpf.h"
-#include "event.h"
-#include "evstrm.h"
 
-/* auxiliary stuff that might pollute the global namespace */
-#include "intern.h"
-#include "bufpool.h"
+typedef struct {
+	echs_instant_t beg;
+	echs_instant_t end;
+} echs_range_t;
 
-#endif	/* INCLUDED_echse_h_ */
+typedef struct {
+	echs_idiff_t lower;
+	echs_idiff_t upper;
+} echs_idrng_t;
+
+
+static inline __attribute__((const, pure)) echs_idiff_t
+echs_range_dur(echs_range_t r)
+{
+	return echs_instant_diff(r.end, r.beg);
+}
+
+#endif	/* INCLUDED_range_h_ */

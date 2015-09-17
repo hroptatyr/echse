@@ -27,6 +27,7 @@ noinst_LTLIBRARIES += libechse.la
 libechse_la_SOURCES = echse.h
 EXTRA_libechse_la_SOURCES = $(libechse_la_built_sources)
 libechse_la_SOURCES += instant.c instant.h
+libechse_la_SOURCES += range.c range.h
 libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
 libechse_la_SOURCES += intern.c intern.h

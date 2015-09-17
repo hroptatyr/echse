@@ -1,6 +1,6 @@
-/*** echse.h -- testing echse concept
+/*** range.c -- ranges over instants or idiffs
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,20 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_echse_h_
-#define INCLUDED_echse_h_
-
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include "instant.h"
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include "range.h"
-#include "dt-strpf.h"
-#include "event.h"
-#include "evstrm.h"
 
-/* auxiliary stuff that might pollute the global namespace */
-#include "intern.h"
-#include "bufpool.h"
-
-#endif	/* INCLUDED_echse_h_ */
+/* range.c ends here */
