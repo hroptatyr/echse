@@ -103,6 +103,9 @@ struct _task_s {
 	ev_periodic w;
 	_task_t next;
 
+	/* currently scheduled run-time */
+	echs_range_t cur;
+
 	/* this is the task as understood by libechse */
 	echs_task_t t;
 
@@ -1886,14 +1889,18 @@ resched(ev_periodic *w, ev_tstamp now)
 		ECHS_NOTI_LOG("event in the past, not scheduling");
 		w->reschedule_cb = NULL;
 		w->cb = unsched;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now;
 	} else if (UNLIKELY(echs_event_0_p(e))) {
 		/* we need to unschedule AFTER the next run */
 		ECHS_NOTI_LOG("event completed, will not reschedule");
 		w->reschedule_cb = NULL;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now + 1.e+30;
 	}
 
+	/* store the current event range and calculate tstamp for libev */
+	t->cur = (echs_range_t){e.from, e.till};
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
