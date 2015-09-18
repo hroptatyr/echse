@@ -1402,6 +1402,8 @@ struct echs_cmdparam_s {
 
 static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
 static int _eject_task1(EV_P_ echs_toid_t o, uid_t u);
+static int _eject_taskr(EV_P_ echs_toid_t o, echs_range_t r, uid_t u);
+static int _eject_taskt(EV_P_ echs_toid_t o, echs_instant_t i, uid_t u);
 
 static echs_cmd_t
 cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
@@ -1603,6 +1605,8 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
 		switch (ins.v) {
+			int rc;
+
 		case INSVERB_CREA:
 		case INSVERB_UPDT:
 			if (UNLIKELY(ins.t == NULL)) {
@@ -1630,8 +1634,20 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 
 		case INSVERB_UNSC:
 			/* cancel request */
-			/* otherwise eject him */
-			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
+			if (echs_nul_instant_p(ins.ins)) {
+				/* cancel the whole shebang */
+				rc = _eject_task1(EV_A_ ins.o, cred.u);
+			} else if (echs_nul_instant_p(ins.rng.end) ||
+				   echs_instant_eq_p(ins.ins, ins.rng.end)) {
+				/* cancel just some events, at an instant */
+				rc = _eject_taskt(
+					EV_A_ ins.o, ins.ins, cred.u);
+			} else {
+				/* cancel just some events in a range */
+				rc = _eject_taskr(
+					EV_A_ ins.o, ins.rng, cred.u);
+			}
+			if (UNLIKELY(rc < 0)) {
 				/* reply with REQUEST-STATUS:x */
 				ins.v = INSVERB_FAIL;
 				break;
@@ -2187,6 +2203,100 @@ task update from user %d for task from user %d failed: permission denied",
 	free_task(res);
 	return 0;
 }
+
+static int
+_eject_taskt(EV_P_ echs_toid_t oid, echs_instant_t ins, uid_t uid)
+{
+/* this one's a bit tricker, we have to see if the instant coincides with the
+ * currently scheduled recurrence instance of the task (identified by OID)
+ * and if so, unschedule it and replace it by the next recurrence instance,
+ * or delete the whole task (as in `_eject_task1()`) if no more recurrences
+ * happen after INS.
+ * If not, i.e. INS is after the currently scheduled instance, this
+ * should add EXDATEs to the task in question so they won't get scheduled. */
+	_task_t res;
+
+	if (UNLIKELY((res = get_task(oid)) == NULL)) {
+		ECHS_ERR_LOG("\
+cannot update task: no task with oid 0x%x found", oid);
+		return -1;
+	} else if (UNLIKELY(!echs_task_owned_by_p(res->t, uid))) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     uid, res->t->owner);
+		return -1;
+	}
+	/* otherwise proceed with the evacuation */
+	with (char idt[32U]) {
+		dt_strf(idt, sizeof(idt), ins);
+		ECHS_NOTI_LOG("cancelling task 0x%x recurrences at %s",
+			      oid, idt);
+	}
+
+	if (UNLIKELY(echs_instant_lt_p(ins, res->cur.beg))) {
+		/* yeah alright, we're in the clear, they want
+		 * us to cancel some thing that's happened already */
+		;
+	} else if (echs_instant_eq_p(ins, res->cur.beg)) {
+		/* yep, the scheduled guy needs shifting,
+		 * since this is an instant-only shift just stop the
+		 * periodic timer and start it again */
+		ev_periodic_stop(EV_A_ &res->w);
+		ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
+		ev_periodic_start(EV_A_ &res->w);
+	} else {
+		/* just add an EXDATE to the task's stream */
+		;
+	}
+	return 0;
+}
+
+static int
+_eject_taskr(EV_P_ echs_toid_t oid, echs_range_t rng, uid_t uid)
+{
+/* this one's a bit tricker, we have to see if the range covers the
+ * currently scheduled recurrence instance of the task (identified by OID)
+ * and if so, unschedule it and replace it by the next recurrence instance
+ * after the range, or delete the whole task (as in `_eject_task1()`) if
+ * no more recurrences happen after the end of the range.
+ * If not, i.e. the range does not cover the next scheduled event, this
+ * should add EXDATEs to the task in question so they won't get scheduled. */
+	_task_t res;
+
+	if (UNLIKELY((res = get_task(oid)) == NULL)) {
+		ECHS_ERR_LOG("\
+cannot update task: no task with oid 0x%x found", oid);
+		return -1;
+	} else if (UNLIKELY(!echs_task_owned_by_p(res->t, uid))) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     uid, res->t->owner);
+		return -1;
+	}
+	/* otherwise proceed with the evacuation */
+	with (char bdt[32U], edt[32U]) {
+		dt_strf(bdt, sizeof(bdt), rng.beg);
+		dt_strf(edt, sizeof(edt), rng.end);
+		ECHS_NOTI_LOG("cancelling task 0x%x recurrences in [%s, %s)",
+			      oid, bdt, edt);
+	}
+
+	if (UNLIKELY(echs_instant_le_p(rng.end, res->cur.beg))) {
+		/* range is in the past, do fuckall */
+		;
+	} else if (echs_instant_le_p(rng.beg, res->cur.beg)) {
+		/* call off the current guy and maybe some of the
+		 * following recurrences */
+		;
+	} else {
+		/* EXDATE */
+		;
+	}
+	return 0;
+}
+
 
 static void
 _inject_file(struct _echsd_s *ctx, const char *fn)
