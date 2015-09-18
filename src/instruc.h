@@ -38,6 +38,7 @@
 #define INCLUDED_instruc_h_
 
 #include "instant.h"
+#include "range.h"
 #include "task.h"
 
 typedef struct echs_instruc_s echs_instruc_t;
@@ -46,7 +47,7 @@ typedef enum {
 	INSVERB_UNK,
 	/**
 	 * List all tasks (O == 0) or task with oid O.
-	 * T or S and I are unused. */
+	 * The slots in the union are unused. */
 	INSVERB_LIST,
 	/**
 	 * Create task T with oid O.
@@ -63,13 +64,14 @@ typedef enum {
 	INSVERB_SUCC = INSVERB_RESC,
 	/**
 	 * Reschedule one event in task with oid O, cancel the event at
-	 * date/time FROM and instead move it to data/time TO.
+	 * date/time INS and instead move it to data/time TO.
 	 * If FROM is the nul instant, simply add an extra recurrence
 	 * of the task at date/time TO. */
 	INSVERB_RES1,
 	/**
 	 * Unschedule (cancel) task with oid O.
-	 * To unschedule one recurrence instance in O specify I.
+	 * To unschedule one recurrence instance in O specify INS,
+	 * or for an interval of recurrences specify RNG.
 	 * This verb is also used to denote a failed CREA or UPDT,
 	 * in that case the oid is set. */
 	INSVERB_UNSC,
@@ -82,6 +84,8 @@ struct echs_instruc_s {
 	union {
 		echs_task_t t;
 		echs_evstrm_t s;
+		echs_instant_t ins;
+		echs_range_t rng;
 		struct {
 			echs_instant_t from;
 			echs_instant_t to;

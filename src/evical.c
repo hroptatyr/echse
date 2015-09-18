@@ -880,7 +880,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
 		} else {
-			ve->e.till = ve->e.from;
+			/* they're just cancelling this one instance */
+			ve->e.till = echs_nul_instant();
 		}
 		break;
 	}
@@ -2286,8 +2287,7 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_CANCEL:
 			i.v = INSVERB_UNSC;
 			i.o = ve->t.oid;
-			i.from = ve->e.from;
-			i.to = ve->e.till;
+			i.rng = (echs_range_t){ve->e.from, ve->e.till};
 			break;
 		default:
 		case METH_ADD:
