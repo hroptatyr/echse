@@ -88,8 +88,12 @@ struct echs_idiff_s {
  * Fix up instants like the 32 Dec to become 01 Jan of the following year. */
 extern echs_instant_t echs_instant_fixup(echs_instant_t);
 
+/**
+ * Return the duration from BEG to END, i.e. compute END - BEG. */
 extern echs_idiff_t echs_instant_diff(echs_instant_t end, echs_instant_t beg);
 
+/**
+ * Return the instant yielded by adding a duration ADD to the instant BAS. */
 extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
 
 /**
