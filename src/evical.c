@@ -2107,17 +2107,27 @@ set_valid_evrrul(echs_evstrm_t s, echs_range_t v)
 /* no bullshit in this one, set UNTIL and be finished */
 	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 
+	/* it's easier when we just have some precalc'd rdates */
+	if (UNLIKELY(this->rdi >= this->ncch)) {
+		/* we have to refill the rdate cache */
+		if (refill(deconst(this)) == 0UL) {
+			goto nul;
+		}
+		/* reset counter */
+		this->rdi = 0U;
+	}
 	/* constrain the beginning */
 	for (;
 	     this->rdi < this->ncch &&
 		     echs_instant_lt_p(this->cch[this->rdi], v.beg);
 	     this->rdi++);
-
 	if (UNLIKELY(this->rdi >= this->ncch ||
 		     echs_nul_instant_p(this->cch[this->rdi]))) {
+	nul:
 		/* we're out of puff, are we not? */
 		return echs_nul_range();
 	}
+
 	/* otherwise this is the way to go */
 	v.beg = this->cch[this->rdi];
 
@@ -2139,11 +2149,21 @@ valid_evrrul(echs_const_evstrm_t s)
 {
 /* the earliest recurrence is determined by DTSTART,
  * the latest is, in principle, unbounded unless there's a COUNT or UNTIL */
-	const struct evrrul_s *restrict this = (const struct evrrul_s*)s;
+	struct evrrul_s *restrict this = (struct evrrul_s*)deconst(s);
 	echs_range_t res;
 
+	/* it's easier when we just have some precalc'd rdates */
+	if (UNLIKELY(this->rdi >= this->ncch)) {
+		/* we have to refill the rdate cache */
+		if (refill(deconst(this)) == 0UL) {
+			goto nul;
+		}
+		/* reset counter */
+		this->rdi = 0U;
+	}
 	if (UNLIKELY(this->rdi >= this->ncch ||
 		     echs_nul_instant_p(this->cch[this->rdi]))) {
+	nul:
 		/* we're out of puff, are we not? */
 		return echs_nul_range();
 	}
