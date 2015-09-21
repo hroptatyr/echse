@@ -58,4 +58,40 @@ echs_range_dur(echs_range_t r)
 	return echs_instant_diff(r.end, r.beg);
 }
 
+static inline __attribute__((const, pure)) echs_range_t
+echs_nul_range(void)
+{
+	return (echs_range_t){echs_nul_instant(), echs_nul_instant()};
+}
+
+static inline __attribute__((const, pure)) bool
+echs_nul_range_p(echs_range_t r)
+{
+	return echs_nul_instant_p(r.end);
+}
+
+static inline __attribute__((const, pure)) echs_range_t
+echs_max_range(void)
+{
+	return (echs_range_t){echs_min_instant(), echs_max_instant()};
+}
+
+static inline __attribute__((const, pure)) bool
+echs_max_range_p(echs_range_t r)
+{
+	return echs_min_instant_p(r.beg) && echs_max_instant_p(r.end);
+}
+
+static inline __attribute__((const, pure)) echs_range_t
+echs_min_range(void)
+{
+	return (echs_range_t){echs_max_instant(), echs_min_instant()};
+}
+
+static inline __attribute__((const, pure)) bool
+echs_min_range_p(echs_range_t r)
+{
+	return echs_instant_le_p(r.end, r.beg);
+}
+
 #endif	/* INCLUDED_range_h_ */

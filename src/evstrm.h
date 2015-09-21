@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include "event.h"
+#include "range.h"
 
 typedef struct echs_evstrm_s *echs_evstrm_t;
 typedef const struct echs_evstrm_s *echs_const_evstrm_t;
@@ -53,6 +54,10 @@ struct echs_evstrm_class_s {
 	void(*free)(echs_evstrm_t);
 	/** serialiser method */
 	void(*seria)(int whither, echs_const_evstrm_t);
+	/** valid time accessor */
+	echs_range_t(*set_valid)(echs_evstrm_t, echs_range_t);
+	/** valid time accessor */
+	echs_range_t(*valid)(echs_const_evstrm_t);
 };
 
 struct echs_evstrm_s {
@@ -127,6 +132,24 @@ echs_evstrm_seria(int whither, echs_evstrm_t s)
 		return s->class->seria(whither, s);
 	}
 	return;
+}
+
+static inline echs_range_t
+echs_evstrm_set_valid(echs_evstrm_t s, echs_range_t v)
+{
+	if (s->class->set_valid != NULL) {
+		return s->class->set_valid(s, v);
+	}
+	return echs_nul_range();
+}
+
+static inline echs_range_t
+echs_evstrm_valid(echs_evstrm_t s)
+{
+	if (s->class->valid != NULL) {
+		return s->class->valid(s);
+	}
+	return echs_nul_range();
 }
 
 #endif	/* INCLUDED_evstrm_h_ */
