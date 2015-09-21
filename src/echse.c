@@ -76,6 +76,37 @@ serror(const char *fmt, ...)
 	return;
 }
 
+static size_t
+range_strf(char *restrict str, size_t ssz, echs_range_t r)
+{
+	size_t n = 0U;
+
+	if (UNLIKELY(!ssz)) {
+		return 0U;
+	} else if (UNLIKELY(ssz < 2U)) {
+		*str = '\0';
+		return 0U;
+	} else if (UNLIKELY(echs_max_range_p(r))) {
+		str[n++] = '*';
+		goto fin;
+	} else if (!echs_min_instant_p(r.beg)) {
+		n += dt_strf(str, ssz, r.beg);
+	}
+	if (n < ssz && !echs_max_instant_p(r.end)) {
+		str[n++] = '-';
+		n += dt_strf(str + n, ssz - n, r.end);
+	} else if (n < ssz) {
+		str[n++] = '+';
+	}
+fin:
+	if (LIKELY(n < ssz)) {
+		str[n] = '\0';
+	} else {
+		str[ssz - 1U] = '\0';
+	}
+	return n;
+}
+
 
 /* global stream map */
 static echs_evstrm_t *strms;
@@ -583,12 +614,10 @@ more:
 			}
 			/* and otherwise inject him */
 			with (echs_range_t r = echs_evstrm_valid(ins.t->strm)) {
-				char beg[32U], end[32U];
+				char rng[64U];
 
-				dt_strf(beg, sizeof(beg), r.beg);
-				dt_strf(end, sizeof(end), r.end);
-				printf("task 0x%lx %s-%s\n",
-				       ins.t->oid, beg, end);
+				range_strf(rng, sizeof(rng), r);
+				printf("task 0x%lx %s\n", ins.t->oid, rng);
 			}
 			free_echs_task(ins.t);
 		} while (1);
