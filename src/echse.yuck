@@ -17,6 +17,8 @@ Usage: echse merge [FILE]...
 
 Merge echse source FILEs and print merged output.
 
+  --valid=RANGE     Constrain all output to this date range.
+
 
 Usage: echse unroll [FILE]...
 

@@ -1,6 +1,6 @@
 /*** echse.c -- testing echse concept
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -105,6 +105,37 @@ fin:
 		str[ssz - 1U] = '\0';
 	}
 	return n;
+}
+
+static echs_range_t
+range_strp(const char *str, char **on, size_t len)
+{
+	char *op = deconst(str);
+	echs_range_t r;
+
+	if (UNLIKELY(!len)) {
+		goto err;
+	} else if (*str == '-') {
+		/* ah, lower bound seems to be -infty */
+		r.beg = echs_min_instant();
+	} else {
+		r.beg = dt_strp(str, &op, len);
+	}
+	switch (*op++) {
+	case '-':
+		/* just a normal range then, innit? */
+		r.end = dt_strp(op, on, len - (op - str));
+		break;
+	case '+':
+		r.end = echs_max_instant();
+		break;
+	default:
+		/* huh? */
+		goto err;
+	}
+	return r;
+err:
+	return echs_max_range();
 }
 
 
@@ -526,7 +557,7 @@ more:
 }
 
 static int
-_merge_fd(int fd)
+_merge_fd(int fd, echs_range_t valid)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -555,6 +586,8 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
+			/* constrain */
+			echs_evstrm_set_valid(ins.t->strm, valid);
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
 			free_echs_task(ins.t);
@@ -754,6 +787,13 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
+	echs_range_t valid = echs_max_range();
+
+	if (argi->valid_arg) {
+		const char *v = argi->valid_arg;
+		valid = range_strp(v, NULL, strlen(v));
+	}
+
 	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
@@ -765,12 +805,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_merge_fd(fd);
+		_merge_fd(fd, valid);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_merge_fd(STDIN_FILENO);
+		_merge_fd(STDIN_FILENO, valid);
 	}
 	echs_prnt_ical_fini();
 	return 0;
