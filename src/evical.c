@@ -1670,12 +1670,16 @@ static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
 static void send_evical_vevent(int whither, echs_const_evstrm_t s);
+static echs_range_t set_valid_evical_vevent(echs_evstrm_t s, echs_range_t v);
+static echs_range_t valid_evical_vevent(echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
 	.seria = send_evical_vevent,
+	.set_valid = set_valid_evical_vevent,
+	.valid = valid_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -1734,6 +1738,36 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 
 	send_ev(whither, this->ev[0U]);
 	return;
+}
+
+static echs_range_t
+set_valid_evical_vevent(echs_evstrm_t s, echs_range_t v)
+{
+	struct evical_s *this = (struct evical_s*)s;
+	size_t i, n;
+
+	/* setting a valid time here means clamping really */
+	for (i = this->i, n = this->nev;
+	     i < n && echs_instant_lt_p(this->ev[i].from, v.beg); i++);
+	while (n > i && echs_instant_lt_p(v.end, this->ev[--n].till));
+
+	if (UNLIKELY(i >= n)) {
+		return echs_nul_range();
+	}
+	return (echs_range_t){this->ev[i].from, this->ev[n].till};
+}
+
+static echs_range_t
+valid_evical_vevent(echs_const_evstrm_t s)
+{
+	const struct evical_s *this = (const struct evical_s*)s;
+	size_t i, n;
+
+	if (UNLIKELY((i = this->i) >= (n = this->nev))) {
+		return echs_nul_range();
+	}
+	/* they're sorted, so go for i-th and last element */
+	return (echs_range_t){this->ev[i].from, this->ev[--n].till};
 }
 
 static echs_instant_t
@@ -1865,12 +1899,16 @@ static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
 static void send_evrrul(int whither, echs_const_evstrm_t s);
+static echs_range_t set_valid_evrrul(echs_evstrm_t s, echs_range_t v);
+static echs_range_t valid_evrrul(echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
 	.seria = send_evrrul,
+	.set_valid = set_valid_evrrul,
+	.valid = valid_evrrul,
 };
 
 static echs_evstrm_t
@@ -2061,6 +2099,103 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 	}
 	send_rrul(whither, &this->rr);
 	return;
+}
+
+static echs_range_t
+set_valid_evrrul(echs_evstrm_t s, echs_range_t v)
+{
+/* no bullshit in this one, set UNTIL and be finished */
+	struct evrrul_s *restrict this = (struct evrrul_s*)s;
+
+	/* constrain the beginning */
+	for (;
+	     this->rdi < this->ncch &&
+		     echs_instant_lt_p(this->cch[this->rdi], v.beg);
+	     this->rdi++);
+
+	if (UNLIKELY(this->rdi >= this->ncch ||
+		     echs_nul_instant_p(this->cch[this->rdi]))) {
+		/* we're out of puff, are we not? */
+		return echs_nul_range();
+	}
+	/* otherwise this is the way to go */
+	v.beg = this->cch[this->rdi];
+
+	if (echs_instant_eq_p(this->rr.until, v.end)) {
+		/* nothing to do */
+		;
+	} else if (echs_instant_lt_p(this->rr.until, v.end)) {
+		/* we're tighter already, set V and bugger off */
+		v.end = this->rr.until;
+	} else {
+		/* there's really stuff that needs doing here */
+		this->rr.until = v.end;
+	}
+	return v;
+}
+
+static echs_range_t
+valid_evrrul(echs_const_evstrm_t s)
+{
+/* the earliest recurrence is determined by DTSTART,
+ * the latest is, in principle, unbounded unless there's a COUNT or UNTIL */
+	const struct evrrul_s *restrict this = (const struct evrrul_s*)s;
+	echs_range_t res;
+
+	if (UNLIKELY(this->rdi >= this->ncch ||
+		     echs_nul_instant_p(this->cch[this->rdi]))) {
+		/* we're out of puff, are we not? */
+		return echs_nul_range();
+	}
+	/* roughest estimate for the upper bound would be infinity */
+	res.beg = this->cch[this->rdi];
+	res.end = echs_max_instant();
+
+	if (!echs_nul_instant_p(this->rr.until)) {
+		/* ah brill, got the UNTIL slot set we have */
+		res.end = this->rr.until;
+	} else if (this->rr.count < -1U) {
+		/* try and estimate an upper bound for freq/inter/count */
+		echs_idiff_t d = {0U};
+		unsigned int tmp = this->rr.inter * this->rr.count;
+
+		switch (this->rr.freq) {
+		case FREQ_YEARLY:
+			tmp = tmp * 365U + (tmp / 4U + 1U/*leap years*/);
+			d.dd = tmp;
+			break;
+		case FREQ_MONTHLY:
+			tmp *= 31U;
+			d.dd = tmp;
+			break;
+		case FREQ_WEEKLY:
+			tmp *= 7U;
+			d.dd = tmp;
+			break;
+		case FREQ_DAILY:
+			d.dd = tmp;
+			break;
+		case FREQ_HOURLY:
+			d.dd = tmp / 24U;
+			d.msd = (tmp % 24U) * 3600U * 1000U;
+			break;
+		case FREQ_MINUTELY:
+			d.dd = tmp / (24U * 60U);
+			d.msd = (tmp % (24U * 60U)) * 60U * 1000U;
+			break;
+		case FREQ_SECONDLY:
+			d.dd = tmp / (24U * 60U * 60U);
+			d.msd = (tmp % (24U * 60U * 60U)) * 1000U;
+			break;
+		default:
+			goto out;
+		}
+
+		/* now use res.beg to estimate res.end */
+		res.end = echs_instant_add(res.beg, d);
+	}
+out:
+	return res;
 }
 
 /* decl'd in evmrul.h, impl'd by us */
