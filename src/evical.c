@@ -2149,35 +2149,31 @@ valid_evrrul(echs_const_evstrm_t s)
 {
 /* the earliest recurrence is determined by DTSTART,
  * the latest is, in principle, unbounded unless there's a COUNT or UNTIL */
-	struct evrrul_s *restrict this = (struct evrrul_s*)deconst(s);
+	const struct evrrul_s *restrict this = (const struct evrrul_s*)s;
 	echs_range_t res;
 
-	/* it's easier when we just have some precalc'd rdates */
-	if (UNLIKELY(this->rdi >= this->ncch)) {
-		/* we have to refill the rdate cache */
-		if (refill(deconst(this)) == 0UL) {
-			goto nul;
-		}
-		/* reset counter */
-		this->rdi = 0U;
+	if (this->rdi < this->ncch) {
+		/* best guess for first value is him: */
+		res.beg = this->cch[this->rdi];
+	} else {
+		/* fingers crossed the proto-event is up to date */
+		res.beg = this->e.from;
 	}
-	if (UNLIKELY(this->rdi >= this->ncch ||
-		     echs_nul_instant_p(this->cch[this->rdi]))) {
-	nul:
-		/* we're out of puff, are we not? */
-		return echs_nul_range();
-	}
-	/* roughest estimate for the upper bound would be infinity */
-	res.beg = this->cch[this->rdi];
-	res.end = echs_max_instant();
 
-	if (!echs_nul_instant_p(this->rr.until)) {
+	/* now for the upper bound */
+	if (this->ncch && this->ncch < countof(this->cch)) {
+		/* oh, perfick, just read it off the cch array */
+		echs_instant_t last = this->cch[this->ncch - 1U];
+		res.end = echs_instant_add(last, this->dur);
+	} else if (!echs_max_instant_p(this->rr.until)) {
 		/* ah brill, got the UNTIL slot set we have */
 		res.end = this->rr.until;
-	} else if (this->rr.count < -1U) {
+	} else if (this->rr.count < -1U && this->rr.freq > FREQ_NONE) {
 		/* try and estimate an upper bound for freq/inter/count */
 		echs_idiff_t d = {0U};
 		unsigned int tmp = this->rr.inter * this->rr.count;
+		echs_instant_t last = this->ncch
+			? this->cch[this->ncch - 1U] : res.beg;
 
 		switch (this->rr.freq) {
 		case FREQ_YEARLY:
@@ -2208,13 +2204,16 @@ valid_evrrul(echs_const_evstrm_t s)
 			d.msd = (tmp % (24U * 60U * 60U)) * 1000U;
 			break;
 		default:
-			goto out;
+			/* shouldn't happen */
+			break;
 		}
 
 		/* now use res.beg to estimate res.end */
-		res.end = echs_instant_add(res.beg, d);
+		res.end = echs_instant_add(last, d);
+	} else {
+		/* next best estimate for the upper bound would be infinity */
+		res.end = echs_max_instant();
 	}
-out:
 	return res;
 }
 
