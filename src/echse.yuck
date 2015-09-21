@@ -40,3 +40,8 @@ Print the resulting stream.
                         - BYYEARDAY selects only specified days
                         - BYMONTHDAY selects only specified days
                         - BYDAY selects only specified days
+
+
+Usage: echse valid [FILE]...
+
+Return the valid time of each of the tasks in FILE.

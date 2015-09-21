@@ -551,6 +551,70 @@ more:
 	return 0;
 }
 
+static int
+_valid_fd(int fd)
+{
+	char buf[65536U];
+	ical_parser_t pp = NULL;
+	ssize_t nrd;
+
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
+
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+		/*@fallthrough@*/
+	case 0:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			/* only allow PUBLISH requests for now */
+			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			} else if (UNLIKELY(!ins.t->oid)) {
+				free_echs_task(ins.t);
+				continue;
+			}
+			/* and otherwise inject him */
+			with (echs_range_t r = echs_evstrm_valid(ins.t->strm)) {
+				char beg[32U], end[32U];
+
+				dt_strf(beg, sizeof(beg), r.beg);
+				dt_strf(end, sizeof(end), r.end);
+				printf("task 0x%lx %s-%s\n",
+				       ins.t->oid, beg, end);
+			}
+			free_echs_task(ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+		/*@fallthrough@*/
+	case -1:
+		/* last ever pull this morning */
+		ins = echs_evical_last_pull(&pp);
+
+		/* still only allow PUBLISH requests for now */
+		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* that can't be right, we should have got
+			 * the last task in the loop above, this means
+			 * this is a half-finished thing and we don't
+			 * want no half-finished things */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return 0;
+}
+
 
 #if defined STANDALONE
 #include "echse.yucc"
@@ -683,6 +747,29 @@ echse: Error: cannot open file `%s'", fn);
 	return 0;
 }
 
+static int
+cmd_valid(const struct yuck_cmd_valid_s argi[static 1U])
+{
+	for (size_t i = 0UL; i < argi->nargs; i++) {
+		const char *fn = argi->args[i];
+		int fd;
+
+		if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
+			serror("\
+echse: Error: cannot open file `%s'", fn);
+			continue;
+		}
+		/* otherwise inject */
+		_valid_fd(fd);
+		close(fd);
+	}
+	if (argi->nargs == 0UL) {
+		/* read from stdin */
+		_valid_fd(STDIN_FILENO);
+	}
+	return 0;
+}
+
 
 int
 main(int argc, char *argv[])
@@ -712,6 +799,9 @@ Try --help for a list of commands.\n", stderr);
 		break;
 	case ECHSE_CMD_MERGE:
 		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
+		break;
+	case ECHSE_CMD_VALID:
+		rc = cmd_valid((struct yuck_cmd_valid_s*)argi);
 		break;
 	}
 	/* some global resources */
