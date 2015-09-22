@@ -2,6 +2,9 @@ Usage: echse ARG...
 
 Operate on echse sources.
 
+This tool has no deeper purpose other than to test the internals of the
+echsq and echsd tools.
+
 
 Usage: echse genuid [FILE]...
 
