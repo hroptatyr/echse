@@ -94,4 +94,64 @@ echs_min_range_p(echs_range_t r)
 	return echs_instant_le_p(r.end, r.beg);
 }
 
+/* 2-ary relations */
+/**
+ * Return true iff A precedes B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_precedes_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_lt_p(a.end, b.beg);
+}
+
+/**
+ * Return true iff A meets B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_meets_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_eq_p(a.end, b.beg);
+}
+
+/**
+ * Return true iff A overlaps B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_overlaps_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_lt_p(a.beg, b.end) &&
+		echs_instant_lt_p(b.beg, a.end);
+}
+
+/**
+ * Return true iff A is finished by B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_finishes_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_eq_p(a.end, b.end);
+}
+
+/**
+ * Return true iff A contains B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_contains_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_lt_p(a.beg, b.beg) &&
+		echs_instant_lt_p(b.end, a.end);
+}
+
+/**
+ * Return true iff A starts B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_starts_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_eq_p(a.beg, b.beg);
+}
+
+/**
+ * Return true iff A equals B, according to Allen. */
+static inline __attribute__((const, pure)) bool
+echs_range_equals_p(echs_range_t a, echs_range_t b)
+{
+	return echs_instant_eq_p(a.beg, b.beg) &&
+		echs_instant_eq_p(a.end, b.end);
+}
+
 #endif	/* INCLUDED_range_h_ */
