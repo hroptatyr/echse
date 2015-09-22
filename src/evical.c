@@ -1751,6 +1751,8 @@ set_valid_evical_vevent(echs_evstrm_t s, echs_range_t v)
 	     i < n && echs_instant_lt_p(this->ev[i].from, v.beg); i++);
 	while (n > i && echs_instant_lt_p(v.end, this->ev[--n].till));
 
+	this->i = i;
+	this->nev = n + 1U;
 	if (UNLIKELY(i >= n)) {
 		return echs_nul_range();
 	}
