@@ -2109,15 +2109,7 @@ set_valid_evrrul(echs_evstrm_t s, echs_range_t v)
 /* no bullshit in this one, set UNTIL and be finished */
 	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 
-	/* it's easier when we just have some precalc'd rdates */
-	if (UNLIKELY(this->rdi >= this->ncch)) {
-		/* we have to refill the rdate cache */
-		if (refill(this)) {
-			/* reset counter */
-			this->rdi = 0U;
-		}
-	}
-	/* constrain the beginning */
+	/* constrain the beginning, if there's stuff in the cache */
 	for (;
 	     this->rdi < this->ncch &&
 		     echs_instant_lt_p(this->cch[this->rdi], v.beg);
