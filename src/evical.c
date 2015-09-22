@@ -2169,48 +2169,6 @@ valid_evrrul(echs_const_evstrm_t s)
 	} else if (!echs_max_instant_p(this->rr.until)) {
 		/* ah brill, got the UNTIL slot set we have */
 		res.end = this->rr.until;
-	} else if (this->rr.count < -1U && this->rr.freq > FREQ_NONE) {
-		/* try and estimate an upper bound for freq/inter/count */
-		echs_idiff_t d = {0U};
-		unsigned int tmp = this->rr.inter * this->rr.count;
-		echs_instant_t last = this->ncch
-			? this->cch[this->ncch - 1U] : res.beg;
-
-		switch (this->rr.freq) {
-		case FREQ_YEARLY:
-			tmp = tmp * 365U + (tmp / 4U + 1U/*leap years*/);
-			d.dd = tmp;
-			break;
-		case FREQ_MONTHLY:
-			tmp *= 31U;
-			d.dd = tmp;
-			break;
-		case FREQ_WEEKLY:
-			tmp *= 7U;
-			d.dd = tmp;
-			break;
-		case FREQ_DAILY:
-			d.dd = tmp;
-			break;
-		case FREQ_HOURLY:
-			d.dd = tmp / 24U;
-			d.msd = (tmp % 24U) * 3600U * 1000U;
-			break;
-		case FREQ_MINUTELY:
-			d.dd = tmp / (24U * 60U);
-			d.msd = (tmp % (24U * 60U)) * 60U * 1000U;
-			break;
-		case FREQ_SECONDLY:
-			d.dd = tmp / (24U * 60U * 60U);
-			d.msd = (tmp % (24U * 60U * 60U)) * 1000U;
-			break;
-		default:
-			/* shouldn't happen */
-			break;
-		}
-
-		/* now use res.beg to estimate res.end */
-		res.end = echs_instant_add(last, d);
 	} else {
 		/* next best estimate for the upper bound would be infinity */
 		res.end = echs_max_instant();
