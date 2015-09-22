@@ -45,6 +45,7 @@ Print the resulting stream.
                         - BYYEARDAY selects only specified days
                         - BYMONTHDAY selects only specified days
                         - BYDAY selects only specified days
+  --valid=RANGE     Constrain all output to this date range.
 
 
 Usage: echse valid [FILE]...

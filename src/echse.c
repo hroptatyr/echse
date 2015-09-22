@@ -501,7 +501,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 }
 
 static int
-_inject_fd(int fd)
+_inject_fd(int fd, echs_range_t valid)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -530,6 +530,8 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
+			/* constrain */
+			echs_evstrm_set_valid(ins.t->strm, valid);
 			/* and otherwise inject him */
 			put_task(ins.t->oid, ins.t);
 		} while (1);
@@ -688,7 +690,12 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	/* params that filter the output */
 	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
 	echs_evstrm_t smux = NULL;
+	echs_range_t valid = echs_max_range();
 
+	if (argi->valid_arg) {
+		const char *v = argi->valid_arg;
+		valid = range_strp(v, NULL, strlen(v));
+	}
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg, NULL, 0U);
 	} else {
@@ -736,12 +743,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_inject_fd(fd);
+		_inject_fd(fd, valid);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_inject_fd(STDIN_FILENO);
+		_inject_fd(STDIN_FILENO, valid);
 	}
 	/* there might be riff raff (NULLs) in the stream array */
 	condense_strms();
