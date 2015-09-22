@@ -2135,6 +2135,12 @@ set_valid_evrrul(echs_evstrm_t s, echs_range_t v)
 	} else {
 		/* there's really stuff that needs doing here */
 		this->rr.until = v.end;
+
+		/* restrain the cached values as well */
+		while (this->ncch &&
+		       echs_instant_lt_p(v.end, this->cch[this->ncch - 1U])) {
+			this->ncch--;
+		}
 	}
 	return v;
 }
