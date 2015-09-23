@@ -2394,7 +2394,7 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_CANCEL:
 			i.v = INSVERB_UNSC;
 			i.o = ve->t.oid;
-			i.rng = (echs_range_t){ve->e.from, ve->e.till};
+			i.rng = echs_event_range(ve->e);
 			break;
 		default:
 		case METH_ADD:
