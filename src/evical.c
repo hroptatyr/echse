@@ -1670,16 +1670,12 @@ static echs_event_t next_evical_vevent(echs_evstrm_t);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
 static void send_evical_vevent(int whither, echs_const_evstrm_t s);
-static echs_range_t set_valid_evical_vevent(echs_evstrm_t s, echs_range_t v);
-static echs_range_t valid_evical_vevent(echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evical_cls = {
 	.next = next_evical_vevent,
 	.free = free_evical_vevent,
 	.clone = clone_evical_vevent,
 	.seria = send_evical_vevent,
-	.set_valid = set_valid_evical_vevent,
-	.valid = valid_evical_vevent,
 };
 
 static const echs_event_t nul;
@@ -1738,38 +1734,6 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 
 	send_ev(whither, this->ev[0U]);
 	return;
-}
-
-static echs_range_t
-set_valid_evical_vevent(echs_evstrm_t s, echs_range_t v)
-{
-	struct evical_s *this = (struct evical_s*)s;
-	size_t i, n;
-
-	/* setting a valid time here means clamping really */
-	for (i = this->i, n = this->nev;
-	     i < n && echs_instant_lt_p(this->ev[i].from, v.beg); i++);
-	while (n > i && echs_instant_lt_p(v.end, this->ev[--n].till));
-
-	this->i = i;
-	this->nev = n + 1U;
-	if (UNLIKELY(i >= n)) {
-		return echs_nul_range();
-	}
-	return (echs_range_t){this->ev[i].from, this->ev[n].till};
-}
-
-static echs_range_t
-valid_evical_vevent(echs_const_evstrm_t s)
-{
-	const struct evical_s *this = (const struct evical_s*)s;
-	size_t i, n;
-
-	if (UNLIKELY((i = this->i) >= (n = this->nev))) {
-		return echs_nul_range();
-	}
-	/* they're sorted, so go for i-th and last element */
-	return (echs_range_t){this->ev[i].from, this->ev[--n].till};
 }
 
 static echs_instant_t
@@ -1901,16 +1865,12 @@ static echs_event_t next_evrrul(echs_evstrm_t);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
 static void send_evrrul(int whither, echs_const_evstrm_t s);
-static echs_range_t set_valid_evrrul(echs_evstrm_t s, echs_range_t v);
-static echs_range_t valid_evrrul(echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evrrul_cls = {
 	.next = next_evrrul,
 	.free = free_evrrul,
 	.clone = clone_evrrul,
 	.seria = send_evrrul,
-	.set_valid = set_valid_evrrul,
-	.valid = valid_evrrul,
 };
 
 static echs_evstrm_t
@@ -2103,72 +2063,6 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 	return;
 }
 
-static echs_range_t
-set_valid_evrrul(echs_evstrm_t s, echs_range_t v)
-{
-/* no bullshit in this one, set UNTIL and be finished */
-	struct evrrul_s *restrict this = (struct evrrul_s*)s;
-
-	/* constrain the beginning, if there's stuff in the cache */
-	for (;
-	     this->rdi < this->ncch &&
-		     echs_instant_lt_p(this->cch[this->rdi], v.beg);
-	     this->rdi++);
-
-	/* just see what we've got */
-	if (LIKELY(this->rdi < this->ncch)) {
-		v.beg = this->cch[this->rdi];
-	}
-
-	if (echs_instant_eq_p(this->rrul.until, v.end)) {
-		/* nothing to do */
-		;
-	} else if (echs_instant_lt_p(this->rrul.until, v.end)) {
-		/* we're tighter already, set V and bugger off */
-		v.end = this->rrul.until;
-	} else {
-		/* there's really stuff that needs doing here */
-		this->rrul.until = v.end;
-
-		/* restrain the cached values as well */
-		while (this->ncch &&
-		       echs_instant_lt_p(v.end, this->cch[this->ncch - 1U])) {
-			this->ncch--;
-		}
-	}
-	return v;
-}
-
-static echs_range_t
-valid_evrrul(echs_const_evstrm_t s)
-{
-/* the earliest recurrence is determined by DTSTART,
- * the latest is, in principle, unbounded unless there's a COUNT or UNTIL */
-	const struct evrrul_s *restrict this = (const struct evrrul_s*)s;
-	echs_range_t res;
-
-	if (this->rdi < this->ncch) {
-		/* best guess for first value is him: */
-		res.beg = this->cch[this->rdi];
-	} else {
-		/* fingers crossed the proto-event is up to date */
-		res.beg = this->e.from;
-	}
-
-	/* now for the upper bound */
-	if (this->ncch && this->ncch < countof(this->cch)) {
-		/* oh, perfick, just read it off the cch array */
-		echs_instant_t last = this->cch[this->ncch - 1U];
-		res.end = echs_instant_add(last, this->dur);
-	} else if (!echs_max_instant_p(this->rrul.until)) {
-		/* ah brill, got the UNTIL slot set we have */
-		res.end = this->rrul.until;
-	} else {
-		/* next best estimate for the upper bound would be infinity */
-		res.end = echs_max_instant();
-	}
-	return res;
-}
 
 /* decl'd in evmrul.h, impl'd by us */
 void

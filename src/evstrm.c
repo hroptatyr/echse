@@ -59,16 +59,12 @@ static echs_event_t next_evmux(echs_evstrm_t);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
 static void seria_evmux(int, echs_const_evstrm_t);
-static echs_range_t set_valid_evmux(echs_evstrm_t, echs_range_t);
-static echs_range_t valid_evmux(echs_const_evstrm_t);
 
 static const struct echs_evstrm_class_s evmux_cls = {
 	.next = next_evmux,
 	.free = free_evmux,
 	.clone = clone_evmux,
 	.seria = seria_evmux,
-	.set_valid = set_valid_evmux,
-	.valid = valid_evmux,
 };
 
 static void
@@ -219,44 +215,6 @@ clone_evmux(echs_const_evstrm_t s)
 		res->s[i] = stmp;
 	}
 	return (echs_evstrm_t)res;
-}
-
-static echs_range_t
-set_valid_evmux(echs_evstrm_t s, echs_range_t v)
-{
-	struct evmux_s *this = (struct evmux_s*)s;
-	echs_range_t res = echs_min_range();
-
-	for (size_t i = 0UL; i < this->ns; i++) {
-		echs_range_t r = echs_evstrm_set_valid(this->s[i], v);
-
-		if (echs_instant_lt_p(r.beg, res.beg)) {
-			res.beg = r.beg;
-		}
-		if (echs_instant_lt_p(res.end, r.end)) {
-			res.end = r.end;
-		}
-	}
-	return res;
-}
-
-static echs_range_t
-valid_evmux(echs_const_evstrm_t s)
-{
-	const struct evmux_s *this = (const struct evmux_s*)s;
-	echs_range_t res = echs_min_range();
-
-	for (size_t i = 0UL; i < this->ns; i++) {
-		echs_range_t r = echs_evstrm_valid(this->s[i]);
-
-		if (echs_instant_lt_p(r.beg, res.beg)) {
-			res.beg = r.beg;
-		}
-		if (echs_instant_lt_p(res.end, r.end)) {
-			res.end = r.end;
-		}
-	}
-	return res;
 }
 
 

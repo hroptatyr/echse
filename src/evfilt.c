@@ -65,16 +65,12 @@ static echs_event_t next_evfilt(echs_evstrm_t);
 static void free_evfilt(echs_evstrm_t);
 static echs_evstrm_t clone_evfilt(echs_const_evstrm_t);
 static void send_evfilt(int whither, echs_const_evstrm_t s);
-static echs_range_t set_valid_evfilt(echs_evstrm_t s, echs_range_t v);
-static echs_range_t valid_evfilt(echs_const_evstrm_t s);
 
 static const struct echs_evstrm_class_s evfilt_cls = {
 	.next = next_evfilt,
 	.free = free_evfilt,
 	.clone = clone_evfilt,
 	.seria = send_evfilt,
-	.set_valid = set_valid_evfilt,
-	.valid = valid_evfilt,
 };
 
 static echs_event_t
@@ -141,22 +137,6 @@ send_evfilt(int whither, echs_const_evstrm_t s)
 
 	echs_evstrm_seria(whither, this->e);
 	return;
-}
-
-static echs_range_t
-set_valid_evfilt(echs_evstrm_t s, echs_range_t v)
-{
-	struct evfilt_s *restrict this = (struct evfilt_s*)s;
-
-	return echs_evstrm_set_valid(this->e, v);
-}
-
-static echs_range_t
-valid_evfilt(echs_const_evstrm_t s)
-{
-	const struct evfilt_s *this = (const struct evfilt_s*)s;
-
-	return echs_evstrm_valid(this->e);
 }
 
 
