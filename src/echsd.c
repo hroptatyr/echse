@@ -1223,7 +1223,7 @@ chkpnt1(uid_t u)
 			continue;
 		} else if (!inittedp) {
 			echs_instruc_t ins = {
-				INSVERB_CREA, 0U,
+				INSVERB_SCHE, 0U,
 				.t = task_ht[i].t->t,
 			};
 			echs_icalify_init(fd, ins);
@@ -1290,7 +1290,7 @@ chkpnta(void)
 			goto bang;
 		} else {
 			echs_instruc_t ins = {
-				INSVERB_CREA, 0U,
+				INSVERB_SCHE, 0U,
 				.t = task_ht[i].t->t,
 			};
 
@@ -1607,10 +1607,8 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
 		switch (ins.v) {
-			int rc;
-
-		case INSVERB_CREA:
-		case INSVERB_UPDT:
+		case INSVERB_SCHE:
+		case INSVERB_RESC:
 			if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			}
@@ -1624,32 +1622,10 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			ins.v = INSVERB_SUCC;
 			break;
 
-		case INSVERB_RESC:
-			/* reschedule (update) request */
-			ins.v = INSVERB_FAIL;
-			break;
-
-		case INSVERB_RES1:
-			/* reschedule (update) one in series request */
-			ins.v = INSVERB_FAIL;
-			break;
-
 		case INSVERB_UNSC:
-			/* cancel request */
-			if (echs_nul_instant_p(ins.ins)) {
-				/* cancel the whole shebang */
-				rc = _eject_task1(EV_A_ ins.o, cred.u);
-			} else if (echs_nul_instant_p(ins.rng.end) ||
-				   echs_instant_eq_p(ins.ins, ins.rng.end)) {
-				/* cancel just some events, at an instant */
-				rc = _eject_taskt(
-					EV_A_ ins.o, ins.ins, cred.u);
-			} else {
-				/* cancel just some events in a range */
-				rc = _eject_taskr(
-					EV_A_ ins.o, ins.rng, cred.u);
-			}
-			if (UNLIKELY(rc < 0)) {
+			/* cancel request
+			 * cancel the whole shebang */
+			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
 				ins.v = INSVERB_FAIL;
 				break;
@@ -1717,7 +1693,7 @@ shut_cmd(struct echs_cmdparam_s param[static 1U])
 		echs_instruc_t ins;
 
 		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
-		case INSVERB_CREA:
+		case INSVERB_SCHE:
 			if (LIKELY(ins.t == NULL)) {
 				break;
 			}
@@ -2328,7 +2304,7 @@ more:
 		do {
 			ins = echs_evical_pull(&pp);
 
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -2347,7 +2323,7 @@ more:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got

@@ -522,7 +522,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -544,7 +544,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -580,7 +580,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -603,7 +603,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -639,7 +639,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -665,7 +665,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got

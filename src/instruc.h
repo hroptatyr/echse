@@ -50,29 +50,18 @@ typedef enum {
 	 * The slots in the union are unused. */
 	INSVERB_LIST,
 	/**
-	 * Create task T with oid O.
+	 * Schedule (create) task T with oid O.
 	 * If O == 0 generate a oid on the fly. */
-	INSVERB_CREA,
+	INSVERB_SCHE,
 	/**
-	 * Update task with oid O to specifics in T. */
-	INSVERB_UPDT,
-	/**
-	 * Reschedule task with oid O to events in stream S.
-	 * This verb is also used to denote a successful CREA or UPDT,
-	 * in that case the oid is set but the stream is not. */
+	 * Reschedule (update) task with oid O to specifics in T.
+	 * This verb is also used to denote a successful SCHE or RESC,
+	 * in that case the oid O is set but T is not. */
 	INSVERB_RESC,
 	INSVERB_SUCC = INSVERB_RESC,
 	/**
-	 * Reschedule one event in task with oid O, cancel the event at
-	 * date/time INS and instead move it to data/time TO.
-	 * If FROM is the nul instant, simply add an extra recurrence
-	 * of the task at date/time TO. */
-	INSVERB_RES1,
-	/**
 	 * Unschedule (cancel) task with oid O.
-	 * To unschedule one recurrence instance in O specify INS,
-	 * or for an interval of recurrences specify RNG.
-	 * This verb is also used to denote a failed CREA or UPDT,
+	 * This verb is also used to denote a failed SCHE or RESC,
 	 * in that case the oid is set. */
 	INSVERB_UNSC,
 	INSVERB_FAIL = INSVERB_UNSC,
@@ -83,13 +72,8 @@ struct echs_instruc_s {
 	echs_toid_t o;
 	union {
 		echs_task_t t;
-		echs_evstrm_t s;
 		echs_instant_t ins;
 		echs_range_t rng;
-		struct {
-			echs_instant_t from;
-			echs_instant_t to;
-		};
 	};
 };
 

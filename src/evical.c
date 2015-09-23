@@ -2451,7 +2451,7 @@ CALSCALE:GREGORIAN\n";
 		static const char meth_crea[] = "METHOD:PUBLISH\n";
 		static const char meth_unsc[] = "METHOD:CANCEL\n";
 
-	case INSVERB_CREA:
+	case INSVERB_SCHE:
 		fdwrite(meth_crea, strlenof(meth_crea));
 		if (UNLIKELY(i.t == NULL)) {
 			break;
