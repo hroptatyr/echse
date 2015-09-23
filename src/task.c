@@ -118,44 +118,4 @@ echs_task_rset_ownr(echs_task_t t, int uid)
 	return 0;
 }
 
-
-int
-echs_task_addr(echs_task_t t, echs_event_t e)
-{
-	echs_evstrm_t s;
-
-	if (UNLIKELY((s = evfilt_addr(t->strm, e)) == NULL)) {
-		return -1;
-	} else if (s == t->strm) {
-		/* all good */
-		;
-	} else {
-		/* need swapping */
-		t->strm = s;
-	}
-	return 0;
-}
-
-int
-echs_task_addx(echs_task_t t, echs_range_t x)
-{
-	echs_evstrm_t s;
-
-	if (echs_max_instant_p(x.end)) {
-		/* just cap the whole stream */
-		;
-	}
-
-	if (UNLIKELY((s = evfilt_addx(t->strm, x)) == NULL)) {
-		return -1;
-	} else if (s == t->strm) {
-		/* all good */
-		;
-	} else {
-		/* need swapping */
-		t->strm = s;
-	}
-	return 0;
-}
-
 /* task.c ends here */

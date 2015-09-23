@@ -37,23 +37,11 @@
 #if !defined INCLUDED_evfilt_h_
 #define INCLUDED_evfilt_h_
 #include "evstrm.h"
-#include "range.h"
-#include "event.h"
 
 /**
  * Return a filter stream composed of events from E filtered by
  * events coming from X.  If E's next event overlaps with X's simply
  * throw away E's next event and go to the next one. */
 extern echs_evstrm_t make_evfilt(echs_evstrm_t e, echs_evstrm_t x);
-
-/**
- * Special routine to implement partial cancellation.
- * Adds single exception X to stream S. */
-extern echs_evstrm_t evfilt_addx(echs_evstrm_t s, echs_range_t x);
-
-/**
- * Special routine to implement partial rescheduling.
- * Adds single recurrence event E to stream S. */
-extern echs_evstrm_t evfilt_addr(echs_evstrm_t s, echs_event_t e);
 
 #endif	/* INCLUDED_evfilt_h_ */

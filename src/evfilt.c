@@ -39,7 +39,6 @@
 #endif	/* HAVE_CONFIG_H */
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
 #include "evfilt.h"
 #include "range.h"
 #include "nifty.h"
@@ -60,37 +59,6 @@ struct evfilt_s {
 	size_t nexs;
 	echs_range_t exs[16U];
 };
-
-
-static __attribute__((const, pure)) size_t
-ilog_ceil_exp(size_t n)
-{
-/* return the next 2-power > N, at least 16 though */
-	n |= 0b1111U;
-	n |= n >> 1U;
-	n |= n >> 2U;
-	n |= n >> 4U;
-	n |= n >> 8U;
-	n |= n >> 16U;
-	n |= n >> 32U;
-	n++;
-	return n;
-}
-
-static echs_range_t
-evfilt_next_ex(struct evfilt_s *restrict f)
-{
-	echs_range_t rx = echs_event_range(echs_evstrm_next(f->x));
-
-	if (!f->nexs) {
-		;
-	} else if (echs_instant_lt_p(f->exs[0U].beg, rx.beg)) {
-		echs_range_t res = f->exs[0U];
-		f->exs[0U] = rx;
-		return res;
-	}
-	return rx;
-}
 
 
 static echs_event_t next_evfilt(echs_evstrm_t);
@@ -115,7 +83,6 @@ next_evfilt(echs_evstrm_t s)
 	struct evfilt_s *this = (struct evfilt_s*)s;
 	echs_event_t e = echs_evstrm_next(this->e);
 	echs_range_t r = echs_event_range(e);
-	bool ex_in_past_p = false;
 
 check:
 	if (UNLIKELY(echs_nul_range_p(this->ex))) {
@@ -131,7 +98,8 @@ check:
 	} else if (echs_range_precedes_p(this->ex, r)) {
 		/* we can't say for sure yet as there could be
 		 * another exception in the range of E */
-		this->ex = evfilt_next_ex(this);
+		echs_event_t ex = echs_evstrm_next(this->x);
+		this->ex = echs_event_range(ex);
 		goto check;
 	}
 	/* otherwise it's certainly safe */
@@ -213,74 +181,6 @@ make_evfilt(echs_evstrm_t e, echs_evstrm_t x)
 		res->ex = echs_event_range(nx);
 	}
 	return (echs_evstrm_t)res;
-}
-
-echs_evstrm_t
-evfilt_addx(echs_evstrm_t s, echs_range_t x)
-{
-	struct evfilt_s *this = (struct evfilt_s*)s;
-
-	if (UNLIKELY(this->class != &evfilt_cls)) {
-		/* we have to demote this stream and upgrade it to an evfilt */
-		if (UNLIKELY((this = malloc(sizeof(*this))) == NULL)) {
-			/* no chance */
-			return NULL;
-		}
-		/* otherwise */
-		this->class = &evfilt_cls;
-		this->e = s;
-		this->x = NULL;
-	}
-	/* just add X to the exception list of THIS */
-	if (this->nexs) {
-		size_t i;
-
-		for (i = 0U;
-		     i < this->nexs &&
-			     echs_range_precedes_p(this->exs[i], x);
-		     i++);
-		/* I is now the value bigger(-equal) X.beg */
-		if (echs_range_overlaps_p(x, this->exs[i]) ||
-		    echs_range_meets_p(x, this->exs[i])) {
-			/* we can coalesce the ranges */
-			this->exs[i].beg = x.beg;
-		} else {
-			/* insertion sort *sigh* */
-			size_t z = ilog_ceil_exp(this->nexs);
-			size_t nuz = ilog_ceil_exp(this->nexs + 1U);
-
-			if (UNLIKELY(nuz > z)) {
-				/* realloc */
-				s = realloc(s, sizeof(*this) +
-					    nuz * sizeof(*this->exs));
-				if (UNLIKELY(s == NULL)) {
-					/* no chance */
-					return NULL;
-				}
-			}
-
-			memmove(this->exs + i + 1, this->exs + i,
-				(this->nexs - i) * sizeof(*this->exs));
-			this->nexs++;
-		}
-	} else {
-		this->exs[0U] = x;
-		this->nexs++;
-	}
-
-	if (echs_instant_lt_p(this->exs[0U].beg, this->ex.beg)) {
-		/* just swap'em */
-		echs_range_t ex = this->ex;
-		this->ex = this->exs[0U];
-		this->exs[0U] = ex;
-	}
-	return (echs_evstrm_t)this;
-}
-
-echs_evstrm_t
-evfilt_addr(echs_evstrm_t s, echs_event_t e)
-{
-	return s;
 }
 
 /* evfilt.c ends here */
