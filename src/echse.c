@@ -76,68 +76,6 @@ serror(const char *fmt, ...)
 	return;
 }
 
-static size_t
-range_strf(char *restrict str, size_t ssz, echs_range_t r)
-{
-	size_t n = 0U;
-
-	if (UNLIKELY(!ssz)) {
-		return 0U;
-	} else if (UNLIKELY(ssz < 2U)) {
-		*str = '\0';
-		return 0U;
-	} else if (UNLIKELY(echs_max_range_p(r))) {
-		str[n++] = '*';
-		goto fin;
-	} else if (!echs_min_instant_p(r.beg)) {
-		n += dt_strf(str, ssz, r.beg);
-	}
-	if (n < ssz && !echs_max_instant_p(r.end)) {
-		str[n++] = '-';
-		n += dt_strf(str + n, ssz - n, r.end);
-	} else if (n < ssz) {
-		str[n++] = '+';
-	}
-fin:
-	if (LIKELY(n < ssz)) {
-		str[n] = '\0';
-	} else {
-		str[ssz - 1U] = '\0';
-	}
-	return n;
-}
-
-static echs_range_t
-range_strp(const char *str, char **on, size_t len)
-{
-	char *op = deconst(str);
-	echs_range_t r;
-
-	if (UNLIKELY(!len)) {
-		goto err;
-	} else if (*str == '-') {
-		/* ah, lower bound seems to be -infty */
-		r.beg = echs_min_instant();
-	} else {
-		r.beg = dt_strp(str, &op, len);
-	}
-	switch (*op++) {
-	case '-':
-		/* just a normal range then, innit? */
-		r.end = dt_strp(op, on, len - (op - str));
-		break;
-	case '+':
-		r.end = echs_max_instant();
-		break;
-	default:
-		/* huh? */
-		goto err;
-	}
-	return r;
-err:
-	return echs_max_range();
-}
-
 
 /* global stream map */
 static echs_evstrm_t *strms;
@@ -501,7 +439,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 }
 
 static int
-_inject_fd(int fd, echs_range_t valid)
+_inject_fd(int fd)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -530,8 +468,6 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
-			/* constrain */
-			echs_evstrm_set_valid(ins.t->strm, valid);
 			/* and otherwise inject him */
 			put_task(ins.t->oid, ins.t);
 		} while (1);
@@ -559,7 +495,7 @@ more:
 }
 
 static int
-_merge_fd(int fd, echs_range_t valid)
+_merge_fd(int fd)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -588,72 +524,8 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
-			/* constrain */
-			echs_evstrm_set_valid(ins.t->strm, valid);
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
-			free_echs_task(ins.t);
-		} while (1);
-		if (LIKELY(nrd > 0)) {
-			goto more;
-		}
-		/*@fallthrough@*/
-	case -1:
-		/* last ever pull this morning */
-		ins = echs_evical_last_pull(&pp);
-
-		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
-			break;
-		} else if (UNLIKELY(ins.t != NULL)) {
-			/* that can't be right, we should have got
-			 * the last task in the loop above, this means
-			 * this is a half-finished thing and we don't
-			 * want no half-finished things */
-			free_echs_task(ins.t);
-		}
-		break;
-	}
-	return 0;
-}
-
-static int
-_valid_fd(int fd)
-{
-	char buf[65536U];
-	ical_parser_t pp = NULL;
-	ssize_t nrd;
-
-more:
-	switch ((nrd = read(fd, buf, sizeof(buf)))) {
-		echs_instruc_t ins;
-
-	default:
-		if (echs_evical_push(&pp, buf, nrd) < 0) {
-			/* pushing more brings nothing */
-			break;
-		}
-		/*@fallthrough@*/
-	case 0:
-		do {
-			ins = echs_evical_pull(&pp);
-
-			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
-				break;
-			} else if (UNLIKELY(ins.t == NULL)) {
-				continue;
-			} else if (UNLIKELY(!ins.t->oid)) {
-				free_echs_task(ins.t);
-				continue;
-			}
-			/* and otherwise inject him */
-			with (echs_range_t r = echs_evstrm_valid(ins.t->strm)) {
-				char rng[64U];
-
-				range_strf(rng, sizeof(rng), r);
-				printf("task 0x%lx %s\n", ins.t->oid, rng);
-			}
 			free_echs_task(ins.t);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
@@ -690,12 +562,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	/* params that filter the output */
 	struct unroll_param_s p = {.filt = {.freq = FREQ_NONE}};
 	echs_evstrm_t smux = NULL;
-	echs_range_t valid = echs_max_range();
 
-	if (argi->valid_arg) {
-		const char *v = argi->valid_arg;
-		valid = range_strp(v, NULL, strlen(v));
-	}
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg, NULL, 0U);
 	} else {
@@ -743,12 +610,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_inject_fd(fd, valid);
+		_inject_fd(fd);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_inject_fd(STDIN_FILENO, valid);
+		_inject_fd(STDIN_FILENO);
 	}
 	/* there might be riff raff (NULLs) in the stream array */
 	condense_strms();
@@ -794,13 +661,6 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
-	echs_range_t valid = echs_max_range();
-
-	if (argi->valid_arg) {
-		const char *v = argi->valid_arg;
-		valid = range_strp(v, NULL, strlen(v));
-	}
-
 	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
@@ -812,37 +672,14 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_merge_fd(fd, valid);
+		_merge_fd(fd);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_merge_fd(STDIN_FILENO, valid);
+		_merge_fd(STDIN_FILENO);
 	}
 	echs_prnt_ical_fini();
-	return 0;
-}
-
-static int
-cmd_valid(const struct yuck_cmd_valid_s argi[static 1U])
-{
-	for (size_t i = 0UL; i < argi->nargs; i++) {
-		const char *fn = argi->args[i];
-		int fd;
-
-		if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
-			serror("\
-echse: Error: cannot open file `%s'", fn);
-			continue;
-		}
-		/* otherwise inject */
-		_valid_fd(fd);
-		close(fd);
-	}
-	if (argi->nargs == 0UL) {
-		/* read from stdin */
-		_valid_fd(STDIN_FILENO);
-	}
 	return 0;
 }
 
@@ -875,9 +712,6 @@ Try --help for a list of commands.\n", stderr);
 		break;
 	case ECHSE_CMD_MERGE:
 		rc = cmd_merge((struct yuck_cmd_merge_s*)argi);
-		break;
-	case ECHSE_CMD_VALID:
-		rc = cmd_valid((struct yuck_cmd_valid_s*)argi);
 		break;
 	}
 	/* some global resources */
