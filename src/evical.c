@@ -111,18 +111,18 @@ struct ical_vevent_s {
 	struct echs_task_s t;
 
 	/* just to transport the method specified */
-	ical_meth_t m;
+	ical_meth_t meth;
 	/* request status or other status info */
-	unsigned int rs;
+	unsigned int req_status;
 
 	/* pointers into the rrul/xrul array */
-	struct rrlst_s rr;
-	struct rrlst_s xr;
+	struct rrlst_s rrul;
+	struct rrlst_s xrul;
 	/* points into the xdat/rdat array */
-	struct dtlst_s rd;
-	struct dtlst_s xd;
+	struct dtlst_s rdat;
+	struct dtlst_s xdat;
 	/* points into the mrul array */
-	struct mrlst_s mr;
+	struct mrlst_s mrul;
 };
 
 struct vearr_s {
@@ -190,20 +190,20 @@ add1_to_dtlst(struct dtlst_s *dl, echs_instant_t dt)
 static void
 free_ical_vevent(struct ical_vevent_s *restrict ve)
 {
-	if (ve->rr.nr) {
-		free(ve->rr.r);
+	if (ve->rrul.nr) {
+		free(ve->rrul.r);
 	}
-	if (ve->rd.ndt) {
-		free(ve->rd.dt);
+	if (ve->rdat.ndt) {
+		free(ve->rdat.dt);
 	}
-	if (ve->xr.nr) {
-		free(ve->xr.r);
+	if (ve->xrul.nr) {
+		free(ve->xrul.r);
 	}
-	if (ve->xd.ndt) {
-		free(ve->xd.dt);
+	if (ve->xdat.ndt) {
+		free(ve->xdat.dt);
 	}
-	if (ve->mr.nr) {
-		free(ve->mr.r);
+	if (ve->mrul.nr) {
+		free(ve->mrul.r);
 	}
 	return;
 }
@@ -693,10 +693,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			}
 			switch (fld) {
 			case FLD_XDATE:
-				ve->xd = l;
+				ve->xdat = l;
 				break;
 			case FLD_RDATE:
-				ve->rd = l;
+				ve->rdat = l;
 				break;
 			}
 		}
@@ -709,11 +709,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			switch (fld) {
 			case FLD_RRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->rr, &r);
+				add1_to_rrlst(&ve->rrul, &r);
 				break;
 			case FLD_XRULE:
 				/* bang to global array */
-				add1_to_rrlst(&ve->xr, &r);
+				add1_to_rrlst(&ve->xrul, &r);
 				break;
 			}
 		}
@@ -723,7 +723,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		if_with (struct mrulsp_s r,
 			 (r = snarf_mrule(vp, ep - vp)).mdir != MDIR_NONE) {
 			/* bang to global array */
-			add1_to_mrlst(&ve->mr, r);
+			add1_to_mrlst(&ve->mrul, r);
 		}
 		break;
 	case FLD_STATE:
@@ -870,7 +870,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	case FLD_RSTAT:
 		/* aaah we're reading a response (reply) */
 		if (vp < ep) {
-			ve->rs = *vp ^ '0';
+			ve->req_status = *vp ^ '0';
 		}
 		break;
 
@@ -880,7 +880,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			/* oh, they want to cancel all from then on */
 			ve->e.till = echs_max_instant();
 		} else {
-			ve->e.till = ve->e.from;
+			/* they're just cancelling this one instance */
+			ve->e.till = echs_nul_instant();
 		}
 		break;
 	}
@@ -910,7 +911,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 			/* nope, no methods given */
 			break;
 		}
-		ve->m = m->meth;
+		ve->meth = m->meth;
 		break;
 
 	case FLD_MAX_SIMUL:
@@ -1834,14 +1835,14 @@ struct evrrul_s {
 	echs_evstrm_class_t class;
 
 	/* proto method */
-	echs_instruc_t i;
+	echs_instruc_t ins;
 
 	/* proto-event */
 	echs_event_t e;
 	/* proto-duration */
 	echs_idiff_t dur;
 	/* proto-zone */
-	echs_tzob_t z;
+	echs_tzob_t zon;
 	/* proto-offset */
 	int pof;
 
@@ -1851,7 +1852,7 @@ struct evrrul_s {
 	size_t ref;
 
 	/* rrul/xrul */
-	struct rrulsp_s rr;
+	struct rrulsp_s rrul;
 
 	/* iterator state */
 	size_t rdi;
@@ -1879,7 +1880,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	struct evrrul_s *this;
 	const size_t duo = sizeof(*this) + sizeof(this);
 	struct evrrul_s **that;
-	echs_tzob_t z;
+	echs_tzob_t zon;
 
 	if (UNLIKELY(nr == 0U)) {
 		return NULL;
@@ -1890,20 +1891,20 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
-	this->z = z = echs_instant_tzob(e.from);
+	this->zon = zon = echs_instant_tzob(e.from);
 	this->e = e = echs_event_utc(e);
-	this->pof = echs_instant_tzof(e.from, z);
+	this->pof = echs_instant_tzof(e.from, zon);
 	this->dur = echs_instant_diff(e.till, e.from);
 
 	/* bang the first one */
-	this->rr = rr[0U];
+	this->rrul = rr[0U];
 	this->seq = 0U;
 	this->ref = nr;
 	that[0U] = this;
 	/* bang the rest borrowing some fields from the first one */
 	for (size_t i = 1U; i < nr; i++) {
 		this[i] = this[0U];
-		this[i].rr = rr[i];
+		this[i].rrul = rr[i];
 		this[i].seq = i;
 		that[i] = this + i;
 	}
@@ -1947,7 +1948,7 @@ refill(struct evrrul_s *restrict strm)
 /* useful table at:
  * http://icalevents.com/2447-need-to-know-the-possible-combinations-for-repeating-dates-an-ical-cheatsheet/
  * we're trying to follow that one closely. */
-	struct rrulsp_s *restrict rr = &strm->rr;
+	struct rrulsp_s *restrict rr = &strm->rrul;
 
 	assert(rr->freq > FREQ_NONE);
 	if (UNLIKELY(!rr->count)) {
@@ -2002,7 +2003,7 @@ refill(struct evrrul_s *restrict strm)
 	}
 	/* utcify them all */
 	for (size_t i = 0U; i < strm->ncch; i++) {
-		int eof = echs_instant_tzof(strm->cch[i], strm->z);
+		int eof = echs_instant_tzof(strm->cch[i], strm->zon);
 
 		if (UNLIKELY(eof != strm->pof)) {
 			/* discrepancy, convert defo */
@@ -2058,9 +2059,10 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 	if (!this->seq) {
 		send_ev(whither, this->e);
 	}
-	send_rrul(whither, &this->rr);
+	send_rrul(whither, &this->rrul);
 	return;
 }
+
 
 /* decl'd in evmrul.h, impl'd by us */
 void
@@ -2151,22 +2153,22 @@ make_task(struct ical_vevent_s *ve)
 	 * an unset owner by the value of -1 */
 	ve->t.owner--;
 
-	if (!ve->rr.nr && !ve->rd.ndt) {
+	if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */
 
 		/* free all the bits and bobs that
 		 * might have been added */
-		if (ve->xr.nr) {
-			free(ve->xr.r);
+		if (ve->xrul.nr) {
+			free(ve->xrul.r);
 		}
-		if (ve->xd.ndt) {
-			free(ve->xd.dt);
+		if (ve->xdat.ndt) {
+			free(ve->xdat.dt);
 		}
-		if (ve->mr.nr) {
-			free(ve->mr.r);
+		if (ve->mrul.nr) {
+			free(ve->mrul.r);
 		}
-		assert(ve->rr.r == NULL);
-		assert(ve->rd.dt == NULL);
+		assert(ve->rrul.r == NULL);
+		assert(ve->rdat.dt == NULL);
 		s = __make_evvevt(ve->e);
 	} else {
 		/* it's an rrule */
@@ -2178,8 +2180,8 @@ make_task(struct ical_vevent_s *ve)
 		/* get a proto exrule stream, composed of all exrules
 		 * in a nicely evmux'd stream */
 		with (echs_evstrm_t xr, x1) {
-			xr = __make_evrrul(ve->e, ve->xr.r, ve->xr.nr);
-			x1 = __make_evrdat(ve->e, ve->xd.dt, ve->xd.ndt);
+			xr = __make_evrrul(ve->e, ve->xrul.r, ve->xrul.nr);
+			x1 = __make_evrdat(ve->e, ve->xdat.dt, ve->xdat.ndt);
 
 			if (xr != NULL && x1 != NULL) {
 				/* mux them into one */
@@ -2192,8 +2194,8 @@ make_task(struct ical_vevent_s *ve)
 		}
 
 		with (echs_evstrm_t rr, r1) {
-			rr = __make_evrrul(ve->e, ve->rr.r, ve->rr.nr);
-			r1 = __make_evrdat(ve->e, ve->rd.dt, ve->rd.ndt);
+			rr = __make_evrrul(ve->e, ve->rrul.r, ve->rrul.nr);
+			r1 = __make_evrdat(ve->e, ve->rdat.dt, ve->rdat.ndt);
 
 			if (rr != NULL && r1 != NULL) {
 				/* mux them into one */
@@ -2263,16 +2265,16 @@ echs_evical_pull(ical_parser_t p[static 1U])
 	} else {
 		struct ical_parser_s *_p = *p;
 
-		switch (_p->globve.m) {
+		switch (_p->globve.meth) {
 		case METH_UNK:
 		case METH_PUBLISH:
 		case METH_REQUEST:
-			i.v = INSVERB_CREA;
+			i.v = INSVERB_SCHE;
 			i.t = make_task(ve);
 			break;
 		case METH_REPLY:
 			i.o = ve->t.oid;
-			switch (ve->rs) {
+			switch (ve->req_status) {
 			case 2U:
 				i.v = INSVERB_RESC;
 				break;
@@ -2286,8 +2288,7 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_CANCEL:
 			i.v = INSVERB_UNSC;
 			i.o = ve->t.oid;
-			i.from = ve->e.from;
-			i.to = ve->e.till;
+			i.rng = echs_event_range(ve->e);
 			break;
 		default:
 		case METH_ADD:
@@ -2344,7 +2345,7 @@ CALSCALE:GREGORIAN\n";
 		static const char meth_crea[] = "METHOD:PUBLISH\n";
 		static const char meth_unsc[] = "METHOD:CANCEL\n";
 
-	case INSVERB_CREA:
+	case INSVERB_SCHE:
 		fdwrite(meth_crea, strlenof(meth_crea));
 		if (UNLIKELY(i.t == NULL)) {
 			break;

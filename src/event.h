@@ -40,6 +40,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "instant.h"
+#include "range.h"
 #include "state.h"
 #include "oid.h"
 
@@ -99,6 +100,12 @@ static inline __attribute__((const, pure)) bool
 echs_nul_event_p(echs_event_t e)
 {
 	return echs_nul_instant_p(e.from);
+}
+
+static inline __attribute__((const, pure)) echs_range_t
+echs_event_range(echs_event_t e)
+{
+	return (echs_range_t){e.from, e.till};
 }
 
 #endif	/* INCLUDED_event_h_ */

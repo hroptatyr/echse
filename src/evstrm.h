@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include "event.h"
+#include "range.h"
 
 typedef struct echs_evstrm_s *echs_evstrm_t;
 typedef const struct echs_evstrm_s *echs_const_evstrm_t;

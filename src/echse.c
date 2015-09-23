@@ -1,6 +1,6 @@
 /*** echse.c -- testing echse concept
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -460,7 +460,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -480,7 +480,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -516,7 +516,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -537,7 +537,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got

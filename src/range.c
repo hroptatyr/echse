@@ -1,6 +1,6 @@
-/*** instruc.h -- instructions over event streams
+/*** range.c -- ranges over instants or idiffs
  *
- * Copyright (C) 2014-2015 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,47 +34,9 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_instruc_h_
-#define INCLUDED_instruc_h_
-
-#include "instant.h"
+#if defined HAVE_CONFIG_H
+# include "config.h"
+#endif	/* HAVE_CONFIG_H */
 #include "range.h"
-#include "task.h"
 
-typedef struct echs_instruc_s echs_instruc_t;
-
-typedef enum {
-	INSVERB_UNK,
-	/**
-	 * List all tasks (O == 0) or task with oid O.
-	 * The slots in the union are unused. */
-	INSVERB_LIST,
-	/**
-	 * Schedule (create) task T with oid O.
-	 * If O == 0 generate a oid on the fly. */
-	INSVERB_SCHE,
-	/**
-	 * Reschedule (update) task with oid O to specifics in T.
-	 * This verb is also used to denote a successful SCHE or RESC,
-	 * in that case the oid O is set but T is not. */
-	INSVERB_RESC,
-	INSVERB_SUCC = INSVERB_RESC,
-	/**
-	 * Unschedule (cancel) task with oid O.
-	 * This verb is also used to denote a failed SCHE or RESC,
-	 * in that case the oid is set. */
-	INSVERB_UNSC,
-	INSVERB_FAIL = INSVERB_UNSC,
-} echs_insverb_t;
-
-struct echs_instruc_s {
-	echs_insverb_t v;
-	echs_toid_t o;
-	union {
-		echs_task_t t;
-		echs_instant_t ins;
-		echs_range_t rng;
-	};
-};
-
-#endif	/* INCLUDED_instruc_h_ */
+/* range.c ends here */

@@ -41,6 +41,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "instant.h"
+#include "range.h"
 #include "dt-strpf.h"
 #include "event.h"
 #include "evstrm.h"

@@ -78,6 +78,8 @@
 #include "fdprnt.h"
 #include "nifty.h"
 #include "nedtrie.h"
+/* for rescheduling */
+#include "evfilt.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -102,6 +104,9 @@ struct _task_s {
 	/* beef data for libev and book-keeping */
 	ev_periodic w;
 	_task_t next;
+
+	/* currently scheduled run-time */
+	echs_range_t cur;
 
 	/* this is the task as understood by libechse */
 	echs_task_t t;
@@ -1218,7 +1223,7 @@ chkpnt1(uid_t u)
 			continue;
 		} else if (!inittedp) {
 			echs_instruc_t ins = {
-				INSVERB_CREA, 0U,
+				INSVERB_SCHE, 0U,
 				.t = task_ht[i].t->t,
 			};
 			echs_icalify_init(fd, ins);
@@ -1285,7 +1290,7 @@ chkpnta(void)
 			goto bang;
 		} else {
 			echs_instruc_t ins = {
-				INSVERB_CREA, 0U,
+				INSVERB_SCHE, 0U,
 				.t = task_ht[i].t->t,
 			};
 
@@ -1600,8 +1605,8 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
 		switch (ins.v) {
-		case INSVERB_CREA:
-		case INSVERB_UPDT:
+		case INSVERB_SCHE:
+		case INSVERB_RESC:
 			if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			}
@@ -1615,19 +1620,9 @@ cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 			ins.v = INSVERB_SUCC;
 			break;
 
-		case INSVERB_RESC:
-			/* reschedule (update) request */
-			ins.v = INSVERB_FAIL;
-			break;
-
-		case INSVERB_RES1:
-			/* reschedule (update) one in series request */
-			ins.v = INSVERB_FAIL;
-			break;
-
 		case INSVERB_UNSC:
-			/* cancel request */
-			/* otherwise eject him */
+			/* cancel request
+			 * cancel the whole shebang */
 			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
 				ins.v = INSVERB_FAIL;
@@ -1696,7 +1691,7 @@ shut_cmd(struct echs_cmdparam_s param[static 1U])
 		echs_instruc_t ins;
 
 		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
-		case INSVERB_CREA:
+		case INSVERB_SCHE:
 			if (LIKELY(ins.t == NULL)) {
 				break;
 			}
@@ -1886,14 +1881,18 @@ resched(ev_periodic *w, ev_tstamp now)
 		ECHS_NOTI_LOG("event in the past, not scheduling");
 		w->reschedule_cb = NULL;
 		w->cb = unsched;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now;
 	} else if (UNLIKELY(echs_event_0_p(e))) {
 		/* we need to unschedule AFTER the next run */
 		ECHS_NOTI_LOG("event completed, will not reschedule");
 		w->reschedule_cb = NULL;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now + 1.e+30;
 	}
 
+	/* store the current event range and calculate tstamp for libev */
+	t->cur = (echs_range_t){e.from, e.till};
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
@@ -2177,11 +2176,10 @@ task update from user %d for task from user %d failed: permission denied",
 	/* otherwise proceed with the evacuation */
 	ECHS_NOTI_LOG("cancelling task 0x%x", oid);
 	ev_periodic_stop(EV_A_ &res->w);
-	free(deconst(res->dflt_cred.wd));
-	free(deconst(res->dflt_cred.sh));
-	free_echs_task(res->t);
+	free_task(res);
 	return 0;
 }
+
 
 static void
 _inject_file(struct _echsd_s *ctx, const char *fn)
@@ -2209,7 +2207,7 @@ more:
 		do {
 			ins = echs_evical_pull(&pp);
 
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -2228,7 +2226,7 @@ more:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got

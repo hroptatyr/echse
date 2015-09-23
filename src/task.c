@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "task.h"
+#include "evfilt.h"
 #include "nifty.h"
 
 struct echs_task_s*

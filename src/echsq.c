@@ -274,7 +274,7 @@ more:
 		do {
 			ins = echs_evical_pull(&pp);
 
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -293,7 +293,7 @@ more:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -449,7 +449,6 @@ END:VCALENDAR\n";
 	static const char end[] = "END:VEVENT\n";
 	static const char sta[] = "STATUS:CANCELLED\n";
 	const char *e;
-	const char *tuid;
 	int s = -1;
 
 	/* let's try the local echsd and then the system-wide one */
@@ -465,26 +464,18 @@ END:VCALENDAR\n";
 	/* we'll be writing to S, better believe it */
 	fdbang(s);
 
-	if ((tuid = argi->args[0U]) != NULL) {
-		fdwrite(hdr, strlenof(hdr));
+	fdwrite(hdr, strlenof(hdr));
+	for (size_t i = 0U; i < argi->nargs; i++) {
+		const char *tuid = argi->args[i];
 
-		if (argi->nargs == 1U) {
-			fdwrite(beg, strlenof(beg));
-			fdprintf("UID:%s\n", tuid);
-			fdwrite(sta, strlenof(sta));
-			fdwrite(end, strlenof(end));
-		}
-		for (size_t i = 1U; i < argi->nargs; i++) {
-			fdwrite(beg, strlenof(beg));
-			fdprintf("UID:%s\n", tuid);
-			fdprintf("RECURRENCE-ID:%s\n", argi->args[i]);
-			fdwrite(sta, strlenof(sta));
-			fdwrite(end, strlenof(end));
-		}
-
-		fdwrite(ftr, strlenof(ftr));
+		fdwrite(beg, strlenof(beg));
+		fdprintf("UID:%s\n", tuid);
+		fdwrite(sta, strlenof(sta));
+		fdwrite(end, strlenof(end));
 		nout++;
 	}
+	fdwrite(ftr, strlenof(ftr));
+
 	(void)fdputc;
 	fdflush();
 	while (nout && !(poll1(s, 5000) < 0));
