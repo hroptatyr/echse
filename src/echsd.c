@@ -78,6 +78,8 @@
 #include "fdprnt.h"
 #include "nifty.h"
 #include "nedtrie.h"
+/* for rescheduling */
+#include "evfilt.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -2247,7 +2249,7 @@ task update from user %d for task from user %d failed: permission denied",
 		ev_periodic_start(EV_A_ &res->w);
 	} else {
 		/* just add an EXDATE to the task's stream */
-		;
+		evfilt_addx(res->t->strm, (echs_range_t){ins});
 	}
 	return 0;
 }
@@ -2285,14 +2287,16 @@ task update from user %d for task from user %d failed: permission denied",
 
 	if (UNLIKELY(echs_instant_le_p(rng.end, res->cur.beg))) {
 		/* range is in the past, do fuckall */
-		;
-	} else if (echs_instant_le_p(rng.beg, res->cur.beg)) {
-		/* call off the current guy and maybe some of the
-		 * following recurrences */
-		;
-	} else {
-		/* EXDATE */
-		;
+		return 0;
+	}
+	/* definitely add an exception-range */
+	evfilt_addx(res->t->strm, rng);
+
+	if (echs_instant_le_p(rng.beg, res->cur.beg)) {
+		/* and call off the current guy */
+		ev_periodic_stop(EV_A_ &res->w);
+		ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
+		ev_periodic_start(EV_A_ &res->w);
 	}
 	return 0;
 }

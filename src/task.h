@@ -45,7 +45,7 @@
 #include "evstrm.h"
 #include "oid.h"
 
-typedef const struct echs_task_s *echs_task_t;
+typedef struct echs_task_s *echs_task_t;
 typedef echs_oid_t echs_toid_t;
 
 typedef struct {
@@ -105,6 +105,16 @@ extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
  * Forcefully change owner of T to UID.
  * Negative values of UID `unset' the owner field. */
 extern int echs_task_rset_ownr(echs_task_t t, int uid);
+
+/**
+ * Add a single recurrence E to the recurrences of T.
+ * Special routine to implement partial rescheduling. */
+extern int echs_task_addr(echs_task_t t, echs_event_t e);
+
+/**
+ * Add a single exception X to the recurrences of T.
+ * Special routine to implement partial cancellation. */
+extern int echs_task_addx(echs_task_t t, echs_range_t x);
 
 
 /* convenience */
