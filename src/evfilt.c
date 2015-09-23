@@ -78,7 +78,6 @@ next_evfilt(echs_evstrm_t s)
 {
 	struct evfilt_s *this = (struct evfilt_s*)s;
 	echs_event_t e = echs_evstrm_next(this->e);
-	echs_range_t r = echs_event_range(e);
 
 check:
 	if (UNLIKELY(echs_nul_range_p(this->ex))) {
@@ -87,16 +86,18 @@ check:
 	}
 
 	/* otherwise check if the current exception overlaps with E */
-	if (echs_range_overlaps_p(r, this->ex)) {
-		/* yes it does */
-		e = echs_evstrm_next(this->e);
-		goto check;
-	} else if (echs_range_precedes_p(this->ex, r)) {
-		/* we can't say for sure yet as there could be
-		 * another exception in the range of E */
-		echs_event_t ex = echs_evstrm_next(this->x);
-		this->ex = echs_event_range(ex);
-		goto check;
+	with (echs_range_t r = echs_event_range(e)) {
+		if (echs_range_overlaps_p(r, this->ex)) {
+			/* yes it does */
+			e = echs_evstrm_next(this->e);
+			goto check;
+		} else if (echs_range_precedes_p(this->ex, r)) {
+			/* we can't say for sure yet as there could be
+			 * another exception in the range of E */
+			echs_event_t ex = echs_evstrm_next(this->x);
+			this->ex = echs_event_range(ex);
+			goto check;
+		}
 	}
 	/* otherwise it's certainly safe */
 	return e;
