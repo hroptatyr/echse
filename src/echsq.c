@@ -318,84 +318,11 @@ more:
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-/* try and request the queues */
-	char buf[4096U];
-	char cmd[64];
-	ssize_t cmz;
-	/* assume failure */
-	int rc = 1;
-
-	/* just build the request */
-	if (argi->user_arg == NULL) {
-		static const char req[] = "GET /echsq.ics HTTP/1.1\r\n\r\n";
-		cmz = xstrlncpy(cmd, sizeof(cmd), req, strlenof(req));
-	} else {
-		uid_t u;
-		char *on = NULL;
-
-		u = strtoul(argi->user_arg, &on, 10);
-		if (on == NULL || *on) {
-			struct passwd *p;
-
-			if ((p = getpwnam(argi->user_arg)) == NULL) {
-				serror("\
-Error: cannot resolve user name `%s'", argi->user_arg);
-				return rc;
-			}
-			u = p->pw_uid;
-		}
-		cmz = snprintf(
-			cmd, sizeof(cmd),
-			"GET /echsq_%u.ics HTTP/1.1\r\n\r\n", u);
-	}
-
-	/* let's try the local echsd and then the system-wide one */
-	with (int s) {
-		const char *e;
-
-		if (UNLIKELY((e = get_esock(false)) == NULL)) {
-			break;
-		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
-			serror("Error: cannot connect to `%s'", e);
-			break;
-		}
-		write(s, cmd, cmz);
-
-		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
-			write(STDOUT_FILENO, buf, nrd);
-		}
-		free_conn(s);
-		rc = 0;
-	}
-
-	/* global queue */
-	with (int s) {
-		const char *e;
-
-		if (UNLIKELY((e = get_esock(true)) == NULL)) {
-			break;
-		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
-			serror("Error: cannot connect to `%s'", e);
-			break;
-		}
-		write(s, cmd, cmz);
-
-		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
-			write(STDOUT_FILENO, buf, nrd);
-		}
-		free_conn(s);
-		rc = 0;
-	}
-	return rc;
-}
-
-static int
-cmd_next(const struct yuck_cmd_next_s argi[static 1U])
-{
 /* try and request the schedules */
 	static const char verb[] = "GET /";
 	static const char vers[] = " HTTP/1.1\r\n\r\n";
-	static const char rout[] = "sched";
+	static const char sche[] = "sched";
+	static const char queu[] = "queue";
 	char buf[4096U];
 	size_t bix;
 	size_t i = 0U;
@@ -436,7 +363,11 @@ more:
 	}
 
 	/* paste the routine we want invoked */
-	bix += xstrlncpy(BUF, BSZ, rout, strlenof(rout));
+	if (argi->next_flag) {
+		bix += xstrlncpy(BUF, BSZ, sche, strlenof(sche));
+	} else {
+		bix += xstrlncpy(BUF, BSZ, queu, strlenof(queu));
+	}
 	CHK_BIX();
 
 	/* now if there's tasks put a ?tuid=x,y,z */
@@ -491,6 +422,10 @@ more:
 		goto more;
 	}
 	return 0;
+
+#undef BUF
+#undef BSZ
+#undef CHK_BIX
 
 pwnam_err:
 	serror("\
@@ -631,10 +566,6 @@ main(int argc, char *argv[])
 
 	case ECHSQ_CMD_CANCEL:
 		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);
-		break;
-
-	case ECHSQ_CMD_NEXT:
-		rc = cmd_next((struct yuck_cmd_next_s*)argi);
 		break;
 
 	default:

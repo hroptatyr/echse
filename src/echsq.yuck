@@ -17,16 +17,11 @@ Cancel tasks with uids TUID,
   --next                Only cancel the next run of the tasks.
 
 
-Usage: echsq list
+Usage: echsq list [TUID]...
 
 List jobs in the queue.
+If TUIDs are specified, restrict the listing to those.
 
   -u, --user=NAME|UID   Request queue for user NAME or user id UID.
-
-
-Usage: echsq next [TUID]...
-
-Return the next scheduled run of tasks with uids TUIDs, or
-if omitted the next scheduled run of all tasks.
-
-  -u, --user=NAME|UID   Request queue for user NAME or user id UID.
+  --next                Instead of the whole job definition only list
+                        the next scheduled run.
