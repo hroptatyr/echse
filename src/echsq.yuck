@@ -21,3 +21,11 @@ Usage: echsq list
 List jobs in the queue.
 
   -u, --user=NAME|UID   Request queue for user NAME or user id UID.
+
+
+Usage: echsq next [TUID]...
+
+Return the next scheduled run of tasks with uids TUIDs, or
+if omitted the next scheduled run of all tasks.
+
+  -u, --user=NAME|UID   Request queue for user NAME or user id UID.

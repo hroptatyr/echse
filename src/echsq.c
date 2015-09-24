@@ -390,6 +390,125 @@ Error: cannot resolve user name `%s'", argi->user_arg);
 }
 
 static int
+cmd_next(const struct yuck_cmd_next_s argi[static 1U])
+{
+/* try and request the schedules */
+	static const char verb[] = "GET /";
+	static const char vers[] = " HTTP/1.1\r\n\r\n";
+	static const char rout[] = "sched";
+	char buf[4096U];
+	size_t bix;
+	size_t i = 0U;
+	const char *e;
+	uid_t u;
+
+#define BUF	(buf + bix)
+#define BSZ	(sizeof(buf) - bix)
+#define CHK_BIX()				\
+	if (UNLIKELY(bix > sizeof(buf))) {	\
+		goto reqstr_err;		\
+	} else (void)0				\
+
+	/* first of all transmogrify user name to uid */
+	if (argi->user_arg) {
+		char *on = NULL;
+		u = strtoul(argi->user_arg, &on, 10);
+
+		if (on == NULL || *on) {
+			struct passwd *p;
+
+			if ((p = getpwnam(argi->user_arg)) == NULL) {
+				goto pwnam_err;
+			}
+			u = p->pw_uid;
+		}
+	}
+
+more:
+	bix = 0U;
+	/* right lets start with the http verb and stuff */
+	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
+	CHK_BIX();
+
+	if (argi->user_arg) {
+		bix += snprintf(BUF, BSZ, "u/%u/", u);
+		CHK_BIX();
+	}
+
+	/* paste the routine we want invoked */
+	bix += xstrlncpy(BUF, BSZ, rout, strlenof(rout));
+	CHK_BIX();
+
+	/* now if there's tasks put a ?tuid=x,y,z */
+	if (i < argi->nargs) {
+		bix += snprintf(BUF, BSZ, "?tuid=%s", argi->args[i++]);
+		CHK_BIX();
+	}
+	for (int n; i < argi->nargs; i++, bix += n) {
+		n = snprintf(BUF, BSZ, "&tuid=%s", argi->args[i]);
+		if (UNLIKELY(bix + n >= sizeof(buf))) {
+			/* just do him next time */
+			break;
+		} else if (UNLIKELY(bix + strlenof(vers) >= sizeof(buf))) {
+			/* we can't have no space for the version suffix */
+			break;
+		}
+	}
+	/* version and stuff */
+	bix += xstrlncpy(BUF, BSZ, vers, strlenof(vers));
+
+	/* let's try the local echsd and then the system-wide one */
+	with (int s) {
+		if (UNLIKELY((e = get_esock(false)) == NULL)) {
+			break;
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
+			serror("Error: cannot connect to `%s'", e);
+			goto conn_err;
+		}
+		write(s, buf, bix);
+
+		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
+			write(STDOUT_FILENO, buf, nrd);
+		}
+		free_conn(s);
+	}
+
+	/* global queue */
+	with (int s) {
+		if (UNLIKELY((e = get_esock(true)) == NULL)) {
+			break;
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
+			goto conn_err;
+		}
+		write(s, buf, bix);
+
+		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
+			write(STDOUT_FILENO, buf, nrd);
+		}
+		free_conn(s);
+	}
+	if (UNLIKELY(i < argi->nargs)) {
+		goto more;
+	}
+	return 0;
+
+pwnam_err:
+	serror("\
+Error: cannot resolve user name `%s'", argi->user_arg);
+	return 1;
+
+conn_err:
+	serror("\
+Error: cannot connect to `%s'", e);
+	return 1;
+
+reqstr_err:
+	serror("\
+Error: cannot build request string");
+	return 1;
+}
+
+static int
 cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
@@ -507,11 +626,15 @@ main(int argc, char *argv[])
 
 
 	case ECHSQ_CMD_ADD:
-		rc = cmd_add((struct yuck_cmd_add_s*)argi);;
+		rc = cmd_add((struct yuck_cmd_add_s*)argi);
 		break;
 
 	case ECHSQ_CMD_CANCEL:
-		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);;
+		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);
+		break;
+
+	case ECHSQ_CMD_NEXT:
+		rc = cmd_next((struct yuck_cmd_next_s*)argi);
 		break;
 
 	default:
