@@ -90,7 +90,9 @@ serror(const char *fmt, ...)
 static inline size_t
 xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 {
-	if (UNLIKELY(ssz > dsz)) {
+	if (UNLIKELY(dsz == 0U)) {
+		return 0U;
+	} else if (UNLIKELY(ssz > dsz)) {
 		ssz = dsz - 1U;
 	}
 	memcpy(dst, src, ssz);
