@@ -1484,6 +1484,7 @@ cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	return ECHS_CMD_ICAL;
 }
 
+
 static ssize_t
 cmd_http(EV_P_ int ofd, const struct echs_cmd_http_s cmd[static 1U], ncred_t c)
 {
@@ -1497,7 +1498,6 @@ HTTP/1.1 500 Internal Server Error\r\n\r\n";
 HTTP/1.1 200 Ok\r\n\r\n";
 	static const char rpl204[] = "\
 HTTP/1.1 204 Found\r\n\r\n";
-	char fn[PATH_MAX];
 	const char *rpl;
 	size_t rpz;
 	ssize_t nwr = 0;
@@ -1513,10 +1513,14 @@ HTTP/1.1 204 Found\r\n\r\n";
 	u = u ?: cmd->uid;
 
 	switch (cmd->rou) {
+		char fn[PATH_MAX];
 		struct stat st;
 
 	case ECHS_HTTP_QUEUE:
-		if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
+		if (cmd->params && cmd->paramz) {
+			/* just go through stuff one by one, later on */
+			rpl = rpl200, rpz = strlenof(rpl200);
+		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
 			rpl = rpl500, rpz = strlenof(rpl500);
 		} else if (chkpntedp(u) && chkpnt() < 0) {
 			rpl = rpl500, rpz = strlenof(rpl500);
@@ -1534,7 +1538,6 @@ HTTP/1.1 204 Found\r\n\r\n";
 		rpl = rpl204, rpz = strlenof(rpl204);
 		break;
 	case ECHS_HTTP_UNK:
-			ECHS_NOTI_LOG("can't find echsq_%u.ics", u);
 		rpl = rpl404, rpz = strlenof(rpl404);
 		break;
 	}
@@ -1544,13 +1547,87 @@ hdr:
 	nwr += write(ofd, rpl, rpz);
 
 	/* and now content, if any */
+	if (!(fd < 0)) {
 #if defined HAVE_SENDFILE
-	if (!(fd < 0) && fz) {
 		for (ssize_t nsf;
 		     fz && (nsf = sendfile(ofd, fd, NULL, fz)) > 0;
 		     fz -= nsf, nwr += nsf);
-	}
 #endif	/* HAVE_SENDFILE */
+		close(fd);
+	}
+
+	if (UNLIKELY(rpl != rpl200)) {
+		/* just do nothing */
+		;
+	} else if (cmd->rou && cmd->params && cmd->paramz) {
+		/* right, let's go through all tasks or the ones specified */
+		static const char key[] = "tuid=";
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_init(ofd, (echs_instruc_t){INSVERB_SCHE});
+			break;
+		case ECHS_HTTP_SCHED:
+			break;
+		default:
+			break;
+		}
+		for (const char *pp = cmd->params,
+			     *const ep = cmd->params + cmd->paramz, *np;
+		     pp < ep; pp = np + 1U) {
+			echs_oid_t oid = 0U;
+			_task_t t = NULL;
+
+			np = memchr(pp, '&', ep - pp) ?: ep;
+			if (memcmp(pp, key, strlenof(key))) {
+				continue;
+			}
+			/* otherwise go and look for him */
+			pp += strlenof(key);
+
+			if (!(oid = obint(pp, np - pp))) {
+				/* nope */
+				continue;
+			} else if (UNLIKELY((t = get_task(oid)) == NULL)) {
+				ECHS_ERR_LOG("\
+cannot find task: no task with oid 0x%x found", oid);
+				continue;
+			} else if (UNLIKELY(!echs_task_owned_by_p(t->t, u))) {
+				uid_t owner = t->t->owner;
+				ECHS_ERR_LOG("\
+requesting task from user %d as user %d failed: permission denied", u, owner);
+				continue;
+			}
+
+			switch (cmd->rou) {
+			case ECHS_HTTP_QUEUE:
+				echs_task_icalify(ofd, t->t);
+				break;
+
+			case ECHS_HTTP_SCHED:
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_fini(ofd);
+			break;
+
+		case ECHS_HTTP_SCHED:
+			break;
+
+		default:
+			break;
+		}
+
+	} else if (cmd->rou) {
+		/* do something for all */
+		;
+	}
 	return nwr;
 }
 
