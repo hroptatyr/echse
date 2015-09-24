@@ -14,6 +14,7 @@ Usage: echsq cancel TUID...
 
 Cancel tasks with uids TUID,
 
+  --next                Only cancel the next run of the tasks.
 
 
 Usage: echsq list
