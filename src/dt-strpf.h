@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include "instant.h"
+#include "range.h"
 
 /**
  * Parse STR with the standard parser. */
@@ -51,5 +52,13 @@ extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
 /**
  * Print INST into BUF (of size BSZ) in ical format and return its length. */
 extern size_t dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst);
+
+/**
+ * Parse STR as range with the standard parser. */
+extern echs_range_t range_strp(const char *str, char **on, size_t len);
+
+/**
+ * Print RANGE into BUF (of size BSZ) in ISO format and return its length. */
+extern size_t range_strf(char *restrict buf, size_t bsz, echs_range_t range);
 
 #endif	/* INCLUDED_dt_strpf_h_ */
