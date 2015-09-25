@@ -1485,6 +1485,20 @@ cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 }
 
 
+static void
+echs_http_send_sched(_task_t t, const char *tuid, size_t tusz)
+{
+	char rng[64U];
+	size_t rnz;
+
+	rnz = range_strf(rng, sizeof(rng), t->cur);
+	fdwrite(tuid, tusz);
+	fdputc('\t');
+	fdwrite(rng, rnz);
+	fdputc('\n');
+	return;
+}
+
 static ssize_t
 cmd_http(EV_P_ int ofd, const struct echs_cmd_http_s cmd[static 1U], ncred_t c)
 {
@@ -1605,17 +1619,9 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 				echs_task_icalify(ofd, t->t);
 				break;
 
-			case ECHS_HTTP_SCHED: {
-				char rng[64U];
-				size_t rnz;
-
-				rnz = range_strf(rng, sizeof(rng), t->cur);
-				fdwrite(pp, np - pp);
-				fdputc('\t');
-				fdwrite(rng, rnz);
-				fdputc('\n');
+			case ECHS_HTTP_SCHED:
+				echs_http_send_sched(t, pp, np - pp);
 				break;
-			}
 
 			default:
 				break;
@@ -1637,7 +1643,36 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 
 	} else if (cmd->rou) {
 		/* do something for all */
-		;
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			/* fingers crossed the checkpointed file
+			 * has been delivered via sendfile() above
+			 * i.e. not doing nothing here */
+			break;
+
+		case ECHS_HTTP_SCHED:
+			/* go through all the tasks */
+			fdbang(ofd);
+			for (size_t i = 0U; i < ztask_ht; i++) {
+				const char *tu;
+				size_t tz;
+
+				if (!task_ht[i].oid) {
+					continue;
+				} else if (task_ht[i].t->t->owner != u) {
+					continue;
+				}
+				/* yep */
+				tu = obint_name(task_ht[i].oid);
+				tz = tu ? strlen(tu) : 0U;
+				echs_http_send_sched(task_ht[i].t, tu, tz);
+			}
+			fdflush();
+			break;
+
+		default:
+			break;
+		}
 	}
 	return nwr;
 }
