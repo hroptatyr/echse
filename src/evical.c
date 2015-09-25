@@ -1737,7 +1737,10 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
 
-	send_ev(whither, this->ev[0U]);
+	if (UNLIKELY(this->i >= this->nev)) {
+		return;
+	}
+	send_ev(whither, this->ev[this->i]);
 	return;
 }
 
