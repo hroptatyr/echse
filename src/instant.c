@@ -204,6 +204,7 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 	echs_instant_t res = bas;
 	int dd = add.dd;
 	int msd = add.msd;
+	int car;
 
 	if (UNLIKELY(echs_instant_all_day_p(bas))) {
 		/* just fix up the day, dom and year portion */
@@ -214,16 +215,21 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 		goto fixup_S;
 	}
 
-
-	res.ms += msd % (int)MSECS_PER_SEC;
-	msd /= (int)MSECS_PER_SEC;
+	car = (res.ms + msd) / (int)MSECS_PER_SEC;
+	res.ms = (res.ms + msd) % (int)MSECS_PER_SEC;
+	msd = car;
 fixup_S:
-	res.S += msd % (int)SECS_PER_MIN;
-	msd /= (int)SECS_PER_MIN;
-	res.M += msd % (int)MINS_PER_HOUR;
-	msd /= (int)MINS_PER_HOUR;
-	res.H += msd % (int)HOURS_PER_DAY;
-	msd /= (int)HOURS_PER_DAY;
+	car = (res.S + msd) / (int)SECS_PER_MIN;
+	res.S = (res.S + msd) % (int)SECS_PER_MIN;
+	msd = car;
+
+	car = (res.M + msd) / (int)MINS_PER_HOUR;
+	res.M = (res.M + msd) % (int)MINS_PER_HOUR;
+	msd = car;
+
+	car = (res.H + msd) / (int)HOURS_PER_DAY;
+	res.H = (res.H + msd) % (int)HOURS_PER_DAY;
+	msd = car;
 
 	/* get ready to adjust the day */
 	if (UNLIKELY(msd)) {

@@ -1,0 +1,5 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format '%b\t%e\t%s' "${srcdir}/sample_35.ics"
+2015-01-05T17:52:00	2015-01-05T18:22:00	The fifth
+$
