@@ -1535,7 +1535,7 @@ HTTP/1.1 204 Found\r\n\r\n";
 		}
 		break;
 	case ECHS_HTTP_SCHED:
-		rpl = rpl204, rpz = strlenof(rpl204);
+		rpl = rpl200, rpz = strlenof(rpl200);
 		break;
 	case ECHS_HTTP_UNK:
 		rpl = rpl404, rpz = strlenof(rpl404);
@@ -1568,6 +1568,7 @@ hdr:
 			echs_icalify_init(ofd, (echs_instruc_t){INSVERB_SCHE});
 			break;
 		case ECHS_HTTP_SCHED:
+			fdbang(ofd);
 			break;
 		default:
 			break;
@@ -1604,8 +1605,17 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 				echs_task_icalify(ofd, t->t);
 				break;
 
-			case ECHS_HTTP_SCHED:
+			case ECHS_HTTP_SCHED: {
+				char rng[64U];
+				size_t rnz;
+
+				rnz = range_strf(rng, sizeof(rng), t->cur);
+				fdwrite(pp, np - pp);
+				fdputc('\t');
+				fdwrite(rng, rnz);
+				fdputc('\n');
 				break;
+			}
 
 			default:
 				break;
@@ -1618,6 +1628,7 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 			break;
 
 		case ECHS_HTTP_SCHED:
+			fdflush();
 			break;
 
 		default:
