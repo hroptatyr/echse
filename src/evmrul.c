@@ -94,7 +94,7 @@ pop_aux_event(struct evmrul_s *restrict s)
 	} else if (UNLIKELY(s->states == NULL)) {
 		return res;
 	}
-	return echs_evstrm_next(s->states);
+	return echs_evstrm_next(s->states, true);
 }
 
 static void
@@ -108,8 +108,8 @@ push_aux_event(struct evmrul_s *restrict s, echs_event_t e)
 }
 
 
-static echs_event_t next_evmrul_past(echs_evstrm_t);
-static echs_event_t next_evmrul_futu(echs_evstrm_t);
+static echs_event_t next_evmrul_past(echs_evstrm_t, bool popp);
+static echs_event_t next_evmrul_futu(echs_evstrm_t, bool popp);
 static void free_evmrul(echs_evstrm_t);
 static echs_evstrm_t clone_evmrul(echs_const_evstrm_t);
 static void send_evmrul(int, echs_const_evstrm_t);
@@ -129,11 +129,15 @@ static const struct echs_evstrm_class_s evmrul_futu_cls = {
 };
 
 static echs_event_t
-next_evmrul_past(echs_evstrm_t s)
+next_evmrul_past(echs_evstrm_t s, bool popp)
 {
-/* this is for past movers only at the moment */
+/* this is for past movers only at the moment
+ * we take the next event from the to-be-moved stream (the movers) and
+ * the current event from the auxiliary stream (the states) and if the
+ * former is currently blocked by the latter, move it straight in front
+ * of the states. */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
-	echs_event_t res = echs_evstrm_next(this->movers);
+	echs_event_t res = echs_evstrm_next(this->movers, popp);
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 
@@ -194,11 +198,12 @@ out:
 }
 
 static echs_event_t
-next_evmrul_futu(echs_evstrm_t s)
+next_evmrul_futu(echs_evstrm_t s, bool popp)
 {
-/* this is for future movers only at the moment */
+/* this is for future movers only at the moment.
+ * Same idea as the past movers but move mover event into the future. */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
-	echs_event_t res = echs_evstrm_next(this->movers);
+	echs_event_t res = echs_evstrm_next(this->movers, popp);
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 

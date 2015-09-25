@@ -298,7 +298,7 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 
 	/* just get it out now */
 	echs_prnt_ical_init();
-	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
 		if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
 		} else if (echs_instant_lt_p(p->till, e.from)) {
@@ -419,7 +419,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
-	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
