@@ -1385,19 +1385,27 @@ cptim_cb(EV_P_ ev_timer *UNUSED(w), int UNUSED(revents))
 /* s2c communication */
 typedef enum {
 	ECHS_CMD_UNK,
-	ECHS_CMD_LIST,
+	ECHS_CMD_HTTP,
 	ECHS_CMD_ICAL,
 } echs_cmd_t;
 
-struct echs_cmd_list_s {
-	/* just store the uid that we want listed */
+struct echs_cmd_http_s {
+	/* routine */
+	enum {
+		ECHS_HTTP_UNK,
+		ECHS_HTTP_QUEUE,
+		ECHS_HTTP_SCHED,
+	} rou;
+	/* uid the user wants accessed */
 	uid_t uid;
+	const char *params;
+	size_t paramz;
 };
 
 struct echs_cmdparam_s {
 	echs_cmd_t cmd;
 	union {
-		struct echs_cmd_list_s list;
+		struct echs_cmd_http_s http;
 		ical_parser_t ical;
 	};
 };
@@ -1406,50 +1414,62 @@ static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
 static int _eject_task1(EV_P_ echs_toid_t o, uid_t u);
 
 static echs_cmd_t
-cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+cmd_http_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
-	static const char ht_verb[] = "GET ";
+	static const char ht_verb[] = "GET /";
 	static const char ht_vers[] = " HTTP/1.1\r\n";
-	static const char prfx[] = "/echsq";
-	static const char sufx[] = ".ics";
+	static const char sched[] = "sched";
+	static const char queue[] = "queue";
 	const char *const eob = buf + bsz;
 	const char *bp;
-	const char *ep;
 	const char *vp;
 
-	if (UNLIKELY(param->cmd == ECHS_CMD_LIST)) {
-		return ECHS_CMD_LIST;
+	if (UNLIKELY(param->cmd == ECHS_CMD_HTTP)) {
+		return ECHS_CMD_HTTP;
 	} else if ((bp = buf,
-	     memcmp(bp, ht_verb, strlenof(ht_verb)))) {
+		    memcmp(bp, ht_verb, strlenof(ht_verb)))) {
 		/* not a GET / request, make sure to exit quickly */
-		;
-	} else if ((bp += strlenof(ht_verb)) >= eob ||
-		   memcmp(bp, prfx, strlenof(prfx))) {
-		/* not a request for echsq, so can't be a LIST command */
-		;
-	} else if ((bp += strlenof(prfx)) >= eob ||
-		   (ep = xmemmem(bp, eob - bp, sufx, strlenof(sufx))) == NULL) {
-		/* not ending in .ics */
-		;
-	} else if ((vp = xmemmem(ep, eob - ep,
+		return ECHS_CMD_UNK;
+	} else if (bp += strlenof(ht_verb),
+		   bp >= eob ||
+		   (vp = xmemmem(bp, eob - bp,
 				 ht_vers, strlenof(ht_vers))) == NULL) {
 		/* wrong http version number, we're arseholes today */
-		;
-	} else {
-		/* aaaah it's everything we asked for */
-		char *on = NULL;
-
-		if (LIKELY(bp == ep)) {
-			param->list.uid = -1;
-		} else if (UNLIKELY(*bp++ != '_')) {
-			param->list.uid = 0;
-		} else if (param->list.uid = strtoul(bp, &on, 10), on != ep) {
-			/* they've asked for echsq_UID.ics, but fucked it */
-			param->list.uid = 0;
-		}
-		return ECHS_CMD_LIST;
+		return ECHS_CMD_UNK;
 	}
-	return ECHS_CMD_UNK;
+	/* now then, let's see if they want the per-user view on things */
+	if (bp[0U] == 'u' && bp[1U] == '/') {
+		/* yep */
+		char *on = NULL;
+		long unsigned int x;
+
+		if (x = strtoul(bp += 2U, &on, 10), *on != '/') {
+			/* they've fucked it */
+			return ECHS_CMD_UNK;
+		}
+		/* otherwise proceed */
+		param->http.uid = x;
+		bp = ++on;
+	} else {
+		param->http.uid = -1;
+	}
+	if (!memcmp(bp, queue, strlenof(queue))) {
+		param->http.rou = ECHS_HTTP_QUEUE;
+		bp += strlenof(queue);
+	} else if (!memcmp(bp, sched, strlenof(sched))) {
+		param->http.rou = ECHS_HTTP_SCHED;
+		bp += strlenof(sched);
+	} else {
+		param->http.rou = ECHS_HTTP_UNK;
+	}
+	if (*bp++ == '?') {
+		param->http.params = bp;
+		param->http.paramz = vp - bp;
+	} else {
+		param->http.params = NULL;
+		param->http.paramz = 0U;
+	}
+	return ECHS_CMD_HTTP;
 }
 
 static echs_cmd_t
@@ -1464,8 +1484,23 @@ cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	return ECHS_CMD_ICAL;
 }
 
+
+static void
+echs_http_send_sched(_task_t t, const char *tuid, size_t tusz)
+{
+	char rng[64U];
+	size_t rnz;
+
+	rnz = range_strf(rng, sizeof(rng), t->cur);
+	fdwrite(tuid, tusz);
+	fdputc('\t');
+	fdwrite(rng, rnz);
+	fdputc('\n');
+	return;
+}
+
 static ssize_t
-cmd_list(EV_P_ int ofd, const struct echs_cmd_list_s cmd[static 1U], ncred_t c)
+cmd_http(EV_P_ int ofd, const struct echs_cmd_http_s cmd[static 1U], ncred_t c)
 {
 	static const char rpl403[] = "\
 HTTP/1.1 403 Forbidden\r\n\r\n";
@@ -1475,40 +1510,170 @@ HTTP/1.1 404 Not Found\r\n\r\n";
 HTTP/1.1 500 Internal Server Error\r\n\r\n";
 	static const char rpl200[] = "\
 HTTP/1.1 200 Ok\r\n\r\n";
-	char fn[PATH_MAX];
+	static const char rpl204[] = "\
+HTTP/1.1 204 Found\r\n\r\n";
 	const char *rpl;
 	size_t rpz;
-	uid_t u;
-	struct stat st;
-	int fd = -1;
 	ssize_t nwr = 0;
+	int fd = -1;
+	size_t fz = 0U;
+	uid_t u;
 
 	if (UNLIKELY((u = c.u & (unsigned)cmd->uid) != c.u)) {
 		rpl = rpl403, rpz = strlenof(rpl403);
-	} else if (u = u ?: cmd->uid,
-		   snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
-		rpl = rpl500, rpz = strlenof(rpl500);
-	} else if (chkpntedp(u) && chkpnt() < 0) {
-		rpl = rpl500, rpz = strlenof(rpl500);
-	} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
-		rpl = rpl404, rpz = strlenof(rpl404);
-	} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
-		rpl = rpl403, rpz = strlenof(rpl403);
-	} else {
-		rpl = rpl200, rpz = strlenof(rpl200);
+		goto hdr;
 	}
+	/* massage user */
+	u = u ?: cmd->uid;
+
+	switch (cmd->rou) {
+		char fn[PATH_MAX];
+		struct stat st;
+
+	case ECHS_HTTP_QUEUE:
+		if (cmd->params && cmd->paramz) {
+			/* just go through stuff one by one, later on */
+			rpl = rpl200, rpz = strlenof(rpl200);
+		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
+			rpl = rpl500, rpz = strlenof(rpl500);
+		} else if (chkpntedp(u) && chkpnt() < 0) {
+			rpl = rpl500, rpz = strlenof(rpl500);
+		} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
+			ECHS_NOTI_LOG("can't find echsq_%u.ics", u);
+			rpl = rpl404, rpz = strlenof(rpl404);
+		} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+			rpl = rpl403, rpz = strlenof(rpl403);
+		} else {
+			rpl = rpl200, rpz = strlenof(rpl200);
+			fz = st.st_size;
+		}
+		break;
+	case ECHS_HTTP_SCHED:
+		rpl = rpl200, rpz = strlenof(rpl200);
+		break;
+	case ECHS_HTTP_UNK:
+		rpl = rpl404, rpz = strlenof(rpl404);
+		break;
+	}
+
+hdr:
 	/* write reply header */
 	nwr += write(ofd, rpl, rpz);
-	/* and content, if any */
-#if defined HAVE_SENDFILE
-	if (!(fd < 0)) {
-		size_t fz = st.st_size;
 
+	/* and now content, if any */
+	if (!(fd < 0)) {
+#if defined HAVE_SENDFILE
 		for (ssize_t nsf;
 		     fz && (nsf = sendfile(ofd, fd, NULL, fz)) > 0;
 		     fz -= nsf, nwr += nsf);
-	}
 #endif	/* HAVE_SENDFILE */
+		close(fd);
+	}
+
+	if (UNLIKELY(rpl != rpl200)) {
+		/* just do nothing */
+		;
+	} else if (cmd->rou && cmd->params && cmd->paramz) {
+		/* right, let's go through all tasks or the ones specified */
+		static const char key[] = "tuid=";
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_init(ofd, (echs_instruc_t){INSVERB_SCHE});
+			break;
+		case ECHS_HTTP_SCHED:
+			fdbang(ofd);
+			break;
+		default:
+			break;
+		}
+		for (const char *pp = cmd->params,
+			     *const ep = cmd->params + cmd->paramz, *np;
+		     pp < ep; pp = np + 1U) {
+			echs_oid_t oid = 0U;
+			_task_t t = NULL;
+
+			np = memchr(pp, '&', ep - pp) ?: ep;
+			if (memcmp(pp, key, strlenof(key))) {
+				continue;
+			}
+			/* otherwise go and look for him */
+			pp += strlenof(key);
+
+			if (!(oid = obint(pp, np - pp))) {
+				/* nope */
+				continue;
+			} else if (UNLIKELY((t = get_task(oid)) == NULL)) {
+				ECHS_ERR_LOG("\
+cannot find task: no task with oid 0x%x found", oid);
+				continue;
+			} else if (UNLIKELY(!echs_task_owned_by_p(t->t, u))) {
+				uid_t owner = t->t->owner;
+				ECHS_ERR_LOG("\
+requesting task from user %d as user %d failed: permission denied", u, owner);
+				continue;
+			}
+
+			switch (cmd->rou) {
+			case ECHS_HTTP_QUEUE:
+				echs_task_icalify(ofd, t->t);
+				break;
+
+			case ECHS_HTTP_SCHED:
+				echs_http_send_sched(t, pp, np - pp);
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_fini(ofd);
+			break;
+
+		case ECHS_HTTP_SCHED:
+			fdflush();
+			break;
+
+		default:
+			break;
+		}
+
+	} else if (cmd->rou) {
+		/* do something for all */
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			/* fingers crossed the checkpointed file
+			 * has been delivered via sendfile() above
+			 * i.e. not doing nothing here */
+			break;
+
+		case ECHS_HTTP_SCHED:
+			/* go through all the tasks */
+			fdbang(ofd);
+			for (size_t i = 0U; i < ztask_ht; i++) {
+				const char *tu;
+				size_t tz;
+
+				if (!task_ht[i].oid) {
+					continue;
+				} else if (task_ht[i].t->t->owner != u) {
+					continue;
+				}
+				/* yep */
+				tu = obint_name(task_ht[i].oid);
+				tz = tu ? strlen(tu) : 0U;
+				echs_http_send_sched(task_ht[i].t, tu, tz);
+			}
+			fdflush();
+			break;
+
+		default:
+			break;
+		}
+	}
 	return nwr;
 }
 
@@ -1662,8 +1827,8 @@ feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 
 	switch (param->cmd) {
 	case ECHS_CMD_UNK:
-	case ECHS_CMD_LIST:
-		if ((r = cmd_list_p(param, buf, bsz))) {
+	case ECHS_CMD_HTTP:
+		if ((r = cmd_http_p(param, buf, bsz))) {
 			break;
 		}
 	case ECHS_CMD_ICAL:
@@ -1930,8 +2095,8 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	}
 	/* check the command we're supposed to obey */
 	switch (feed_cmd(c->cmd, c->buf, nrd)) {
-	case ECHS_CMD_LIST:
-		(void)cmd_list(EV_A_ fd, &c->cmd->list, c->cred);
+	case ECHS_CMD_HTTP:
+		(void)cmd_http(EV_A_ fd, &c->cmd->http, c->cred);
 		/* always shut him down */
 		goto shut;
 

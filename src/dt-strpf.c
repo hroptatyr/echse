@@ -325,4 +325,66 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 	return bp - buf;
 }
 
+echs_range_t
+range_strp(const char *str, char **on, size_t len)
+{
+	char *op = deconst(str);
+	echs_range_t r;
+
+	if (UNLIKELY(!len)) {
+		goto err;
+	} else if (*str == '-') {
+		/* ah, lower bound seems to be -infty */
+		r.beg = echs_min_instant();
+	} else {
+		r.beg = dt_strp(str, &op, len);
+	}
+	switch (*op++) {
+	case '-':
+		/* just a normal range then, innit? */
+		r.end = dt_strp(op, on, len - (op - str));
+		break;
+	case '+':
+		r.end = echs_max_instant();
+		break;
+	default:
+		/* huh? */
+		goto err;
+	}
+	return r;
+err:
+	return echs_max_range();
+}
+
+size_t
+range_strf(char *restrict str, size_t ssz, echs_range_t r)
+{
+	size_t n = 0U;
+
+	if (UNLIKELY(!ssz)) {
+		return 0U;
+	} else if (UNLIKELY(ssz < 2U)) {
+		*str = '\0';
+		return 0U;
+	} else if (UNLIKELY(echs_max_range_p(r))) {
+		str[n++] = '*';
+		goto fin;
+	} else if (!echs_min_instant_p(r.beg)) {
+		n += dt_strf(str, ssz, r.beg);
+	}
+	if (n < ssz && !echs_max_instant_p(r.end)) {
+		str[n++] = '-';
+		n += dt_strf(str + n, ssz - n, r.end);
+	} else if (n < ssz) {
+		str[n++] = '+';
+	}
+fin:
+	if (LIKELY(n < ssz)) {
+		str[n] = '\0';
+	} else {
+		str[ssz - 1U] = '\0';
+	}
+	return n;
+}
+
 #endif	/* INCLUDED_dt_strpf_c_ */

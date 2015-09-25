@@ -65,6 +65,17 @@ typedef enum {
 	 * in that case the oid is set. */
 	INSVERB_UNSC,
 	INSVERB_FAIL = INSVERB_UNSC,
+
+	/* non-RFC 5546 here */
+	/**
+	 * Return the next scheduled run for task with oid O, or all if 0.
+	 * The result will be a NEXT instruction with the INS slot set. */
+	INSVERB_NEXT,
+	/**
+	 * Skip the next scheduled run for task with oid O, or all if 0.
+	 * The instant of the skipped run will be returned in FROM, the
+	 * instant the task is scheduled now at (if so) is returned in TO. */
+	INSVERB_SKIP,
 } echs_insverb_t;
 
 struct echs_instruc_s {
@@ -74,6 +85,10 @@ struct echs_instruc_s {
 		echs_task_t t;
 		echs_instant_t ins;
 		echs_range_t rng;
+		struct {
+			echs_instant_t from;
+			echs_instant_t to;
+		};
 	};
 };
 
