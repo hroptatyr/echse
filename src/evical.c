@@ -2329,11 +2329,19 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 void
 echs_task_icalify(int whither, echs_task_t t)
 {
+	echs_evstrm_t s;
+
+	if (UNLIKELY((s = t->strm) == NULL)) {
+		/* do fuckall */
+		return;
+	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s, false)))) {
+		/* doesn't make sense to put this guy on the wire does it */
+		return;
+	}
+
 	send_ical_hdr(whither);
 	send_task(whither, t);
-	if (LIKELY(t->strm != NULL)) {
-		echs_evstrm_seria(whither, t->strm);
-	}
+	echs_evstrm_seria(whither, s);
 	send_ical_ftr(whither);
 	return;
 }
