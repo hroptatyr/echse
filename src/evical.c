@@ -2066,22 +2066,31 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
 	/* we know rrules are consecutive so only print the DTSTAMP/DTEND
-	 * stuff for the first stream in the sequence */
+	 * stuff for the first stream in the sequence
+	 * also, we have to mimic evmux's next finder as we can't use it
+	 * directly because of constness */
 	if (!this->seq) {
 		echs_event_t e = this->e;
 
-		if (UNLIKELY(this->rdi >= countof(this->cch))) {
-			/* we'd need to refill, but this stream is const
-			 * so just send off the proto event */
-			;
-		} else if (UNLIKELY(this->rdi >= this->ncch)) {
-			/* the end of the stream innit? */
-			return;
-		} else {
-			e.from = this->cch[this->rdi];
-			e.till = echs_instant_add(e.from, this->dur);
-		}
+		for (size_t i = 0U; i < this->ref; i++) {
+			echs_instant_t cand = this[i].e.from;
 
+			if (UNLIKELY(this[i].rdi >= countof(this[i].cch))) {
+				/* we'd need to refill, but this stream
+				 * is const so just use the proto event */
+				;
+			} else if (UNLIKELY(this[i].rdi >= this[i].ncch)) {
+				/* end of stream innit */
+				continue;
+			} else {
+				cand = this[i].cch[this[i].rdi];
+			}
+			if (echs_instant_lt_p(cand, e.from)) {
+				e.from = cand;
+			}
+		}
+		/* calc the corresponding TILL instant */
+		e.till = echs_instant_add(e.from, this->dur);
 		send_ev(whither, e);
 	}
 	send_rrul(whither, &this->rrul);
