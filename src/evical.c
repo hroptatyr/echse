@@ -2042,14 +2042,14 @@ next_evrrul(echs_evstrm_t s, bool popp)
 		this->rdi = 0U;
 	}
 	/* get the starting instant */
-	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi++]))) {
+	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi]))) {
 		/* we might have run out of steam */
 		if (UNLIKELY(this->rdi >= this->ncch)) {
 			goto refill;
 		}
 	}
-	if (!popp) {
-		this->rdi--;
+	if (popp) {
+		this->rdi++;
 	}
 	/* construct the result */
 	res = this->e;
