@@ -20,6 +20,8 @@ Usage: echse merge [FILE]...
 
 Merge echse source FILEs and print merged output.
 
+  --unroll=DT           Unroll the stream to before DT first.
+
 
 Usage: echse unroll [FILE]...
 
