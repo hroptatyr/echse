@@ -55,7 +55,7 @@ struct evmux_s {
 	echs_event_t ev[];
 };
 
-static echs_event_t next_evmux(echs_evstrm_t);
+static echs_event_t next_evmux(echs_evstrm_t, bool popp);
 static void free_evmux(echs_evstrm_t);
 static echs_evstrm_t clone_evmux(echs_const_evstrm_t);
 static void seria_evmux(int, echs_const_evstrm_t);
@@ -83,12 +83,12 @@ __refill(struct evmux_s *this, size_t idx)
 {
 	echs_evstrm_t s = this->s[idx];
 
-	this->ev[idx] = echs_evstrm_next(s);
+	this->ev[idx] = echs_evstrm_next(s, true);
 	return;
 }
 
 static echs_event_t
-next_evmux(echs_evstrm_t strm)
+next_evmux(echs_evstrm_t strm, bool popp)
 {
 	static const echs_event_t nul = {0U};
 	struct evmux_s *this = (struct evmux_s*)strm;
@@ -137,8 +137,10 @@ next_evmux(echs_evstrm_t strm)
 			__refill(this, i);
 		}
 	}
-	/* return best but refill besti */
-	__refill(this, besti);
+	/* return best but refill besti in popping mode */
+	if (popp) {
+		__refill(this, besti);
+	}
 	return best;
 }
 

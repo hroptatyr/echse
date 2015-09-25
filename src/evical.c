@@ -1666,7 +1666,7 @@ struct evical_s {
 	echs_event_t ev[];
 };
 
-static echs_event_t next_evical_vevent(echs_evstrm_t);
+static echs_event_t next_evical_vevent(echs_evstrm_t, bool popp);
 static void free_evical_vevent(echs_evstrm_t);
 static echs_evstrm_t clone_evical_vevent(echs_const_evstrm_t);
 static void send_evical_vevent(int whither, echs_const_evstrm_t s);
@@ -1717,14 +1717,19 @@ clone_evical_vevent(echs_const_evstrm_t s)
 }
 
 static echs_event_t
-next_evical_vevent(echs_evstrm_t s)
+next_evical_vevent(echs_evstrm_t s, bool popp)
 {
 	struct evical_s *this = (struct evical_s*)s;
+	echs_event_t res;
 
 	if (UNLIKELY(this->i >= this->nev)) {
 		return nul;
 	}
-	return this->ev[this->i++];
+	res = this->ev[this->i];
+	if (popp) {
+		this->i++;
+	}
+	return res;
 }
 
 static void
@@ -1861,7 +1866,7 @@ struct evrrul_s {
 	echs_instant_t cch[64U];
 };
 
-static echs_event_t next_evrrul(echs_evstrm_t);
+static echs_event_t next_evrrul(echs_evstrm_t, bool popp);
 static void free_evrrul(echs_evstrm_t);
 static echs_evstrm_t clone_evrrul(echs_const_evstrm_t);
 static void send_evrrul(int whither, echs_const_evstrm_t s);
@@ -2017,7 +2022,7 @@ refill(struct evrrul_s *restrict strm)
 }
 
 static echs_event_t
-next_evrrul(echs_evstrm_t s)
+next_evrrul(echs_evstrm_t s, bool popp)
 {
 	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 	echs_event_t res;
@@ -2039,6 +2044,9 @@ next_evrrul(echs_evstrm_t s)
 		if (UNLIKELY(this->rdi >= this->ncch)) {
 			goto refill;
 		}
+	}
+	if (!popp) {
+		this->rdi--;
 	}
 	/* construct the result */
 	res = this->e;

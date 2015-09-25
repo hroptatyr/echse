@@ -61,7 +61,7 @@ struct evfilt_s {
 };
 
 
-static echs_event_t next_evfilt(echs_evstrm_t);
+static echs_event_t next_evfilt(echs_evstrm_t, bool);
 static void free_evfilt(echs_evstrm_t);
 static echs_evstrm_t clone_evfilt(echs_const_evstrm_t);
 static void send_evfilt(int whither, echs_const_evstrm_t s);
@@ -74,10 +74,10 @@ static const struct echs_evstrm_class_s evfilt_cls = {
 };
 
 static echs_event_t
-next_evfilt(echs_evstrm_t s)
+next_evfilt(echs_evstrm_t s, bool popp)
 {
 	struct evfilt_s *this = (struct evfilt_s*)s;
-	echs_event_t e = echs_evstrm_next(this->e);
+	echs_event_t e = echs_evstrm_next(this->e, popp);
 
 check:
 	if (UNLIKELY(echs_nul_range_p(this->ex))) {
@@ -89,12 +89,12 @@ check:
 	with (echs_range_t r = echs_event_range(e)) {
 		if (echs_range_overlaps_p(r, this->ex)) {
 			/* yes it does */
-			e = echs_evstrm_next(this->e);
+			e = echs_evstrm_next(this->e, true);
 			goto check;
 		} else if (echs_range_precedes_p(this->ex, r)) {
 			/* we can't say for sure yet as there could be
 			 * another exception in the range of E */
-			echs_event_t ex = echs_evstrm_next(this->x);
+			echs_event_t ex = echs_evstrm_next(this->x, true);
 			this->ex = echs_event_range(ex);
 			goto check;
 		}
@@ -158,7 +158,7 @@ make_evfilt(echs_evstrm_t e, echs_evstrm_t x)
 	res->class = &evfilt_cls;
 	res->e = e;
 	res->x = x;
-	with (echs_event_t nx = echs_evstrm_next(x)) {
+	with (echs_event_t nx = echs_evstrm_next(x, true)) {
 		res->ex = echs_event_range(nx);
 	}
 	return (echs_evstrm_t)res;
