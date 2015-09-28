@@ -1511,7 +1511,7 @@ send_cd(int whither, struct cd_s cd)
 }
 
 static void
-send_rrul(int whither, rrulsp_t rr, size_t ncch)
+send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 {
 	static const char *const f[] = {
 		[FREQ_NONE] = "FREQ=NONE",
@@ -1639,7 +1639,7 @@ send_rrul(int whither, rrulsp_t rr, size_t ncch)
 	}
 
 	if (rr->count >= 0) {
-		fdprintf(";COUNT=%zu", rr->count + ncch);
+		fdprintf(";COUNT=%zu", rr->count + ccnt);
 	}
 	if (rr->until.u < -1ULL) {
 		char until[32U];
@@ -2095,7 +2095,7 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 		e.till = echs_instant_add(e.from, this->dur);
 		send_ev(whither, e);
 	}
-	send_rrul(whither, &this->rrul, this->ncch);
+	send_rrul(whither, &this->rrul, this->ncch - this->rdi);
 	return;
 }
 
