@@ -895,7 +895,7 @@ static pid_t
 run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U];
+	static char uid[16U], gid[16U], tmo[16U];
 	static char *args_proto[] = {
 		[0] = "echsx",
 		[1] = "-n",
@@ -904,12 +904,13 @@ run_task(_task_t t, bool no_run)
 		[6] = "--gid", gid,
 		[8] = "--cwd", NULL,
 		[10] = "--shell", NULL,
-		[12] = "--mailfrom", NULL,
-		[14] = "--mailout",
-		[15] = "--mailerr",
-		[16] = "--stdin", NULL,
-		[18] = "--stdout", NULL,
-		[20] = "--stderr", NULL,
+		[12] = "--timeout", tmo,
+		[14] = "--mailfrom", NULL,
+		[16] = "--mailout",
+		[17] = "--mailerr",
+		[18] = "--stdin", NULL,
+		[20] = "--stdout", NULL,
+		[22] = "--stderr", NULL,
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -943,14 +944,21 @@ run_task(_task_t t, bool no_run)
 		args[9U] = deconst(run_as.wd);
 		args[11U] = deconst(run_as.sh);
 	}
-	if (t->t->org) {
-		args[13U] = deconst(t->t->org);
-	} else if (natt) {
-		args[13U] = t->t->att->l[0U];
-	} else {
-		args[13U] = "echse";
+	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
+		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
+
+		snprintf(tmo, sizeof(tmo), "%d", s);
+		args[13U] = tmo;
 	}
-	with (size_t i = 14U) {
+
+	if (t->t->org) {
+		args[15U] = deconst(t->t->org);
+	} else if (natt) {
+		args[15U] = t->t->att->l[0U];
+	} else {
+		args[15U] = "echse";
+	}
+	with (size_t i = 16U) {
 		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
@@ -958,15 +966,15 @@ run_task(_task_t t, bool no_run)
 			args[i++] = "--mailerr";
 		}
 		if (t->t->in) {
-			args[i++] = args[16];
+			args[i++] = args[18];
 			args[i++] = deconst(t->t->in);
 		}
 		if (t->t->out) {
-			args[i++] = args[18];
+			args[i++] = args[20];
 			args[i++] = deconst(t->t->out);
 		}
 		if (t->t->err) {
-			args[i++] = args[20];
+			args[i++] = args[22];
 			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
