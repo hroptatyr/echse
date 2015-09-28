@@ -482,6 +482,9 @@ Error: cannot open file `%s'", argi->args[i]);
 		proc1(s, fd);
 		close(fd);
 	}
+	if (!argi->nargs) {
+		proc1(s, STDIN_FILENO);
+	}
 	write(s, ftr, strlenof(ftr));
 	while (nout && !(poll1(s, 5000) < 0));
 
