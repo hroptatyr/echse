@@ -1030,10 +1030,9 @@ static echs_event_t
 unwind_till(echs_evstrm_t x, ev_tstamp t)
 {
 	echs_event_t e;
-	while (!echs_event_0_p(e = echs_evstrm_next(x, false)) &&
+	while (!echs_event_0_p(e = echs_evstrm_next(x)) &&
 	       instant_to_tstamp(e.from) < t) {
-		/* pop */
-		(void)echs_evstrm_next(x, true);
+		(void)echs_evstrm_pop(x);
 	}
 	return e;
 }

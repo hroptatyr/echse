@@ -298,7 +298,7 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 
 	/* just get it out now */
 	echs_prnt_ical_init();
-	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
 		} else if (echs_instant_lt_p(p->till, e.from)) {
@@ -419,7 +419,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
-	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -526,11 +526,10 @@ more:
 			}
 			/* unwind him */
 			for (echs_event_t e;
-			     (e = echs_evstrm_next(ins.t->strm, false),
+			     (e = echs_evstrm_next(ins.t->strm),
 			      !echs_nul_event_p(e)) &&
 				     echs_instant_lt_p(e.from, unr_till);
-			     /* pop */
-			     (void)echs_evstrm_next(ins.t->strm, true));
+			     (void)echs_evstrm_pop(ins.t->strm));
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
 			free_echs_task(ins.t);

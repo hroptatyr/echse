@@ -2357,7 +2357,7 @@ echs_task_icalify(int whither, echs_task_t t)
 	if (UNLIKELY((s = t->strm) == NULL)) {
 		/* do fuckall */
 		return;
-	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s, false)))) {
+	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s)))) {
 		/* doesn't make sense to put this guy on the wire does it */
 		return;
 	}

@@ -90,10 +90,11 @@ next_evmux(echs_evstrm_t strm, bool popp)
 	if (UNLIKELY(this->s == NULL)) {
 		return (echs_event_t){0};
 	} else if (UNLIKELY(echs_max_instant_p(this->ev[0].from))) {
-		/* precache events, the max instant in ev[0] is the indicator */
+		/* precache events, the max instant in ev[0] is the indicator
+		 * regardless of POPP we prefill without popping */
 		for (size_t j = 0UL; j < this->ns; j++) {
 			echs_evstrm_t s = this->s[j];
-			this->ev[j] = echs_evstrm_next(s, false);
+			this->ev[j] = echs_evstrm_next(s);
 		}
 	}
 	/* best event so-far is the first non-null event */
@@ -127,14 +128,15 @@ next_evmux(echs_evstrm_t strm, bool popp)
 		} else if (echs_event_eq_p(ecur, best)) {
 			/* should this be optional? --uniq? */
 			echs_evstrm_t s = this->s[i];
-			this->ev[i] = echs_evstrm_next(s, true);
+			(void)echs_evstrm_pop(s);
+			this->ev[i] = echs_evstrm_next(s);
 		}
 	}
 	/* return best but refill besti in popping mode */
 	if (popp) {
 		echs_evstrm_t s = this->s[besti];
-		(void)echs_evstrm_next(s, true);
-		this->ev[besti] = echs_evstrm_next(s, false);
+		(void)echs_evstrm_pop(s);
+		this->ev[besti] = echs_evstrm_next(s);
 	}
 	return best;
 }
