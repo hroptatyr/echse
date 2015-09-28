@@ -298,7 +298,7 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 
 	/* just get it out now */
 	echs_prnt_ical_init();
-	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
 		} else if (echs_instant_lt_p(p->till, e.from)) {
@@ -419,7 +419,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
-	while (!echs_event_0_p(e = echs_evstrm_next(smux, true))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -495,7 +495,7 @@ more:
 }
 
 static int
-_merge_fd(int fd)
+_merge_fd(int fd, echs_instant_t unr_till)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -524,6 +524,12 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
+			/* unwind him */
+			for (echs_event_t e;
+			     (e = echs_evstrm_next(ins.t->strm),
+			      !echs_nul_event_p(e)) &&
+				     echs_instant_lt_p(e.from, unr_till);
+			     (void)echs_evstrm_pop(ins.t->strm));
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
 			free_echs_task(ins.t);
@@ -661,6 +667,15 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
+	echs_instant_t unr_till = echs_nul_instant();
+
+	if (argi->unroll_arg) {
+		const char *arg = argi->unroll_arg;
+		const size_t len = strlen(arg);
+
+		unr_till = dt_strp(arg, NULL, len);
+	}
+
 	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
@@ -672,12 +687,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_merge_fd(fd);
+		_merge_fd(fd, unr_till);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_merge_fd(STDIN_FILENO);
+		_merge_fd(STDIN_FILENO, unr_till);
 	}
 	echs_prnt_ical_fini();
 	return 0;

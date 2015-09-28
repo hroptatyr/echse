@@ -77,29 +77,34 @@ static echs_event_t
 next_evfilt(echs_evstrm_t s, bool popp)
 {
 	struct evfilt_s *this = (struct evfilt_s*)s;
-	echs_event_t e = echs_evstrm_next(this->e, popp);
+	echs_event_t e = echs_evstrm_next(this->e);
 
 check:
 	if (UNLIKELY(echs_nul_range_p(this->ex))) {
 		/* no more exceptions */
-		return e;
+		goto pop;
 	}
 
 	/* otherwise check if the current exception overlaps with E */
 	with (echs_range_t r = echs_event_range(e)) {
 		if (echs_range_overlaps_p(r, this->ex)) {
 			/* yes it does */
-			e = echs_evstrm_next(this->e, true);
+			(void)echs_evstrm_pop(this->e);
+			e = echs_evstrm_next(this->e);
 			goto check;
 		} else if (echs_range_precedes_p(this->ex, r)) {
 			/* we can't say for sure yet as there could be
 			 * another exception in the range of E */
-			echs_event_t ex = echs_evstrm_next(this->x, true);
+			echs_event_t ex = echs_evstrm_pop(this->x);
 			this->ex = echs_event_range(ex);
 			goto check;
 		}
 	}
 	/* otherwise it's certainly safe */
+pop:
+	if (popp) {
+		(void)echs_evstrm_pop(this->e);
+	}
 	return e;
 }
 
@@ -158,7 +163,7 @@ make_evfilt(echs_evstrm_t e, echs_evstrm_t x)
 	res->class = &evfilt_cls;
 	res->e = e;
 	res->x = x;
-	with (echs_event_t nx = echs_evstrm_next(x, true)) {
+	with (echs_event_t nx = echs_evstrm_pop(x)) {
 		res->ex = echs_event_range(nx);
 	}
 	return (echs_evstrm_t)res;

@@ -78,15 +78,6 @@ seria_evmux(int whither, echs_const_evstrm_t strm)
 	return;
 }
 
-static __attribute__((nonnull(1))) void
-__refill(struct evmux_s *this, size_t idx)
-{
-	echs_evstrm_t s = this->s[idx];
-
-	this->ev[idx] = echs_evstrm_next(s, true);
-	return;
-}
-
 static echs_event_t
 next_evmux(echs_evstrm_t strm, bool popp)
 {
@@ -99,9 +90,11 @@ next_evmux(echs_evstrm_t strm, bool popp)
 	if (UNLIKELY(this->s == NULL)) {
 		return (echs_event_t){0};
 	} else if (UNLIKELY(echs_max_instant_p(this->ev[0].from))) {
-		/* precache events, the max instant in ev[0] is the indicator */
+		/* precache events, the max instant in ev[0] is the indicator
+		 * regardless of POPP we prefill without popping */
 		for (size_t j = 0UL; j < this->ns; j++) {
-			__refill(this, j);
+			echs_evstrm_t s = this->s[j];
+			this->ev[j] = echs_evstrm_next(s);
 		}
 	}
 	/* best event so-far is the first non-null event */
@@ -134,12 +127,16 @@ next_evmux(echs_evstrm_t strm, bool popp)
 			besti = i;
 		} else if (echs_event_eq_p(ecur, best)) {
 			/* should this be optional? --uniq? */
-			__refill(this, i);
+			echs_evstrm_t s = this->s[i];
+			(void)echs_evstrm_pop(s);
+			this->ev[i] = echs_evstrm_next(s);
 		}
 	}
 	/* return best but refill besti in popping mode */
 	if (popp) {
-		__refill(this, besti);
+		echs_evstrm_t s = this->s[besti];
+		(void)echs_evstrm_pop(s);
+		this->ev[besti] = echs_evstrm_next(s);
 	}
 	return best;
 }

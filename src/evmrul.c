@@ -94,7 +94,7 @@ pop_aux_event(struct evmrul_s *restrict s)
 	} else if (UNLIKELY(s->states == NULL)) {
 		return res;
 	}
-	return echs_evstrm_next(s->states, true);
+	return echs_evstrm_pop(s->states);
 }
 
 static void
@@ -137,12 +137,12 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
  * former is currently blocked by the latter, move it straight in front
  * of the states. */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
-	echs_event_t res = echs_evstrm_next(this->movers, popp);
+	echs_event_t res = echs_evstrm_next(this->movers);
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 
 	if (UNLIKELY(echs_nul_event_p(aux))) {
-		return res;
+		goto pop;
 	} else if (echs_instant_le_p(res.till, aux.from)) {
 		/* no danger then aye */
 		goto out;
@@ -194,6 +194,10 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
 out:
 	/* better save what we've got */
 	push_aux_event(this, aux);
+pop:
+	if (popp) {
+		(void)echs_evstrm_pop(this->movers);
+	}
 	return res;
 }
 
@@ -203,12 +207,12 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 /* this is for future movers only at the moment.
  * Same idea as the past movers but move mover event into the future. */
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
-	echs_event_t res = echs_evstrm_next(this->movers, popp);
+	echs_event_t res = echs_evstrm_next(this->movers);
 	echs_event_t aux = pop_aux_event(this);
 	echs_idiff_t dur;
 
 	if (UNLIKELY(echs_nul_event_p(aux))) {
-		return res;
+		goto pop;
 	}
 
 	/* fast forward to the event that actually blocks RES */
@@ -268,6 +272,10 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 out:
 	/* better save what we've got */
 	push_aux_event(this, aux);
+pop:
+	if (popp) {
+		(void)echs_evstrm_pop(this->movers);
+	}
 	return res;
 }
 

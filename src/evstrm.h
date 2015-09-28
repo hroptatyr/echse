@@ -104,9 +104,15 @@ echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
 
 
 static inline echs_event_t
-echs_evstrm_next(echs_evstrm_t s, bool popp)
+echs_evstrm_pop(echs_evstrm_t s)
 {
-	return s->class->next(s, popp);
+	return s->class->next(s, true);
+}
+
+static inline echs_event_t
+echs_evstrm_next(echs_evstrm_t s)
+{
+	return s->class->next(s, false);
 }
 
 static inline void

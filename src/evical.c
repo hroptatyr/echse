@@ -324,7 +324,7 @@ snarf_rrule(const char *s, size_t z)
 {
 	struct rrulsp_s rr = {
 		.freq = FREQ_NONE,
-		.count = -1U,
+		.count = -1,
 		.inter = 1U,
 		.until = echs_max_instant(),
 	};
@@ -369,7 +369,7 @@ snarf_rrule(const char *s, size_t z)
 			}
 			switch (c->key) {
 			case KEY_COUNT:
-				rr.count = (unsigned int)tmp;
+				rr.count = tmp;
 				break;
 			case KEY_INTER:
 				rr.inter = (unsigned int)tmp;
@@ -1511,7 +1511,7 @@ send_cd(int whither, struct cd_s cd)
 }
 
 static void
-send_rrul(int whither, rrulsp_t rr)
+send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 {
 	static const char *const f[] = {
 		[FREQ_NONE] = "FREQ=NONE",
@@ -1638,8 +1638,8 @@ send_rrul(int whither, rrulsp_t rr)
 		}
 	}
 
-	if ((int)rr->count > 0) {
-		fdprintf(";COUNT=%u", rr->count);
+	if (rr->count >= 0) {
+		fdprintf(";COUNT=%zu", rr->count + ccnt);
 	}
 	if (rr->until.u < -1ULL) {
 		char until[32U];
@@ -1737,7 +1737,10 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 {
 	const struct evical_s *this = (const struct evical_s*)s;
 
-	send_ev(whither, this->ev[0U]);
+	if (UNLIKELY(this->i >= this->nev)) {
+		return;
+	}
+	send_ev(whither, this->ev[this->i]);
 	return;
 }
 
@@ -1956,7 +1959,9 @@ refill(struct evrrul_s *restrict strm)
 	struct rrulsp_s *restrict rr = &strm->rrul;
 
 	assert(rr->freq > FREQ_NONE);
-	if (UNLIKELY(!rr->count)) {
+	if (UNLIKELY(echs_nul_instant_p(strm->e.from))) {
+		return 0UL;
+	} else if (UNLIKELY(!rr->count)) {
 		return 0UL;
 	}
 
@@ -1996,13 +2001,22 @@ refill(struct evrrul_s *restrict strm)
 		break;
 	}
 
-	if (strm->ncch < countof(strm->cch)) {
-		rr->count = 0;
+	if (strm->ncch >= countof(strm->cch)) {
+		/* keep one for the next refill */
+		strm->e.from = strm->cch[--strm->ncch];
 	} else {
-		/* update the rrule to the partial set we've got */
-		rr->count -= --strm->ncch;
-		strm->e.from = strm->cch[strm->ncch];
+		/* take a note that we're at the end of the stream */
+		strm->e.from = echs_nul_instant();
 	}
+
+	if (rr->count > 0) {
+		if (strm->ncch < (size_t)rr->count) {
+			rr->count -= strm->ncch;
+		} else {
+			rr->count = 0;
+		}
+	}
+
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
 	}
@@ -2026,11 +2040,9 @@ next_evrrul(echs_evstrm_t s, bool popp)
 {
 	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 	echs_event_t res;
-	echs_instant_t in;
 
 	/* it's easier when we just have some precalc'd rdates */
 	if (this->rdi >= this->ncch) {
-	refill:
 		/* we have to refill the rdate cache */
 		if (refill(this) == 0UL) {
 			goto nul;
@@ -2038,20 +2050,13 @@ next_evrrul(echs_evstrm_t s, bool popp)
 		/* reset counter */
 		this->rdi = 0U;
 	}
-	/* get the starting instant */
-	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi++]))) {
-		/* we might have run out of steam */
-		if (UNLIKELY(this->rdi >= this->ncch)) {
-			goto refill;
-		}
-	}
-	if (!popp) {
-		this->rdi--;
-	}
 	/* construct the result */
 	res = this->e;
-	res.from = in;
-	res.till = echs_instant_add(in, this->dur);
+	res.from = this->cch[this->rdi];
+	res.till = echs_instant_add(res.from, this->dur);
+	if (popp) {
+		this->rdi++;
+	}
 	return res;
 nul:
 	return nul;
@@ -2062,12 +2067,35 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 {
 	const struct evrrul_s *this = (const struct evrrul_s*)s;
 
-	/* we know rrules are consecutive so only print for
-	 * first stream in sequence */
+	/* we know rrules are consecutive so only print the DTSTAMP/DTEND
+	 * stuff for the first stream in the sequence
+	 * also, we have to mimic evmux's next finder as we can't use it
+	 * directly because of constness */
 	if (!this->seq) {
-		send_ev(whither, this->e);
+		echs_event_t e = this->e;
+
+		for (size_t i = 0U; i < this->ref; i++) {
+			echs_instant_t cand = this[i].e.from;
+
+			if (UNLIKELY(this[i].rdi >= this[i].ncch)) {
+				/* end of stream innit or we need to refill
+				 * but this stream is const so just use the
+				 * proto event */
+				;
+			} else {
+				cand = this[i].cch[this[i].rdi];
+			}
+			if (echs_instant_lt_p(cand, e.from)) {
+				e.from = cand;
+			} else if (echs_nul_instant_p(e.from)) {
+				e.from = cand;
+			}
+		}
+		/* calc the corresponding TILL instant */
+		e.till = echs_instant_add(e.from, this->dur);
+		send_ev(whither, e);
 	}
-	send_rrul(whither, &this->rrul);
+	send_rrul(whither, &this->rrul, this->ncch - this->rdi);
 	return;
 }
 
@@ -2326,11 +2354,19 @@ echs_evical_last_pull(ical_parser_t p[static 1U])
 void
 echs_task_icalify(int whither, echs_task_t t)
 {
+	echs_evstrm_t s;
+
+	if (UNLIKELY((s = t->strm) == NULL)) {
+		/* do fuckall */
+		return;
+	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s)))) {
+		/* doesn't make sense to put this guy on the wire does it */
+		return;
+	}
+
 	send_ical_hdr(whither);
 	send_task(whither, t);
-	if (LIKELY(t->strm != NULL)) {
-		echs_evstrm_seria(whither, t->strm);
-	}
+	echs_evstrm_seria(whither, s);
 	send_ical_ftr(whither);
 	return;
 }
