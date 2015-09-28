@@ -129,7 +129,7 @@ typedef enum {
 
 struct rrulsp_s {
 	echs_freq_t freq;
-	unsigned int count;
+	int count;
 	unsigned int inter;
 	echs_instant_t until;
 

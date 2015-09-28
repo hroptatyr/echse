@@ -324,7 +324,7 @@ snarf_rrule(const char *s, size_t z)
 {
 	struct rrulsp_s rr = {
 		.freq = FREQ_NONE,
-		.count = -1U,
+		.count = -1,
 		.inter = 1U,
 		.until = echs_max_instant(),
 	};
@@ -369,7 +369,7 @@ snarf_rrule(const char *s, size_t z)
 			}
 			switch (c->key) {
 			case KEY_COUNT:
-				rr.count = (unsigned int)tmp;
+				rr.count = tmp;
 				break;
 			case KEY_INTER:
 				rr.inter = (unsigned int)tmp;
@@ -1959,7 +1959,9 @@ refill(struct evrrul_s *restrict strm)
 	struct rrulsp_s *restrict rr = &strm->rrul;
 
 	assert(rr->freq > FREQ_NONE);
-	if (UNLIKELY(!rr->count)) {
+	if (UNLIKELY(echs_nul_instant_p(strm->e.from))) {
+		return 0UL;
+	} else if (UNLIKELY(!rr->count)) {
 		return 0UL;
 	}
 
@@ -1999,13 +2001,22 @@ refill(struct evrrul_s *restrict strm)
 		break;
 	}
 
-	if (strm->ncch < countof(strm->cch)) {
-		rr->count = 0;
+	if (strm->ncch >= countof(strm->cch)) {
+		/* keep one for the next refill */
+		strm->e.from = strm->cch[--strm->ncch];
 	} else {
-		/* update the rrule to the partial set we've got */
-		rr->count -= --strm->ncch;
-		strm->e.from = strm->cch[strm->ncch];
+		/* take a note that we're at the end of the stream */
+		strm->e.from = echs_nul_instant();
 	}
+
+	if (rr->count > 0) {
+		if (strm->ncch < (size_t)rr->count) {
+			rr->count -= strm->ncch;
+		} else {
+			rr->count = 0;
+		}
+	}
+
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
 	}
@@ -2029,11 +2040,9 @@ next_evrrul(echs_evstrm_t s, bool popp)
 {
 	struct evrrul_s *restrict this = (struct evrrul_s*)s;
 	echs_event_t res;
-	echs_instant_t in;
 
 	/* it's easier when we just have some precalc'd rdates */
 	if (this->rdi >= this->ncch) {
-	refill:
 		/* we have to refill the rdate cache */
 		if (refill(this) == 0UL) {
 			goto nul;
@@ -2041,20 +2050,13 @@ next_evrrul(echs_evstrm_t s, bool popp)
 		/* reset counter */
 		this->rdi = 0U;
 	}
-	/* get the starting instant */
-	while (UNLIKELY(echs_instant_0_p(in = this->cch[this->rdi]))) {
-		/* we might have run out of steam */
-		if (UNLIKELY(this->rdi >= this->ncch)) {
-			goto refill;
-		}
-	}
+	/* construct the result */
+	res = this->e;
+	res.from = this->cch[this->rdi];
+	res.till = echs_instant_add(res.from, this->dur);
 	if (popp) {
 		this->rdi++;
 	}
-	/* construct the result */
-	res = this->e;
-	res.from = in;
-	res.till = echs_instant_add(in, this->dur);
 	return res;
 nul:
 	return nul;
