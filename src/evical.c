@@ -1902,7 +1902,11 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	this->zon = zon = echs_instant_tzob(e.from);
 	this->e = e = echs_event_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
-	this->dur = echs_instant_diff(e.till, e.from);
+	if (echs_instant_le_p(e.from, e.till)) {
+		this->dur = echs_instant_diff(e.till, e.from);
+	} else {
+		this->dur = (echs_idiff_t){0};
+	}
 
 	/* bang the first one */
 	this->rrul = rr[0U];
