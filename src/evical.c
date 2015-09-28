@@ -1511,7 +1511,7 @@ send_cd(int whither, struct cd_s cd)
 }
 
 static void
-send_rrul(int whither, rrulsp_t rr)
+send_rrul(int whither, rrulsp_t rr, size_t ncch)
 {
 	static const char *const f[] = {
 		[FREQ_NONE] = "FREQ=NONE",
@@ -1638,8 +1638,8 @@ send_rrul(int whither, rrulsp_t rr)
 		}
 	}
 
-	if ((int)rr->count > 0) {
-		fdprintf(";COUNT=%u", rr->count);
+	if (rr->count >= 0) {
+		fdprintf(";COUNT=%zu", rr->count + ncch);
 	}
 	if (rr->until.u < -1ULL) {
 		char until[32U];
@@ -2077,17 +2077,17 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 		for (size_t i = 0U; i < this->ref; i++) {
 			echs_instant_t cand = this[i].e.from;
 
-			if (UNLIKELY(this[i].rdi >= countof(this[i].cch))) {
-				/* we'd need to refill, but this stream
-				 * is const so just use the proto event */
+			if (UNLIKELY(this[i].rdi >= this[i].ncch)) {
+				/* end of stream innit or we need to refill
+				 * but this stream is const so just use the
+				 * proto event */
 				;
-			} else if (UNLIKELY(this[i].rdi >= this[i].ncch)) {
-				/* end of stream innit */
-				continue;
 			} else {
 				cand = this[i].cch[this[i].rdi];
 			}
 			if (echs_instant_lt_p(cand, e.from)) {
+				e.from = cand;
+			} else if (echs_nul_instant_p(e.from)) {
 				e.from = cand;
 			}
 		}
@@ -2095,7 +2095,7 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 		e.till = echs_instant_add(e.from, this->dur);
 		send_ev(whither, e);
 	}
-	send_rrul(whither, &this->rrul);
+	send_rrul(whither, &this->rrul, this->ncch);
 	return;
 }
 
