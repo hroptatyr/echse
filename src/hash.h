@@ -40,10 +40,10 @@
 
 /**
  * Unsigned integral hash type.. */
-typedef uint_fast32_t hash_t;
+typedef uint32_t hash_t;
 
 /**
  * Return a hash (with the hash function du jour) of STR of size LEN. */
 extern hash_t hash(const void *str, size_t len);
 
-#endif	/* INCLUDED_intern_h_ */
+#endif	/* INCLUDED_hash_h_ */
