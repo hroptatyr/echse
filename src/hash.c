@@ -325,13 +325,6 @@ FORCE_INLINE U32 XXH32_endian_align(const void* input, size_t len, XXH_endianess
 hash_t
 hash(const void* input, size_t len)
 {
-#if 0
-    /* Simple version, good for code maintenance, but unfortunately slow for small inputs */
-    XXH32_state_t state;
-    XXH32_reset(&state, seed);
-    XXH32_update(&state, input, len);
-    return XXH32_digest(&state);
-#else
     XXH_endianess endian_detected = (XXH_endianess)XXH_CPU_LITTLE_ENDIAN;
 
 #  if !defined(XXH_USELESS_ALIGN_BRANCH)
@@ -348,7 +341,6 @@ hash(const void* input, size_t len)
         return XXH32_endian_align(input, len, XXH_littleEndian, XXH_unaligned);
     else
         return XXH32_endian_align(input, len, XXH_bigEndian, XXH_unaligned);
-#endif
 }
 
 /* hash.c ends here */
