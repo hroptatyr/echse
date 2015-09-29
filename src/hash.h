@@ -1,6 +1,6 @@
-/*** intern.h -- interning system
+/*** hash.h -- hashing strings
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2014-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -34,33 +34,16 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ***/
-#if !defined INCLUDED_intern_h_
-#define INCLUDED_intern_h_
-
+#if !defined INCLUDED_hash_h_
+#define INCLUDED_hash_h_
 #include <stdint.h>
 
 /**
- * Obints are xxhash hash values, the lowest 32bit. */
-typedef uint_fast32_t obint_t;
+ * Unsigned integral hash type.. */
+typedef uint32_t hash_t;
 
 /**
- * Return the interned representation of STR. */
-extern obint_t intern(const char *str, size_t len);
+ * Return a hash (with the hash function du jour) of STR of size LEN. */
+extern hash_t hash(const void *str, size_t len);
 
-/**
- * Return the obint_t for STR of length LEN but do not intern that string. */
-extern obint_t obint(const char *str, size_t len);
-
-/**
- * Unintern the OBINT object. */
-extern void unintern(obint_t);
-
-/**
- * Return the string representation of an OBINT object. */
-extern const char *obint_name(obint_t);
-
-/**
- * Clean up resources used by the interning system. */
-extern void clear_interns(void);
-
-#endif	/* INCLUDED_intern_h_ */
+#endif	/* INCLUDED_hash_h_ */
