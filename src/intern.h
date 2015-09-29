@@ -40,7 +40,7 @@
 #include <stdint.h>
 
 /**
- * Obints are murmur3 hash values, the lowest 32bit. */
+ * Obints are xxhash hash values, the lowest 32bit. */
 typedef uint_fast32_t obint_t;
 
 /**

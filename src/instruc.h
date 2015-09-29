@@ -38,6 +38,7 @@
 #define INCLUDED_instruc_h_
 
 #include "instant.h"
+#include "range.h"
 #include "task.h"
 
 typedef struct echs_instruc_s echs_instruc_t;
@@ -46,32 +47,35 @@ typedef enum {
 	INSVERB_UNK,
 	/**
 	 * List all tasks (O == 0) or task with oid O.
-	 * T or S and I are unused. */
+	 * The slots in the union are unused. */
 	INSVERB_LIST,
 	/**
-	 * Create task T with oid O.
+	 * Schedule (create) task T with oid O.
 	 * If O == 0 generate a oid on the fly. */
-	INSVERB_CREA,
+	INSVERB_SCHE,
 	/**
-	 * Update task with oid O to specifics in T. */
-	INSVERB_UPDT,
-	/**
-	 * Reschedule task with oid O to events in stream S.
-	 * This verb is also used to denote a successful CREA or UPDT,
-	 * in that case the oid is set but the stream is not. */
+	 * Reschedule (update) task with oid O to specifics in T.
+	 * This verb is also used to denote a successful SCHE or RESC,
+	 * in that case the oid O is set but T is not. */
 	INSVERB_RESC,
-	/**
-	 * Reschedule one event in task with oid O, cancel the event at
-	 * date/time FROM and instead move it to data/time TO.
-	 * If FROM is the nul instant, simply add an extra recurrence
-	 * of the task at date/time TO. */
-	INSVERB_RES1,
+	INSVERB_SUCC = INSVERB_RESC,
 	/**
 	 * Unschedule (cancel) task with oid O.
-	 * To unschedule one recurrence instance in O specify I.
-	 * This verb is also used to denote a failed CREA or UPDT,
+	 * This verb is also used to denote a failed SCHE or RESC,
 	 * in that case the oid is set. */
 	INSVERB_UNSC,
+	INSVERB_FAIL = INSVERB_UNSC,
+
+	/* non-RFC 5546 here */
+	/**
+	 * Return the next scheduled run for task with oid O, or all if 0.
+	 * The result will be a NEXT instruction with the INS slot set. */
+	INSVERB_NEXT,
+	/**
+	 * Skip the next scheduled run for task with oid O, or all if 0.
+	 * The instant of the skipped run will be returned in FROM, the
+	 * instant the task is scheduled now at (if so) is returned in TO. */
+	INSVERB_SKIP,
 } echs_insverb_t;
 
 struct echs_instruc_s {
@@ -79,7 +83,8 @@ struct echs_instruc_s {
 	echs_toid_t o;
 	union {
 		echs_task_t t;
-		echs_evstrm_t s;
+		echs_instant_t ins;
+		echs_range_t rng;
 		struct {
 			echs_instant_t from;
 			echs_instant_t to;

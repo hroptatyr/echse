@@ -1,0 +1,11 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+setopt exit-code
+
+$ [ -f "${TZDIR}/Europe/Berlin" -o -f "${TZDIR_RIGHT}/Europe/Berlin" ] || exit 77
+$ [ -f "${TZDIR}/Europe/London" -o -f "${TZDIR_RIGHT}/Europe/London" ] || exit 77
+$ echse unroll --format '%b\t%e\t%s' "${srcdir}/sample_32.ics"
+2015-02-05T16:00:00	2015-02-05T16:30:00	The fifth
+2015-03-05T16:00:00	2015-03-05T16:30:00	The fifth
+2015-04-05T15:00:00	2015-04-05T15:30:00	The fifth
+$

@@ -77,6 +77,9 @@
 #include "logger.h"
 #include "fdprnt.h"
 #include "nifty.h"
+#include "nedtrie.h"
+/* for rescheduling */
+#include "evfilt.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -102,6 +105,9 @@ struct _task_s {
 	ev_periodic w;
 	_task_t next;
 
+	/* currently scheduled run-time */
+	echs_range_t cur;
+
 	/* this is the task as understood by libechse */
 	echs_task_t t;
 
@@ -118,6 +124,9 @@ struct _echsd_s {
 	ev_signal sighup;
 	ev_signal sigterm;
 	ev_signal sigpipe;
+
+	/* checkpoint timer */
+	ev_timer cptim;
 
 	ev_io ctlsock;
 
@@ -141,16 +150,21 @@ static int qdirfd = -1;
 static struct ucred meself;
 
 
-static size_t
-xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 {
-	size_t ssz = strlen(src);
-	if (ssz > dsz) {
+	if (UNLIKELY(ssz > dsz)) {
 		ssz = dsz - 1U;
 	}
 	memcpy(dst, src, ssz);
 	dst[ssz] = '\0';
 	return ssz;
+}
+
+static size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
 static char*
@@ -881,7 +895,7 @@ static pid_t
 run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U];
+	static char uid[16U], gid[16U], tmo[16U];
 	static char *args_proto[] = {
 		[0] = "echsx",
 		[1] = "-n",
@@ -890,12 +904,13 @@ run_task(_task_t t, bool no_run)
 		[6] = "--gid", gid,
 		[8] = "--cwd", NULL,
 		[10] = "--shell", NULL,
-		[12] = "--mailfrom", NULL,
-		[14] = "--mailout",
-		[15] = "--mailerr",
-		[16] = "--stdin", NULL,
-		[18] = "--stdout", NULL,
-		[20] = "--stderr", NULL,
+		[12] = "--timeout", tmo,
+		[14] = "--mailfrom", NULL,
+		[16] = "--mailout",
+		[17] = "--mailerr",
+		[18] = "--stdin", NULL,
+		[20] = "--stdout", NULL,
+		[22] = "--stderr", NULL,
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -929,14 +944,21 @@ run_task(_task_t t, bool no_run)
 		args[9U] = deconst(run_as.wd);
 		args[11U] = deconst(run_as.sh);
 	}
-	if (t->t->org) {
-		args[13U] = deconst(t->t->org);
-	} else if (natt) {
-		args[13U] = t->t->att->l[0U];
-	} else {
-		args[13U] = "echse";
+	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
+		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
+
+		snprintf(tmo, sizeof(tmo), "%d", s);
+		args[13U] = tmo;
 	}
-	with (size_t i = 14U) {
+
+	if (t->t->org) {
+		args[15U] = deconst(t->t->org);
+	} else if (natt) {
+		args[15U] = t->t->att->l[0U];
+	} else {
+		args[15U] = "echse";
+	}
+	with (size_t i = 16U) {
 		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
@@ -944,15 +966,15 @@ run_task(_task_t t, bool no_run)
 			args[i++] = "--mailerr";
 		}
 		if (t->t->in) {
-			args[i++] = args[16];
+			args[i++] = args[18];
 			args[i++] = deconst(t->t->in);
 		}
 		if (t->t->out) {
-			args[i++] = args[18];
+			args[i++] = args[20];
 			args[i++] = deconst(t->t->out);
 		}
 		if (t->t->err) {
-			args[i++] = args[20];
+			args[i++] = args[22];
 			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
@@ -1017,7 +1039,9 @@ unwind_till(echs_evstrm_t x, ev_tstamp t)
 {
 	echs_event_t e;
 	while (!echs_event_0_p(e = echs_evstrm_next(x)) &&
-	       instant_to_tstamp(e.from) < t);
+	       instant_to_tstamp(e.from) < t) {
+		(void)echs_evstrm_pop(x);
+	}
 	return e;
 }
 
@@ -1115,25 +1139,283 @@ free_chld(ev_child *c)
 }
 
 
+/* checkpoint handling */
+typedef struct ndnd_s ndnd_t;
+
+struct ndnd_s {
+	NEDTRIE_ENTRY(ndnd_t) link;
+	uid_t key;
+	int fd;
+};
+
+NEDTRIE_HEAD(ndtr_t, ndnd_t);
+
+/* this one's quite limited, just 16 slots wide, but it's static and
+ * instead of introducing complexity by managing this array we just
+ * say that if all checkpoint slots have been used we make a complete
+ * dump of every single user. */
+static ndtr_t chkpntr;
+static ndnd_t chkpnts[16U];
+static size_t ichkpnts;
+
+static inline uid_t
+ndnd_key(const ndnd_t *r)
+{
+	return r->key;
+}
+
+NEDTRIE_GENERATE(
+	static, ndtr_t, ndnd_t, link, ndnd_key, NEDTRIE_NOBBLEZEROS(ndtr_t));
+
+static inline void
+seen_init(ndtr_t *restrict x)
+{
+	NEDTRIE_INIT(x);
+	return;
+}
+
+static int
+seenp(ndtr_t *tr, uid_t u)
+{
+	ndnd_t *tmp;
+
+	if ((tmp = NEDTRIE_FIND(ndtr_t, tr, &(ndnd_t){.key = u})) == NULL) {
+		return -1;
+	}
+	return tmp->fd;
+}
+
+static void
+add_seen(ndtr_t *tr, ndnd_t *nd)
+{
+	NEDTRIE_INSERT(ndtr_t, tr, nd);
+	return;
+}
+
+static inline bool
+chkpntedp(uid_t u)
+{
+	if (NEDTRIE_FIND(ndtr_t, &chkpntr, &(ndnd_t){.key = u}) != NULL) {
+		return true;
+	}
+	return false;
+}
+
+static void
+add_chkpnt(uid_t u)
+{
+	if (LIKELY(ichkpnts < countof(chkpnts))) {
+		const size_t i = ichkpnts++;
+		chkpnts[i].key = u;
+		NEDTRIE_INSERT(ndtr_t, &chkpntr, chkpnts + i);
+	}
+	return;
+}
+
+static int
+chkpnt1(uid_t u)
+{
+	char fn[PATH_MAX];
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	bool inittedp = false;
+	int fd;
+
+	if (UNLIKELY(snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0)) {
+		goto err;
+	} else if ((fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+		goto err;
+	}
+
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		if (!task_ht[i].oid) {
+			continue;
+		} else if (task_ht[i].t->t->owner != u) {
+			continue;
+		} else if (!inittedp) {
+			echs_instruc_t ins = {
+				INSVERB_SCHE, 0U,
+				.t = task_ht[i].t->t,
+			};
+			echs_icalify_init(fd, ins);
+			inittedp = true;
+		}
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
+	}
+	if (UNLIKELY(!inittedp)) {
+		echs_icalify_init(fd, (echs_instruc_t){INSVERB_UNK});
+	}
+	echs_icalify_fini(fd);
+	if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+		int x = errno;
+		(void)unlinkat(qdirfd, fn, 0);
+		errno = x;
+		goto err;
+	}
+	ECHS_NOTI_LOG("checkpointed user %u", u);
+	return 0;
+err:
+	ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+	return -1;
+}
+
+static int
+chkpnta(void)
+{
+	const int fl = O_WRONLY | O_CREAT | O_TRUNC;
+	char fn[PATH_MAX];
+	/* seen tree and seen nodes */
+	ndtr_t sntr;
+	ndnd_t *snds;
+	size_t nsnds = 0UL;
+	size_t zsnds = countof(chkpnts);
+	int rc = 0;
+
+	if (UNLIKELY((snds = malloc(zsnds * sizeof(*snds))) == NULL)) {
+		/* no use starting the whole procedure */
+		return -1;
+	}
+
+	seen_init(&sntr);
+	for (size_t i = 0U; i < ztask_ht; i++) {
+		int fd;
+		uid_t u;
+
+		if (!task_ht[i].oid) {
+			continue;
+		} else if ((u = task_ht[i].t->t->owner) == (uid_t)-1) {
+			/* grml, no owner */
+			continue;
+		} else if ((fd = seenp(&sntr, u)) >= 0) {
+			/* seen him */
+			;
+		} else if (fd < -1) {
+			/* there's been a problem opening this user's file */
+			continue;
+		} else if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0 ||
+			   (fd = openat(qdirfd, fn, fl, 0600)) < 0) {
+			/* oh my god */
+			fd = INT_MIN;
+			goto bang;
+		} else {
+			echs_instruc_t ins = {
+				INSVERB_SCHE, 0U,
+				.t = task_ht[i].t->t,
+			};
+
+			echs_icalify_init(fd, ins);
+
+		bang:
+			/* boast about having seen this one */
+			if (UNLIKELY(nsnds >= zsnds)) {
+				/* resize this guy */
+				const size_t nuz = zsnds * 2U;
+				void *nup;
+
+				nup = realloc(snds, nuz * sizeof(*snds));
+				if (UNLIKELY(snds == NULL)) {
+					/* finish up */
+					rc = -1;
+					break;
+				}
+
+				/* reassign */
+				snds = nup;
+				zsnds = nuz;
+			}
+			snds[nsnds] = (ndnd_t){.key = u, .fd = fd};
+			add_seen(&sntr, snds + nsnds++);
+		}
+
+		/* let evical module handle the printing */
+		echs_task_icalify(fd, task_ht[i].t->t);
+	}
+	for (size_t i = 0U; i < nsnds; i++) {
+		const int fd = snds[i].fd;
+		const uid_t u = snds[i].key;
+
+		if (UNLIKELY(fd < -1)) {
+			/* just do them one by one here
+			 * and keep our fingers crossed that we
+			 * closed enough file descriptors already */
+			for (; i < nsnds; i++) {
+				rc += chkpnt1(u);
+			}
+			break;
+		}
+		echs_icalify_fini(fd);
+		if (snprintf(fn, sizeof(fn), ".echsq_%u.ics", u) < 0) {
+			/* oh fuck, there's really nothing we can do */
+			rc = -1;
+			continue;
+		}
+		if (close(fd) < 0 || renameat(qdirfd, fn, qdirfd, fn + 1) < 0) {
+			ECHS_ERR_LOG("\
+cannot checkpoint user %u's queue", u);
+			(void)unlinkat(qdirfd, fn, 0);
+			rc = -1;
+		} else {
+			ECHS_NOTI_LOG("\
+checkpointed user %u", u);
+		}
+	}
+	free(snds);
+	return rc;
+}
+
+static int
+chkpnt(void)
+{
+	int rc = 0;
+
+	ECHS_NOTI_LOG("checkpoint");
+	if (ichkpnts >= countof(chkpnts)) {
+		rc = chkpnta();
+		goto fin;
+	}
+	/* otherwise just go through the list of checkpoint users */
+	for (size_t i = 0U; i < ichkpnts; i++) {
+		rc += chkpnt1(chkpnts[i].key);
+	}
+fin:
+	/* all checkpoints cleared hopefully */
+	ichkpnts = 0U;
+	return rc;
+}
+
+static void
+cptim_cb(EV_P_ ev_timer *UNUSED(w), int UNUSED(revents))
+{
+	chkpnt();
+	return;
+}
+
+
 /* s2c communication */
 typedef enum {
 	ECHS_CMD_UNK,
-	ECHS_CMD_LIST,
+	ECHS_CMD_HTTP,
 	ECHS_CMD_ICAL,
-
-	/* to indicate that we need more data to finish the command */
-	ECHS_CMD_MORE = -1
 } echs_cmd_t;
 
-struct echs_cmd_list_s {
-	const char *fn;
-	size_t len;
+struct echs_cmd_http_s {
+	/* routine */
+	enum {
+		ECHS_HTTP_UNK,
+		ECHS_HTTP_QUEUE,
+		ECHS_HTTP_SCHED,
+	} rou;
+	/* uid the user wants accessed */
+	uid_t uid;
+	const char *params;
+	size_t paramz;
 };
 
 struct echs_cmdparam_s {
 	echs_cmd_t cmd;
 	union {
-		struct echs_cmd_list_s list;
+		struct echs_cmd_http_s http;
 		ical_parser_t ical;
 	};
 };
@@ -1142,25 +1424,62 @@ static int _inject_task1(EV_P_ echs_task_t t, uid_t u);
 static int _eject_task1(EV_P_ echs_toid_t o, uid_t u);
 
 static echs_cmd_t
-cmd_list_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+cmd_http_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
-	static const char ht_verb[] = "GET ";
+	static const char ht_verb[] = "GET /";
 	static const char ht_vers[] = " HTTP/1.1\r\n";
-	const char *ep;
+	static const char sched[] = "sched";
+	static const char queue[] = "queue";
+	const char *const eob = buf + bsz;
+	const char *bp;
+	const char *vp;
 
-	if (!memcmp(buf, ht_verb, strlenof(ht_verb)) &&
-	    (ep = xmemmem(buf, bsz, ht_vers, strlenof(ht_vers)))) {
-		/* aaaah http shit and looks like a GET request */
-		const char *bp;
-
-		for (; ep > buf && ep[-1] == ' '; ep--);
-		for (bp = ep; bp > buf && bp[-1] != '/'; bp--);
-		param->cmd = ECHS_CMD_LIST;
-		param->list = (struct echs_cmd_list_s){bp, ep - bp};
-		return xmemmem(ep, bsz - (ep - buf), "\r\n\r\n", 4U)
-			? ECHS_CMD_LIST : ECHS_CMD_MORE;
+	if (UNLIKELY(param->cmd == ECHS_CMD_HTTP)) {
+		return ECHS_CMD_HTTP;
+	} else if ((bp = buf,
+		    memcmp(bp, ht_verb, strlenof(ht_verb)))) {
+		/* not a GET / request, make sure to exit quickly */
+		return ECHS_CMD_UNK;
+	} else if (bp += strlenof(ht_verb),
+		   bp >= eob ||
+		   (vp = xmemmem(bp, eob - bp,
+				 ht_vers, strlenof(ht_vers))) == NULL) {
+		/* wrong http version number, we're arseholes today */
+		return ECHS_CMD_UNK;
 	}
-	return ECHS_CMD_UNK;
+	/* now then, let's see if they want the per-user view on things */
+	if (bp[0U] == 'u' && bp[1U] == '/') {
+		/* yep */
+		char *on = NULL;
+		long unsigned int x;
+
+		if (x = strtoul(bp += 2U, &on, 10), *on != '/') {
+			/* they've fucked it */
+			return ECHS_CMD_UNK;
+		}
+		/* otherwise proceed */
+		param->http.uid = x;
+		bp = ++on;
+	} else {
+		param->http.uid = -1;
+	}
+	if (!memcmp(bp, queue, strlenof(queue))) {
+		param->http.rou = ECHS_HTTP_QUEUE;
+		bp += strlenof(queue);
+	} else if (!memcmp(bp, sched, strlenof(sched))) {
+		param->http.rou = ECHS_HTTP_SCHED;
+		bp += strlenof(sched);
+	} else {
+		param->http.rou = ECHS_HTTP_UNK;
+	}
+	if (*bp++ == '?') {
+		param->http.params = bp;
+		param->http.paramz = vp - bp;
+	} else {
+		param->http.params = NULL;
+		param->http.paramz = 0U;
+	}
+	return ECHS_CMD_HTTP;
 }
 
 static echs_cmd_t
@@ -1175,48 +1494,201 @@ cmd_ical_p(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 	return ECHS_CMD_ICAL;
 }
 
+
+static void
+echs_http_send_sched(_task_t t, const char *tuid, size_t tusz)
+{
+	char rng[64U];
+	size_t rnz;
+
+	rnz = range_strf(rng, sizeof(rng), t->cur);
+	fdwrite(tuid, tusz);
+	fdputc('\t');
+	fdwrite(rng, rnz);
+	fdputc('\n');
+	return;
+}
+
 static ssize_t
-cmd_list(int ofd, const struct echs_cmd_list_s cmd[static 1U])
+cmd_http(EV_P_ int ofd, const struct echs_cmd_http_s cmd[static 1U], ncred_t c)
 {
 	static const char rpl403[] = "\
 HTTP/1.1 403 Forbidden\r\n\r\n";
 	static const char rpl404[] = "\
 HTTP/1.1 404 Not Found\r\n\r\n";
+	static const char rpl500[] = "\
+HTTP/1.1 500 Internal Server Error\r\n\r\n";
 	static const char rpl200[] = "\
 HTTP/1.1 200 Ok\r\n\r\n";
-	char fn[cmd->len + 1U];
+	static const char rpl204[] = "\
+HTTP/1.1 204 Found\r\n\r\n";
 	const char *rpl;
 	size_t rpz;
-	struct stat st;
-	int fd = -1;
 	ssize_t nwr = 0;
+	int fd = -1;
+	size_t fz = 0U;
+	uid_t u;
 
-	memcpy(fn, cmd->fn, cmd->len);
-	fn[cmd->len] = '\0';
-	if (fstatat(qdirfd, fn, &st, 0) < 0) {
-		rpl = rpl404, rpz = strlenof(rpl404);
-	} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+	if (UNLIKELY((u = c.u & (unsigned)cmd->uid) != c.u)) {
 		rpl = rpl403, rpz = strlenof(rpl403);
-	} else {
-		rpl = rpl200, rpz = strlenof(rpl200);
+		goto hdr;
 	}
+	/* massage user */
+	u = u ?: cmd->uid;
+
+	switch (cmd->rou) {
+		char fn[PATH_MAX];
+		struct stat st;
+
+	case ECHS_HTTP_QUEUE:
+		if (cmd->params && cmd->paramz) {
+			/* just go through stuff one by one, later on */
+			rpl = rpl200, rpz = strlenof(rpl200);
+		} else if (snprintf(fn, sizeof(fn), "echsq_%u.ics", u) < 0) {
+			rpl = rpl500, rpz = strlenof(rpl500);
+		} else if (chkpntedp(u) && chkpnt() < 0) {
+			rpl = rpl500, rpz = strlenof(rpl500);
+		} else if (fstatat(qdirfd, fn, &st, 0) < 0) {
+			ECHS_NOTI_LOG("can't find echsq_%u.ics", u);
+			rpl = rpl404, rpz = strlenof(rpl404);
+		} else if ((fd = openat(qdirfd, fn, O_RDONLY)) < 0) {
+			rpl = rpl403, rpz = strlenof(rpl403);
+		} else {
+			rpl = rpl200, rpz = strlenof(rpl200);
+			fz = st.st_size;
+		}
+		break;
+	case ECHS_HTTP_SCHED:
+		rpl = rpl200, rpz = strlenof(rpl200);
+		break;
+	case ECHS_HTTP_UNK:
+		rpl = rpl404, rpz = strlenof(rpl404);
+		break;
+	}
+
+hdr:
 	/* write reply header */
 	nwr += write(ofd, rpl, rpz);
-	/* and content, if any */
-#if defined HAVE_SENDFILE
-	if (!(fd < 0)) {
-		size_t fz = st.st_size;
 
+	/* and now content, if any */
+	if (!(fd < 0)) {
+#if defined HAVE_SENDFILE
 		for (ssize_t nsf;
 		     fz && (nsf = sendfile(ofd, fd, NULL, fz)) > 0;
 		     fz -= nsf, nwr += nsf);
-	}
 #endif	/* HAVE_SENDFILE */
+		close(fd);
+	}
+
+	if (UNLIKELY(rpl != rpl200)) {
+		/* just do nothing */
+		;
+	} else if (cmd->rou && cmd->params && cmd->paramz) {
+		/* right, let's go through all tasks or the ones specified */
+		static const char key[] = "tuid=";
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_init(ofd, (echs_instruc_t){INSVERB_SCHE});
+			break;
+		case ECHS_HTTP_SCHED:
+			fdbang(ofd);
+			break;
+		default:
+			break;
+		}
+		for (const char *pp = cmd->params,
+			     *const ep = cmd->params + cmd->paramz, *np;
+		     pp < ep; pp = np + 1U) {
+			echs_oid_t oid = 0U;
+			_task_t t = NULL;
+
+			np = memchr(pp, '&', ep - pp) ?: ep;
+			if (memcmp(pp, key, strlenof(key))) {
+				continue;
+			}
+			/* otherwise go and look for him */
+			pp += strlenof(key);
+
+			if (!(oid = obint(pp, np - pp))) {
+				/* nope */
+				continue;
+			} else if (UNLIKELY((t = get_task(oid)) == NULL)) {
+				ECHS_ERR_LOG("\
+cannot find task: no task with oid 0x%x found", oid);
+				continue;
+			} else if (UNLIKELY(!echs_task_owned_by_p(t->t, u))) {
+				uid_t owner = t->t->owner;
+				ECHS_ERR_LOG("\
+requesting task from user %d as user %d failed: permission denied", u, owner);
+				continue;
+			}
+
+			switch (cmd->rou) {
+			case ECHS_HTTP_QUEUE:
+				echs_task_icalify(ofd, t->t);
+				break;
+
+			case ECHS_HTTP_SCHED:
+				echs_http_send_sched(t, pp, np - pp);
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			echs_icalify_fini(ofd);
+			break;
+
+		case ECHS_HTTP_SCHED:
+			fdflush();
+			break;
+
+		default:
+			break;
+		}
+
+	} else if (cmd->rou) {
+		/* do something for all */
+		switch (cmd->rou) {
+		case ECHS_HTTP_QUEUE:
+			/* fingers crossed the checkpointed file
+			 * has been delivered via sendfile() above
+			 * i.e. not doing nothing here */
+			break;
+
+		case ECHS_HTTP_SCHED:
+			/* go through all the tasks */
+			fdbang(ofd);
+			for (size_t i = 0U; i < ztask_ht; i++) {
+				const char *tu;
+				size_t tz;
+
+				if (!task_ht[i].oid) {
+					continue;
+				} else if (task_ht[i].t->t->owner != u) {
+					continue;
+				}
+				/* yep */
+				tu = obint_name(task_ht[i].oid);
+				tz = tu ? strlen(tu) : 0U;
+				echs_http_send_sched(task_ht[i].t, tu, tz);
+			}
+			fdflush();
+			break;
+
+		default:
+			break;
+		}
+	}
 	return nwr;
 }
 
 static ssize_t
-cmd_ical_rpl(int ofd, echs_toid_t o, unsigned int code)
+cmd_ical_rpl(int ofd, echs_instruc_t ins)
 {
 	static const char rpl_hdr[] = "\
 BEGIN:VCALENDAR\n\
@@ -1247,8 +1719,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	ssize_t nwr = 0;
 
 	fdbang(ofd);
-	if (UNLIKELY(!o)) {
-#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, 0U, 0U)
+	if (UNLIKELY(!ins.v)) {
+#define cmd_ical_rpl_flush(x)	cmd_ical_rpl(x, (echs_instruc_t){INSVERB_UNK})
 		if (nrpl) {
 			nwr += fdwrite(rpl_ftr, strlenof(rpl_ftr));
 			nrpl = 0U;
@@ -1278,13 +1750,14 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 
 	nwr += fdwrite(rpl_veh, strlenof(rpl_veh));
 
-	nwr += fdprintf("UID:%s\n", obint_name(o));
+	nwr += fdprintf("UID:%s\n", obint_name(ins.o));
 	nwr += fdprintf("DTSTAMP:%s\n", stmp);
 	nwr += fdprintf("ATTENDEE:echse\n");
-	switch (code) {
-	case 0:
+	switch (ins.v) {
+	case INSVERB_SUCC:
 		nwr += fdwrite(succ, strlenof(succ));
 		break;
+	case INSVERB_FAIL:
 	default:
 		nwr += fdwrite(fail, strlenof(fail));
 		break;
@@ -1301,48 +1774,37 @@ static ssize_t
 cmd_ical(EV_P_ int ofd, ical_parser_t cmd[static 1U], ncred_t cred)
 {
 	ssize_t nwr = 0;
+	bool need_dump_p = false;
 
 	do {
 		echs_instruc_t ins = echs_evical_pull(cmd);
 
 		switch (ins.v) {
-		case INSVERB_CREA:
-		case INSVERB_UPDT:
+		case INSVERB_SCHE:
+		case INSVERB_RESC:
 			if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			}
 			/* and otherwise inject him */
 			if (UNLIKELY(_inject_task1(EV_A_ ins.t, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				nwr += cmd_ical_rpl(ofd, ins.t->oid, 1U);
-			} else {
-				/* reply with REQUEST-STATUS:2.0;Success */
-				nwr += cmd_ical_rpl(ofd, ins.t->oid, 0U);
+				ins.v = INSVERB_FAIL;
+				break;
 			}
-			break;
-
-		case INSVERB_RESC:
-			/* cancel request */
-			break;
-
-		case INSVERB_RES1:
-			/* cancel request */
+			/* reply with REQUEST-STATUS:2.0;Success */
+			ins.v = INSVERB_SUCC;
 			break;
 
 		case INSVERB_UNSC:
-			/* cancel request */
-			if (UNLIKELY(!ins.o)) {
-				/* must be a status update then */
-				continue;
-			}
-			/* otherwise eject him */
+			/* cancel request
+			 * cancel the whole shebang */
 			if (UNLIKELY(_eject_task1(EV_A_ ins.o, cred.u) < 0)) {
 				/* reply with REQUEST-STATUS:x */
-				nwr += cmd_ical_rpl(ofd, ins.o, 1U);
-			} else {
-				/* reply with REQUEST-STATUS:2.0;Success */
-				nwr += cmd_ical_rpl(ofd, ins.o, 0U);
+				ins.v = INSVERB_FAIL;
+				break;
 			}
+			/* reply with REQUEST-STATUS:2.0;Success */
+			ins.v = INSVERB_SUCC;
 			break;
 
 		default:
@@ -1351,24 +1813,42 @@ unknown instruction received from %d", ofd);
 		case INSVERB_UNK:
 			goto fini;
 		}
+		/* now serialise the actual reply */
+		nwr += cmd_ical_rpl(ofd, ins);
+		/* and keep track whether to checkpoint this user soon */
+		if (ins.v == INSVERB_SUCC) {
+			need_dump_p = true;
+		}
 	} while (1);
 fini:
 	/* this flushes all replies */
 	cmd_ical_rpl_flush(ofd);
+	/* keep a note about checkpointing */
+	if (need_dump_p) {
+		add_chkpnt(cred.u);
+	}
 	return nwr;
 }
 
 static echs_cmd_t
-guess_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
+feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 {
-	echs_cmd_t r = ECHS_CMD_UNK;
+	echs_cmd_t r;
 
-	if ((r = cmd_ical_p(param, buf, bsz))) {
-		;
-	} else if ((r = cmd_list_p(param, buf, bsz))) {
-		;
+	switch (param->cmd) {
+	case ECHS_CMD_UNK:
+	case ECHS_CMD_HTTP:
+		if ((r = cmd_http_p(param, buf, bsz))) {
+			break;
+		}
+	case ECHS_CMD_ICAL:
+		if ((r = cmd_ical_p(param, buf, bsz))) {
+			break;
+		}
+	default:
+		break;
 	}
-	return r;
+	return param->cmd = r;
 }
 
 static void
@@ -1386,7 +1866,7 @@ shut_cmd(struct echs_cmdparam_s param[static 1U])
 		echs_instruc_t ins;
 
 		switch ((ins = echs_evical_last_pull(&param->ical)).v) {
-		case INSVERB_CREA:
+		case INSVERB_SCHE:
 			if (LIKELY(ins.t == NULL)) {
 				break;
 			}
@@ -1490,6 +1970,7 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 	_task_t t = (void*)w;
 
 	ECHS_NOTI_LOG("taking event off of schedule");
+	add_chkpnt(t->t->owner);
 	ev_periodic_stop(EV_A_ w);
 	free_task(t);
 	return;
@@ -1575,14 +2056,18 @@ resched(ev_periodic *w, ev_tstamp now)
 		ECHS_NOTI_LOG("event in the past, not scheduling");
 		w->reschedule_cb = NULL;
 		w->cb = unsched;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now;
 	} else if (UNLIKELY(echs_event_0_p(e))) {
 		/* we need to unschedule AFTER the next run */
 		ECHS_NOTI_LOG("event completed, will not reschedule");
 		w->reschedule_cb = NULL;
+		t->cur = (echs_range_t){echs_nul_instant()};
 		return now + 1.e+30;
 	}
 
+	/* store the current event range and calculate tstamp for libev */
+	t->cur = (echs_range_t){e.from, e.till};
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
@@ -1619,9 +2104,9 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		goto shut;
 	}
 	/* check the command we're supposed to obey */
-	switch (guess_cmd(c->cmd, c->buf, nrd)) {
-	case ECHS_CMD_LIST:
-		(void)cmd_list(fd, &c->cmd->list);
+	switch (feed_cmd(c->cmd, c->buf, nrd)) {
+	case ECHS_CMD_HTTP:
+		(void)cmd_http(EV_A_ fd, &c->cmd->http, c->cred);
 		/* always shut him down */
 		goto shut;
 
@@ -1630,9 +2115,6 @@ sock_data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		if (UNLIKELY(nrd == 0)) {
 			goto shut;
 		}
-		break;
-
-	case ECHS_CMD_MORE:
 		break;
 
 	default:
@@ -1765,6 +2247,10 @@ make_echsd(void)
 	ev_signal_init(&res->sigpipe, sigpipe_cb, SIGPIPE);
 	ev_signal_start(EV_A_ &res->sigpipe);
 
+	/* just do minutely checkpointing */
+	ev_timer_init(&res->cptim, cptim_cb, 60.0, 60.0);
+	ev_timer_start(EV_A_ &res->cptim);
+
 	res->loop = EV_A;
 	return res;
 
@@ -1776,6 +2262,9 @@ foul:
 static void
 free_echsd(struct _echsd_s *ctx)
 {
+	/* final checkpointing */
+	chkpnt();
+
 	if (UNLIKELY(ctx == NULL)) {
 		return;
 	}
@@ -1801,14 +2290,19 @@ _inject_task1(EV_P_ echs_task_t t, uid_t u)
 need root privileges to run task as user %d", u);
 		return -1;
 	} else if (UNLIKELY((c = compl_uid(u),
-			     c.sh == NULL || c.wd == NULL ||
-			     c.u != t->owner))) {
+			     c.sh == NULL || c.wd == NULL))) {
 		/* user doesn't exist, do they */
 		ECHS_ERR_LOG("\
 ignoring task update for (non-existing) user %u", u);
 		return -1;
+	} else if (!echs_task_owned_by_p(t, c.u)) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     u, t->owner);
+		return -1;
 	} else if ((res = get_task(t->oid)) != NULL &&
-		   res->t->owner != u) {
+		   !echs_task_owned_by_p(res->t, c.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
@@ -1852,7 +2346,7 @@ _eject_task1(EV_P_ echs_toid_t oid, uid_t uid)
 		ECHS_ERR_LOG("\
 cannot update task: no task with oid 0x%x found", oid);
 		return -1;
-	} else if (UNLIKELY(res->t->owner != uid)) {
+	} else if (UNLIKELY(!echs_task_owned_by_p(res->t, uid))) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
@@ -1862,11 +2356,10 @@ task update from user %d for task from user %d failed: permission denied",
 	/* otherwise proceed with the evacuation */
 	ECHS_NOTI_LOG("cancelling task 0x%x", oid);
 	ev_periodic_stop(EV_A_ &res->w);
-	free(deconst(res->dflt_cred.wd));
-	free(deconst(res->dflt_cred.sh));
-	free_echs_task(res->t);
+	free_task(res);
 	return 0;
 }
+
 
 static void
 _inject_file(struct _echsd_s *ctx, const char *fn)
@@ -1894,7 +2387,7 @@ more:
 		do {
 			ins = echs_evical_pull(&pp);
 
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -1913,7 +2406,7 @@ more:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got

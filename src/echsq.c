@@ -87,16 +87,23 @@ serror(const char *fmt, ...)
 	return;
 }
 
-static size_t
-xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 {
-	size_t ssz = strlen(src);
-	if (ssz > dsz) {
+	if (UNLIKELY(dsz == 0U)) {
+		return 0U;
+	} else if (UNLIKELY(ssz > dsz)) {
 		ssz = dsz - 1U;
 	}
 	memcpy(dst, src, ssz);
 	dst[ssz] = '\0';
 	return ssz;
+}
+
+static size_t
+xstrlcpy(char *restrict dst, const char *src, size_t dsz)
+{
+	return xstrlncpy(dst, dsz, src, strlen(src));
 }
 
 
@@ -269,7 +276,7 @@ more:
 		do {
 			ins = echs_evical_pull(&pp);
 
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -288,7 +295,7 @@ more:
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -311,34 +318,85 @@ more:
 static int
 cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 {
-	unsigned char q;
+/* try and request the schedules */
+	static const char verb[] = "GET /";
+	static const char vers[] = " HTTP/1.1\r\n\r\n";
+	static const char sche[] = "sched";
+	static const char queu[] = "queue";
+	char buf[4096U];
+	size_t bix;
+	size_t i = 0U;
+	const char *e;
+	uid_t u;
 
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
-	} else {
-		q = 'a';
+#define BUF	(buf + bix)
+#define BSZ	(sizeof(buf) - bix)
+#define CHK_BIX()				\
+	if (UNLIKELY(bix > sizeof(buf))) {	\
+		goto reqstr_err;		\
+	} else (void)0				\
+
+	/* first of all transmogrify user name to uid */
+	if (argi->user_arg) {
+		char *on = NULL;
+		u = strtoul(argi->user_arg, &on, 10);
+
+		if (on == NULL || *on) {
+			struct passwd *p;
+
+			if ((p = getpwnam(argi->user_arg)) == NULL) {
+				goto pwnam_err;
+			}
+			u = p->pw_uid;
+		}
 	}
-	/* try and request the queues */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
-		char buf[4096U];
-		char cmd[64];
-		const char *e;
-		ssize_t cmz;
-		int s;
 
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(false))) {
+more:
+	bix = 0U;
+	/* right lets start with the http verb and stuff */
+	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
+	CHK_BIX();
+
+	if (argi->user_arg) {
+		bix += snprintf(BUF, BSZ, "u/%u/", u);
+		CHK_BIX();
+	}
+
+	/* paste the routine we want invoked */
+	if (argi->next_flag) {
+		bix += xstrlncpy(BUF, BSZ, sche, strlenof(sche));
+	} else {
+		bix += xstrlncpy(BUF, BSZ, queu, strlenof(queu));
+	}
+	CHK_BIX();
+
+	/* now if there's tasks put a ?tuid=x,y,z */
+	if (i < argi->nargs) {
+		bix += snprintf(BUF, BSZ, "?tuid=%s", argi->args[i++]);
+		CHK_BIX();
+	}
+	for (int n; i < argi->nargs; i++, bix += n) {
+		n = snprintf(BUF, BSZ, "&tuid=%s", argi->args[i]);
+		if (UNLIKELY(bix + n >= sizeof(buf))) {
+			/* just do him next time */
 			break;
-		} else if ((s = make_conn(e)) < 0) {
-			serror("Error: cannot connect to `%s'", e);
+		} else if (UNLIKELY(bix + strlenof(vers) >= sizeof(buf))) {
+			/* we can't have no space for the version suffix */
 			break;
 		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
-		write(s, cmd, cmz);
+	}
+	/* version and stuff */
+	bix += xstrlncpy(BUF, BSZ, vers, strlenof(vers));
+
+	/* let's try the local echsd and then the system-wide one */
+	with (int s) {
+		if (UNLIKELY((e = get_esock(false)) == NULL)) {
+			break;
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
+			serror("Error: cannot connect to `%s'", e);
+			goto conn_err;
+		}
+		write(s, buf, bix);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
@@ -346,39 +404,43 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 		free_conn(s);
 	}
 
-	/* which queue to request */
-	if (argi->queue_arg) {
-		q = (unsigned char)(*argi->queue_arg | 0x20U);
-	} else {
-		q = 'a';
-	}
-	/* try the global queues now */
-	for (; q >= 'a' && q <= 'b';
-	     q = (unsigned char)(argi->queue_arg ? '@' : q + 1U)) {
-		char buf[4096U];
-		char cmd[64];
-		const char *e;
-		ssize_t cmz;
-		int s;
-
-		/* let's try the local echsd and then the system-wide one */
-		if (!(e = get_esock(true))) {
+	/* global queue */
+	with (int s) {
+		if (UNLIKELY((e = get_esock(true)) == NULL)) {
 			break;
-		} else if ((s = make_conn(e)) < 0) {
-			serror("Error: cannot connect to `%s'", e);
-			break;
+		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
+			goto conn_err;
 		}
-		cmz = snprintf(cmd, sizeof(cmd),
-			       "GET /echsq_%u%c.ics HTTP/1.1\r\n\r\n",
-			       getuid(), q);
-		write(s, cmd, cmz);
+		write(s, buf, bix);
 
 		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
 			write(STDOUT_FILENO, buf, nrd);
 		}
 		free_conn(s);
+	}
+	if (UNLIKELY(i < argi->nargs)) {
+		goto more;
 	}
 	return 0;
+
+#undef BUF
+#undef BSZ
+#undef CHK_BIX
+
+pwnam_err:
+	serror("\
+Error: cannot resolve user name `%s'", argi->user_arg);
+	return 1;
+
+conn_err:
+	serror("\
+Error: cannot connect to `%s'", e);
+	return 1;
+
+reqstr_err:
+	serror("\
+Error: cannot build request string");
+	return 1;
 }
 
 static int
@@ -420,6 +482,9 @@ Error: cannot open file `%s'", argi->args[i]);
 		proc1(s, fd);
 		close(fd);
 	}
+	if (!argi->nargs) {
+		proc1(s, STDIN_FILENO);
+	}
 	write(s, ftr, strlenof(ftr));
 	while (nout && !(poll1(s, 5000) < 0));
 
@@ -443,7 +508,6 @@ END:VCALENDAR\n";
 	static const char end[] = "END:VEVENT\n";
 	static const char sta[] = "STATUS:CANCELLED\n";
 	const char *e;
-	const char *tuid;
 	int s = -1;
 
 	/* let's try the local echsd and then the system-wide one */
@@ -459,26 +523,18 @@ END:VCALENDAR\n";
 	/* we'll be writing to S, better believe it */
 	fdbang(s);
 
-	if ((tuid = argi->args[0U]) != NULL) {
-		fdwrite(hdr, strlenof(hdr));
+	fdwrite(hdr, strlenof(hdr));
+	for (size_t i = 0U; i < argi->nargs; i++) {
+		const char *tuid = argi->args[i];
 
-		if (argi->nargs == 1U) {
-			fdwrite(beg, strlenof(beg));
-			fdprintf("UID:%s\n", tuid);
-			fdwrite(sta, strlenof(sta));
-			fdwrite(end, strlenof(end));
-		}
-		for (size_t i = 1U; i < argi->nargs; i++) {
-			fdwrite(beg, strlenof(beg));
-			fdprintf("UID:%s\n", tuid);
-			fdprintf("RECURRENCE-ID:%s\n", argi->args[i]);
-			fdwrite(sta, strlenof(sta));
-			fdwrite(end, strlenof(end));
-		}
-
-		fdwrite(ftr, strlenof(ftr));
+		fdwrite(beg, strlenof(beg));
+		fdprintf("UID:%s\n", tuid);
+		fdwrite(sta, strlenof(sta));
+		fdwrite(end, strlenof(end));
 		nout++;
 	}
+	fdwrite(ftr, strlenof(ftr));
+
 	(void)fdputc;
 	fdflush();
 	while (nout && !(poll1(s, 5000) < 0));
@@ -508,11 +564,11 @@ main(int argc, char *argv[])
 
 
 	case ECHSQ_CMD_ADD:
-		rc = cmd_add((struct yuck_cmd_add_s*)argi);;
+		rc = cmd_add((struct yuck_cmd_add_s*)argi);
 		break;
 
 	case ECHSQ_CMD_CANCEL:
-		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);;
+		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);
 		break;
 
 	default:

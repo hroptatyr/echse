@@ -2,6 +2,9 @@ Usage: echse ARG...
 
 Operate on echse sources.
 
+This tool has no deeper purpose other than to test the internals of the
+echsq and echsd tools.
+
 
 Usage: echse genuid [FILE]...
 
@@ -16,6 +19,8 @@ Generate UIDs for ics FILEs.
 Usage: echse merge [FILE]...
 
 Merge echse source FILEs and print merged output.
+
+  --unroll=DT           Unroll the stream to before DT first.
 
 
 Usage: echse unroll [FILE]...

@@ -1,6 +1,6 @@
-/*** intern.c -- interning system
+/*** tzob.c -- timezone interning system
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2014-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -41,13 +41,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include "intern.h"
+#include <time.h>
+#include <sys/time.h>
+#include "tzob.h"
+#include "tzraw.h"
 #include "hash.h"
 #include "nifty.h"
 
 /* the beef table */
 static struct {
-	obint_t ob;
+	uint_fast32_t of;
+	uint_fast32_t ob;
 	hash_t hx;
 } *sstk;
 /* alloc size, 2-power */
@@ -62,19 +66,16 @@ static size_t obz;
 /* next ob */
 static size_t obn;
 
-static char
-u2h(uint8_t c)
-{
-	switch (c) {
-	case 0 ... 9:
-		return (char)(c + '0');
-	case 10 ... 15:
-		return (char)(c + 'a' - 10);
-	default:
-		break;
-	}
-	return (char)'?';
-}
+/* the hx obarray, specs and size just like the string obarray */
+static hash_t hxa[256U];
+static size_t hxn;
+
+/* MFU cache of zifs */
+static struct {
+	echs_tzob_t z;
+	size_t cnt;
+} tmfu[16U];
+static zif_t zmfu[16U];
 
 static void*
 recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
@@ -86,14 +87,14 @@ recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
 	return buf;
 }
 
-static obint_t
-make_obint(const char *str, size_t len)
+static uint_fast32_t
+bang_zone(const char *str, size_t len)
 {
 /* put STR (of length LEN) into string obarray, don't check for dups */
 #define OBAR_MINZ	(1024U)
 	/* make sure we pad with \0 bytes to the next 4-byte multiple */
 	size_t pad = ((len / 4U) + 1U) * 4U;
-	obint_t res;
+	uint_fast32_t res;
 
 	if (UNLIKELY(obn + pad >= obz)) {
 		size_t nuz = (obz * 2U) ?: OBAR_MINZ;
@@ -107,18 +108,135 @@ make_obint(const char *str, size_t len)
 	}
 	/* paste the string in question */
 	memcpy(obs + (res = obn), str, len);
-	/* assemble the result */
-	res >>= 2U;
-	res <<= 8U;
-	res |= len;
 	/* inc the obn pointer */
 	obn += pad;
 	return res;
 }
 
+static inline echs_tzob_t
+make_tzob(size_t x)
+{
+	x &= 0xffU;
+	return ((x << 6U) ^ (x << 10U) ^ (x << 24U)) & 0xffffffffU;
+}
+
+static inline size_t
+make_size(echs_tzob_t z)
+{
+	return ((z >> 24U) ^ (z >> 10U) ^ (z >> 6U)) & 0xffU;
+}
+
+static echs_tzob_t
+bang_tzob(hash_t hx)
+{
+/* put HX into global tzob obarray and return its index
+ * readily shifted to the needs of ECHS_DMASK and ECHS_IMASK */
+	if (UNLIKELY(hxn >= countof(hxa))) {
+		/* nope, let's do fuckall instead
+		 * more than 256 timezones?  we're not THAT international */
+		return 0U;
+	}
+	/* just push the hx in question and advance the counter */
+	hxa[hxn++] = hx;
+	return make_tzob(hxn);
+}
+
+static hash_t
+retr_tzob(echs_tzob_t z)
+{
+	size_t i;
+
+	if (UNLIKELY((i = make_size(z)) >= countof(hxa))) {
+		/* huh? */
+		return 0U;
+	} else if (UNLIKELY(!i)) {
+		/* mega huh? */
+		return 0U;
+	}
+	/* otherwise just return what's in the array */
+	return hxa[i - 1U];
+}
+
+static zif_t
+__tzob_zif(echs_tzob_t zob)
+{
+/* return a zif_t object from ZOB. */
+#define SWP(x, y)					\
+	do {						\
+		__typeof(x) paste(__tmp, __LINE__) = x;	\
+		x = y;					\
+		y = paste(__tmp, __LINE__);		\
+	} while (0)
+	size_t i;
+
+	for (i = 0U; i < countof(tmfu) - 1U; i++) {
+		if (UNLIKELY(!tmfu[i].z)) {
+			/* found an empty guy */
+			break;
+		} else if (LIKELY(tmfu[i].z == zob)) {
+			/* found him */
+			if (i && tmfu[i - 1U].cnt < ++tmfu[i].cnt) {
+				/* swap with predecessor because
+				 * obviously item I is used more often now
+				 * this will slowly let the most used items
+				 * bubble up */
+				SWP(tmfu[i - 1U], tmfu[i]);
+				SWP(zmfu[i - 1U], zmfu[i]);
+				i--;
+			}
+			return zmfu[i];
+		}
+	}
+	/* `i' should be <=countof(tmfu) - 1U, so do the usual checks */
+	const char *fn;
+	zif_t this;
+
+	if (tmfu[i].z == zob) {
+		/* how lucky can we get? */
+		this = zmfu[i];
+	} else if (UNLIKELY((fn = echs_zone(zob)) == NULL)) {
+		/* yea, bollocks */
+		this = NULL;
+	} else if (UNLIKELY((this = zif_open(fn)) == NULL)) {
+		/* just resort to doing fuckall */
+		this = NULL;
+	} else {
+		if (zmfu[i] != NULL) {
+			/* clear the zif out */
+			zif_close(zmfu[i]);
+		}
+		zmfu[i] = this;
+		tmfu[i].z = zob;
+		tmfu[i].cnt = 1U;
+	}
+	return this;
+}
+
+static time_t
+__inst_to_epoch(echs_instant_t i)
+{
+	static const uint16_t __mon_yday[] = {
+		/* this is \sum ml,
+		 * first element is a bit set of leap days to add */
+		0U, 0U,
+		31U, 59U, 90U, 120U, 151U, 181U,
+		212U, 243U, 273U, 304U, 334U, 365U
+	};
+	unsigned int by = i.y - 1917U;
+	/* no bullshit years in our lifetime */
+	unsigned int j0 = by * 365U + by / 4U;
+	/* yday by lookup */
+	unsigned int yd = (LIKELY(i.m <= 12U))
+		? __mon_yday[i.m] + i.d + UNLIKELY(!(i.y % 4U) && i.m >= 3U)
+		: 0U;
+
+	return ((((j0 + yd - 19359U/*our epoch v unix epoch*/) * 24U +
+		  (LIKELY(i.H <= 24U) ? i.H : 24U)) * 60U + i.M) * 60U) + i.S;
+}
+
 
-obint_t
-intern(const char *str, size_t len)
+echs_tzob_t
+echs_tzob(const char *str, size_t len)
 {
 #define SSTK_NSLOT	(256U)
 #define SSTK_STACK	(4U * SSTK_NSLOT)
@@ -134,7 +252,7 @@ intern(const char *str, size_t len)
 	 * the first stack is 256 entries wide, the next stack is 1024
 	 * bytes wide, but only hosts 768 entries because the probe is
 	 * constructed so that the lowest 8bits are always 0. */
-	const hash_t hx = hash((const uint8_t*)str, len);
+	const hash_t hx = hash(str, len);
 	hash_t k = hx;
 
 	/* just try what we've got */
@@ -149,14 +267,14 @@ intern(const char *str, size_t len)
 
 		if (sstk[off].hx == hx) {
 			/* found him (or super-collision) */
-			return hx;
+			return sstk[off].ob;
 		} else if (!sstk[off].hx) {
 			/* found empty slot */
-			obint_t ob = make_obint(str, len);
-			sstk[off].ob = ob;
+			sstk[off].of = bang_zone(str, len);
+			sstk[off].ob = bang_tzob(hx);
 			sstk[off].hx = hx;
 			nstk++;
-			return hx;
+			return sstk[off].ob;
 		}
 	}
 
@@ -180,45 +298,32 @@ intern(const char *str, size_t len)
 
 			if (sstk[off].hx == hx) {
 				/* found him (or super-collision) */
-				return hx;
+				return sstk[off].ob;
 			} else if (!sstk[off].hx) {
 				/* found empty slot */
-				obint_t ob = make_obint(str, len);
-				sstk[off].ob = ob;
+				sstk[off].of = bang_zone(str, len);
+				sstk[off].ob = bang_tzob(hx);
 				sstk[off].hx = hx;
 				nstk++;
-				return hx;
+				return sstk[off].ob;
 			}
 		}
 	}
 	return 0U;
 }
 
-void
-unintern(obint_t UNUSED(ob))
-{
-	return;
-}
-
-obint_t
-obint(const char *str, size_t len)
-{
-/* like `intern()' but don't actually intern the string */
-	const hash_t hx = hash(str, len);
-	return hx;
-}
-
 const char*
-obint_name(obint_t hx)
+echs_zone(echs_tzob_t z)
 {
-	static char buf[32] = "echse/autouid-0x00000000@echse";
-	hash_t k = hx;
-	obint_t r;
+	hash_t hx;
+	hash_t k;
+	size_t o;
 
-	if (UNLIKELY(hx == 0UL)) {
-		return obs;
-	} else if (UNLIKELY(sstk == NULL)) {
-		goto auto_uid;
+	if (UNLIKELY(z == 0UL)) {
+		return "UTC";
+	} else if (UNLIKELY(!(k = hx = retr_tzob(z)))) {
+		/* huh? */
+		return NULL;
 	}
 
 	/* here's the initial probe then */
@@ -227,7 +332,7 @@ obint_name(obint_t hx)
 
 		if (sstk[off].hx == hx) {
 			/* found him (or super-collision) */
-			r = sstk[off].ob;
+			o = sstk[off].of;
 			goto yep;
 		}
 	}
@@ -243,24 +348,19 @@ obint_name(obint_t hx)
 
 			if (sstk[off].hx == hx) {
 				/* found him (or super-collision) */
-				r = sstk[off].ob;
+				o = sstk[off].of;
 				goto yep;
 			}
 		}
 	}
-auto_uid:
-	/* it's probably one of those autogenerated uids */
-	for (char *restrict bp = buf + 16U + 8U; bp > buf + 16U; hx >>= 4U) {
-		*--bp = u2h((uint8_t)(hx & 0xfU));
-	}
-	return buf;
+	return NULL;
 
 yep:
-	return obs + ((r >> 8U) << 2U);
+	return obs + o;
 }
 
 void
-clear_interns(void)
+clear_tzobs(void)
 {
 	if (LIKELY(sstk != NULL)) {
 		free(sstk);
@@ -274,7 +374,54 @@ clear_interns(void)
 	obs = NULL;
 	obz = 0U;
 	obn = 0U;
+
+	/* clear MFU cache */
+	for (size_t i = 0U; i < countof(zmfu); i++) {
+		if (UNLIKELY(zmfu[i] == NULL)) {
+			break;
+		}
+		zif_close(zmfu[i]);
+	}
+	memset(tmfu, 0, sizeof(tmfu));
+	memset(zmfu, 0, sizeof(zmfu));
 	return;
 }
 
-/* intern.c ends here */
+echs_instant_t
+echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
+{
+	zif_t z;
+
+	i = echs_instant_detach_tzob(i);
+	if (UNLIKELY(echs_instant_all_day_p(i))) {
+		/* just do fuckall */
+		;
+	} else if (LIKELY((z = __tzob_zif(zob)) != NULL)) {
+		time_t loc = __inst_to_epoch(i);
+		time_t nix = zif_utc_time(z, loc);
+		echs_idiff_t d = {.msd = 1000 * (nix - loc)};
+
+		i = echs_instant_add(i, d);
+	}
+	return i;
+}
+
+int
+echs_tzob_offs(echs_tzob_t z, echs_instant_t i, int x)
+{
+	time_t nix;
+	zif_t _z;
+
+	i = echs_instant_detach_tzob(i);
+	if (UNLIKELY(echs_instant_all_day_p(i))) {
+		/* nah, all-day shit isn't offset at all */
+		return 0;
+	} else if (UNLIKELY((_z = __tzob_zif(z)) == NULL)) {
+		return 0;
+	}
+	/* just convert the instant now */
+	nix = __inst_to_epoch(i);
+	return zif_find_zrng(_z, nix + x).offs;
+}
+
+/* tzob.c ends here */

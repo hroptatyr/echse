@@ -87,14 +87,17 @@ ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 
 
 echs_instant_t
-dt_strp(const char *str)
+dt_strp(const char *str, char **on, size_t len)
 {
 /* code dupe, see __strpd_std() */
 	echs_instant_t res = {.u = 0U};
 	unsigned int tmp = 0U;
-	const char *sp;
+	const char *restrict sp = str;
+	const char *const ep = str + (len ?: 23U);
 
-	if (UNLIKELY((sp = str) == NULL)) {
+	if (UNLIKELY(sp == NULL)) {
+		goto nul;
+	} else if (UNLIKELY(len && len < 8U)) {
 		goto nul;
 	}
 	/* read the year */
@@ -157,6 +160,9 @@ dt_strp(const char *str)
 	if (*sp == '-') {
 		sp++;
 	}
+	if (UNLIKELY(sp >= ep)) {
+		goto nul;
+	}
 
 	/* snarf mday, ... if there's a separator */
 	switch (*sp++) {
@@ -175,20 +181,24 @@ dt_strp(const char *str)
 	default:
 		goto nul;
 	}
-	if ((uint8_t)(*sp ^ '0') < 10U) {
+	if (UNLIKELY(sp >= ep)) {
+		goto nul;
+	} else if ((uint8_t)(*sp ^ '0') < 10U) {
 		tmp += *sp++ ^ '0';
 		res.d = tmp;
 	} else {
 		goto nul;
 	}
 
-	if (*sp != 'T' && *sp != ' ') {
+	if (sp >= ep || *sp != 'T' && *sp != ' ') {
 		res.H = ECHS_ALL_DAY;
 		goto res;
+	} else if (UNLIKELY(sp++ + 4U >= ep)) {
+		goto nul;
 	}
 
 	/* and now parse the time */
-	tmp = 0U, sp++;
+	tmp = 0U;
 	switch (*sp++) {
 	case '2':
 		tmp = 20U;
@@ -199,6 +209,7 @@ dt_strp(const char *str)
 		goto nul;
 	case '1':
 		tmp = 10U;
+		/*@fallthrough@*/
 	case '0':
 		if ((uint8_t)(*sp ^ '0') < 10U) {
 			tmp += *sp++ ^ '0';
@@ -216,6 +227,9 @@ dt_strp(const char *str)
 	if (*sp == ':') {
 		sp++;
 	}
+	if (UNLIKELY(sp + 2U > ep)) {
+		goto nul;
+	}
 	if ((uint8_t)(*sp ^ '0') < 6U &&
 	    (tmp = 10U * (*sp++ ^ '0'), (uint8_t)(*sp ^ '0') < 10U)) {
 		tmp += *sp++ ^ '0';
@@ -225,8 +239,11 @@ dt_strp(const char *str)
 	res.M = tmp;
 
 	/* seconds are optional */
-	if (*sp == ':') {
+	if (sp >= ep || *sp == ':') {
 		sp++;
+	}
+	if (UNLIKELY(sp + 2U > ep)) {
+		goto res;
 	}
 	if (sp[0U] == '6' && sp[1U] == '0') {
 		tmp = 60U;
@@ -239,7 +256,7 @@ dt_strp(const char *str)
 	}
 	res.S = tmp;
 
-	if (*sp != '.') {
+	if (sp >= ep || *sp != '.') {
 		res.ms = ECHS_ALL_SEC;
 		goto res;
 	}
@@ -251,6 +268,9 @@ dt_strp(const char *str)
 	}
 	res.ms = tmp % 1000U;
 res:
+	if (on != NULL) {
+		*on = deconst(sp);
+	}
 	return res;
 nul:
 	return (echs_instant_t){.u = 0U};
@@ -303,6 +323,68 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 	}
 	*bp = '\0';
 	return bp - buf;
+}
+
+echs_range_t
+range_strp(const char *str, char **on, size_t len)
+{
+	char *op = deconst(str);
+	echs_range_t r;
+
+	if (UNLIKELY(!len)) {
+		goto err;
+	} else if (*str == '-') {
+		/* ah, lower bound seems to be -infty */
+		r.beg = echs_min_instant();
+	} else {
+		r.beg = dt_strp(str, &op, len);
+	}
+	switch (*op++) {
+	case '-':
+		/* just a normal range then, innit? */
+		r.end = dt_strp(op, on, len - (op - str));
+		break;
+	case '+':
+		r.end = echs_max_instant();
+		break;
+	default:
+		/* huh? */
+		goto err;
+	}
+	return r;
+err:
+	return echs_max_range();
+}
+
+size_t
+range_strf(char *restrict str, size_t ssz, echs_range_t r)
+{
+	size_t n = 0U;
+
+	if (UNLIKELY(!ssz)) {
+		return 0U;
+	} else if (UNLIKELY(ssz < 2U)) {
+		*str = '\0';
+		return 0U;
+	} else if (UNLIKELY(echs_max_range_p(r))) {
+		str[n++] = '*';
+		goto fin;
+	} else if (!echs_min_instant_p(r.beg)) {
+		n += dt_strf(str, ssz, r.beg);
+	}
+	if (n < ssz && !echs_max_instant_p(r.end)) {
+		str[n++] = '-';
+		n += dt_strf(str + n, ssz - n, r.end);
+	} else if (n < ssz) {
+		str[n++] = '+';
+	}
+fin:
+	if (LIKELY(n < ssz)) {
+		str[n] = '\0';
+	} else {
+		str[ssz - 1U] = '\0';
+	}
+	return n;
 }
 
 #endif	/* INCLUDED_dt_strpf_c_ */

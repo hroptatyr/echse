@@ -1,6 +1,6 @@
 /*** echse.c -- testing echse concept
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -298,7 +298,7 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 
 	/* just get it out now */
 	echs_prnt_ical_init();
-	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(e.from, p->from)) {
 			continue;
 		} else if (echs_instant_lt_p(p->till, e.from)) {
@@ -419,7 +419,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
-	while (!echs_event_0_p(e = echs_evstrm_next(smux))) {
+	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -460,7 +460,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -480,7 +480,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -495,7 +495,7 @@ more:
 }
 
 static int
-_merge_fd(int fd)
+_merge_fd(int fd, echs_instant_t unr_till)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -516,7 +516,7 @@ more:
 			ins = echs_evical_pull(&pp);
 
 			/* only allow PUBLISH requests for now */
-			if (UNLIKELY(ins.v != INSVERB_CREA)) {
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
@@ -524,6 +524,12 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
+			/* unwind him */
+			for (echs_event_t e;
+			     (e = echs_evstrm_next(ins.t->strm),
+			      !echs_nul_event_p(e)) &&
+				     echs_instant_lt_p(e.from, unr_till);
+			     (void)echs_evstrm_pop(ins.t->strm));
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
 			free_echs_task(ins.t);
@@ -537,7 +543,7 @@ more:
 		ins = echs_evical_last_pull(&pp);
 
 		/* still only allow PUBLISH requests for now */
-		if (UNLIKELY(ins.v != INSVERB_CREA)) {
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 			break;
 		} else if (UNLIKELY(ins.t != NULL)) {
 			/* that can't be right, we should have got
@@ -564,7 +570,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	echs_evstrm_t smux = NULL;
 
 	if (argi->from_arg) {
-		p.from = dt_strp(argi->from_arg);
+		p.from = dt_strp(argi->from_arg, NULL, 0U);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
 		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
@@ -577,7 +583,7 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 	}
 
 	if (argi->till_arg) {
-		p.till = dt_strp(argi->till_arg);
+		p.till = dt_strp(argi->till_arg, NULL, 0U);
 	} else {
 #if defined HAVE_ANON_STRUCTS_INIT
 		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
@@ -661,6 +667,15 @@ cmd_genuid(const struct yuck_cmd_genuid_s argi[static 1U])
 static int
 cmd_merge(const struct yuck_cmd_merge_s argi[static 1U])
 {
+	echs_instant_t unr_till = echs_nul_instant();
+
+	if (argi->unroll_arg) {
+		const char *arg = argi->unroll_arg;
+		const size_t len = strlen(arg);
+
+		unr_till = dt_strp(arg, NULL, len);
+	}
+
 	echs_prnt_ical_init();
 	for (size_t i = 0UL; i < argi->nargs; i++) {
 		const char *fn = argi->args[i];
@@ -672,12 +687,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_merge_fd(fd);
+		_merge_fd(fd, unr_till);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_merge_fd(STDIN_FILENO);
+		_merge_fd(STDIN_FILENO, unr_till);
 	}
 	echs_prnt_ical_fini();
 	return 0;

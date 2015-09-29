@@ -71,7 +71,10 @@ struct echs_task_s {
 	/* credentials we want this job run as */
 	cred_t run_as;
 
-	/* the organiser and attendees of the whole shebang */
+	/* the organiser and attendees of the whole shebang
+	 * the organiser in echsd terms will be the user the script
+	 * is run as, the attendees will be the people receiving
+	 * the specified output by mail */
 	const char *org;
 	struct strlst_s *att;
 
@@ -109,6 +112,12 @@ static inline __attribute__((const, pure)) bool
 echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 {
 	return t1 == t2 || (t1 && t2 && t1->oid == t2->oid);
+}
+
+static inline __attribute__((const, pure)) bool
+echs_task_owned_by_p(echs_task_t t, int uid)
+{
+	return (t->owner & uid) == uid;
 }
 
 #endif	/* INCLUDED_task_h_ */

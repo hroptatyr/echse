@@ -860,7 +860,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	bool ymdp;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -986,6 +986,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1020,7 +1021,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	bool ymdp;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -1116,6 +1117,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
@@ -1149,7 +1151,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t wd_incs = 0UL;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -1253,6 +1255,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					.H = e.H[iH],
 					.M = e.M[iM],
 					.S = e.S[iS],
+					.ms = proto.ms,
 				};
 
 				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
@@ -1292,7 +1295,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	unsigned int maxd;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -1402,6 +1405,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = e.H[iH],
 				.M = e.M[iM],
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
 				continue;
@@ -1431,7 +1435,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast32_t H_mask = 0U;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -1575,6 +1579,7 @@ rrul_fill_Hly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = H,
 				.M = e.M[iM],
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
@@ -1607,7 +1612,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast64_t M_mask = 0U;
 	struct enum_s e;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
@@ -1753,6 +1758,7 @@ rrul_fill_Mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				.H = H,
 				.M = M,
 				.S = e.S[iS],
+				.ms = proto.ms,
 			};
 
 			if (UNLIKELY(echs_instant_lt_p(x, proto))) {
@@ -1786,7 +1792,7 @@ rrul_fill_Sly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	uint_fast64_t M_mask = 0U;
 	uint_fast64_t S_mask = 0U;
 
-	if (UNLIKELY(rr->count < nti)) {
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}

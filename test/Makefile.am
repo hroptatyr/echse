@@ -26,6 +26,7 @@ noinst_LIBRARIES =
 include clitoris.am
 AM_CLIT_LOG_FLAGS = -v --builddir $(top_builddir)/src
 TESTS_ENVIRONMENT = root=$(top_srcdir)
+TESTS_ENVIRONMENT += TZDIR=$(TZDIR) TZDIR_RIGHT=$(TZDIR_RIGHT)
 
 ## actual regression tests
 check_PROGRAMS += bitint_test_01
@@ -123,6 +124,14 @@ EXTRA_DIST += sample_25.ics
 EXTRA_DIST += sample_26.ics
 EXTRA_DIST += sample_27.ics
 EXTRA_DIST += sample_28.ics
+EXTRA_DIST += sample_29.ics
+EXTRA_DIST += sample_30.ics
+EXTRA_DIST += sample_31.ics
+EXTRA_DIST += sample_32.ics
+EXTRA_DIST += sample_33.ics
+EXTRA_DIST += sample_34.ics
+EXTRA_DIST += sample_35.ics
+EXTRA_DIST += sample_36.ics
 
 TESTS += rrul_01.clit
 TESTS += rrul_02.clit
@@ -158,6 +167,14 @@ TESTS += rrul_31.clit
 TESTS += rrul_32.clit
 TESTS += rrul_33.clit
 TESTS += rrul_34.clit
+TESTS += rrul_35.clit
+TESTS += rrul_36.clit
+TESTS += rrul_37.clit
+TESTS += rrul_38.clit
+TESTS += rrul_39.clit
+TESTS += rrul_40.clit
+TESTS += rrul_41.clit
+TESTS += rrul_42.clit
 
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit

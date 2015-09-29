@@ -36,17 +36,19 @@
  ***/
 #if !defined INCLUDED_evstrm_h_
 #define INCLUDED_evstrm_h_
-
 #include <stddef.h>
+#include <stdbool.h>
 #include "event.h"
+#include "range.h"
 
 typedef struct echs_evstrm_s *echs_evstrm_t;
 typedef const struct echs_evstrm_s *echs_const_evstrm_t;
 typedef const struct echs_evstrm_class_s *echs_evstrm_class_t;
 
 struct echs_evstrm_class_s {
-	/** next method */
-	echs_event_t(*next)(echs_evstrm_t);
+	/** next method
+	 * set optional popp to true to pop the event off the stream */
+	echs_event_t(*next)(echs_evstrm_t, bool popp);
 	/** clone method */
 	echs_evstrm_t(*clone)(echs_const_evstrm_t);
 	/** dtor method */
@@ -102,9 +104,15 @@ echs_evstrm_demux(echs_evstrm_t *restrict tgt, size_t tsz,
 
 
 static inline echs_event_t
+echs_evstrm_pop(echs_evstrm_t s)
+{
+	return s->class->next(s, true);
+}
+
+static inline echs_event_t
 echs_evstrm_next(echs_evstrm_t s)
 {
-	return s->class->next(s);
+	return s->class->next(s, false);
 }
 
 static inline void
