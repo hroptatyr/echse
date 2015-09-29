@@ -30,6 +30,7 @@ libechse_la_SOURCES += instant.c instant.h
 libechse_la_SOURCES += range.c range.h
 libechse_la_SOURCES += dt-strpf.c dt-strpf.h
 libechse_la_SOURCES += module.c module.h
+libechse_la_SOURCES += hash.c hash.h
 libechse_la_SOURCES += intern.c intern.h
 libechse_la_SOURCES += state.c state.h
 libechse_la_SOURCES += task.c task.h
