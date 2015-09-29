@@ -2295,8 +2295,13 @@ need root privileges to run task as user %d", u);
 		ECHS_ERR_LOG("\
 ignoring task update for (non-existing) user %u", u);
 		return -1;
-	} else if (!echs_task_owned_by_p(t, c.u) ||
-		   (res = get_task(t->oid)) != NULL &&
+	} else if (!echs_task_owned_by_p(t, c.u)) {
+		/* we've caught him, call the police!!! */
+		ECHS_ERR_LOG("\
+task update from user %d for task from user %d failed: permission denied",
+			     u, t->owner);
+		return -1;
+	} else if ((res = get_task(t->oid)) != NULL &&
 		   !echs_task_owned_by_p(res->t, c.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
