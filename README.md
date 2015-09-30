@@ -28,9 +28,10 @@ Features
 * [X] Per-task configuration of working directory and shell
 * [X] Per-task configuration of simultaneity
 * [X] Automatic and shell-independent capture of timing information
-* [ ] Per-task configuration of timezones
+* [X] Per-task configuration of timezones
+* [X] Built-in timeouts by constraining a task through DTEND
+* [ ] Built-in timeouts by constraining a task through DURATION
 * [ ] Per-task configuration of the environment
-* [ ] Built-in timeouts by constraining a task through DTEND/DURATION
 
 
 iCalendar extensions
