@@ -530,10 +530,18 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 
 		if (argi->stdout_arg) {
 			t->ofd = open(argi->stdout_arg, fl, 0644);
+			if (UNLIKELY(t->ofd < 0)) {
+				    ECHS_ERR_LOG("\
+cannot open %s for output: %s", argi->stdout_arg, STRERR);
+			}
 		}
 		if (argi->stderr_arg && t->ofd >= 0 &&
 		    strcmp(argi->stdout_arg, argi->stderr_arg)) {
 			t->efd = open(argi->stderr_arg, fl, 0644);
+			if (UNLIKELY(t->efd < 0)) {
+				    ECHS_ERR_LOG("\
+cannot open %s for error output: %s", argi->stderr_arg, STRERR);
+			}
 		} else if (argi->stderr_arg && t->ofd >= 0) {
 			t->efd = t->ofd;
 		}
@@ -552,6 +560,10 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 
 		t->ofd = t->efd = t->mfd = open(argi->stdout_arg, fl, 0644);
 		t->mfn = argi->stdout_arg;
+		if (UNLIKELY(t->ofd < 0)) {
+			ECHS_ERR_LOG("\
+cannot open %s for output: %s", argi->stdout_arg, STRERR);
+		}
 	} else if ((argi->mailout_flag == 0U) ^ (argi->mailerr_flag == 0U) &&
 		   (argi->stdout_arg == NULL || argi->stderr_arg == NULL ||
 		    strcmp(argi->stdout_arg, argi->stderr_arg))) {
