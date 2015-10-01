@@ -509,7 +509,7 @@ cannot open /dev/null for child input: %s", STRERR);
 		/* this one is without pipes entirely, R1, R2, R3 */
 		int fd;
 
-		if ((fd = mkstemp(tmpl)) < 0) {
+		if (UNLIKELY((fd = mkstemp(tmpl)) < 0)) {
 			ECHS_ERR_LOG("\
 cannot open %s for mail output: %s", tmpl, STRERR);
 			rc = -1;
