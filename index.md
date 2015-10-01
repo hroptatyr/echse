@@ -37,6 +37,7 @@ Features
 * Per-task configuration of timezones
 * Per-task configuration of the environment
 * Built-in timeouts by constraining a task through DTEND/DURATION
+* Job metadata logging as VJOURNAL
 
 
 iCalendar extensions
