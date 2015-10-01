@@ -507,9 +507,14 @@ cannot open /dev/null for child input: %s", STRERR);
 		t->ofd = t->efd = NULFD;
 	} else if (argi->stdout_arg == NULL && argi->stderr_arg == NULL) {
 		/* this one is without pipes entirely, R1, R2, R3 */
-		int fd = mkstemp(tmpl);
+		int fd;
 
-		if (argi->mailout_flag && argi->mailerr_flag) {
+		if ((fd = mkstemp(tmpl)) < 0) {
+			ECHS_ERR_LOG("\
+cannot open %s for mail output: %s", tmpl, STRERR);
+			rc = -1;
+			goto clo;
+		} else if (argi->mailout_flag && argi->mailerr_flag) {
 			t->ofd = t->efd = t->mfd = fd;
 		} else if (argi->mailout_flag) {
 			t->ofd = t->mfd = fd;
