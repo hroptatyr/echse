@@ -32,6 +32,7 @@ Features
 * [X] Built-in timeouts by constraining a task through DTEND
 * [ ] Built-in timeouts by constraining a task through DURATION
 * [ ] Per-task configuration of the environment
+* [ ] Job metadata logging as VJOURNAL
 
 
 iCalendar extensions
