@@ -953,8 +953,6 @@ run_task(_task_t t, bool no_run)
 
 	if (t->t->org) {
 		args[15U] = deconst(t->t->org);
-	} else if (natt) {
-		args[15U] = t->t->att->l[0U];
 	} else {
 		args[15U] = "echse";
 	}
@@ -996,7 +994,8 @@ run_task(_task_t t, bool no_run)
 			fputc('\'', stdout);
 		}
 		fputc('\n', stdout);
-	} else if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
+	}
+	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		r = -1;
 	}

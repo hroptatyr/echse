@@ -471,7 +471,7 @@ prep_task(echs_task_t t)
 	int rc = 0;
 
 	/* set the umask here just so we're safe throughout the whole run */
-	(void)umask(0600);
+	(void)umask(0077);
 
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
@@ -507,9 +507,14 @@ cannot open /dev/null for child input: %s", STRERR);
 		t->ofd = t->efd = NULFD;
 	} else if (argi->stdout_arg == NULL && argi->stderr_arg == NULL) {
 		/* this one is without pipes entirely, R1, R2, R3 */
-		int fd = mkstemp(tmpl);
+		int fd;
 
-		if (argi->mailout_flag && argi->mailerr_flag) {
+		if (UNLIKELY((fd = mkstemp(tmpl)) < 0)) {
+			ECHS_ERR_LOG("\
+cannot open %s for mail output: %s", tmpl, STRERR);
+			rc = -1;
+			goto clo;
+		} else if (argi->mailout_flag && argi->mailerr_flag) {
 			t->ofd = t->efd = t->mfd = fd;
 		} else if (argi->mailout_flag) {
 			t->ofd = t->mfd = fd;
@@ -525,10 +530,18 @@ cannot open /dev/null for child input: %s", STRERR);
 
 		if (argi->stdout_arg) {
 			t->ofd = open(argi->stdout_arg, fl, 0644);
+			if (UNLIKELY(t->ofd < 0)) {
+				    ECHS_ERR_LOG("\
+cannot open %s for output: %s", argi->stdout_arg, STRERR);
+			}
 		}
 		if (argi->stderr_arg && t->ofd >= 0 &&
 		    strcmp(argi->stdout_arg, argi->stderr_arg)) {
 			t->efd = open(argi->stderr_arg, fl, 0644);
+			if (UNLIKELY(t->efd < 0)) {
+				    ECHS_ERR_LOG("\
+cannot open %s for error output: %s", argi->stderr_arg, STRERR);
+			}
 		} else if (argi->stderr_arg && t->ofd >= 0) {
 			t->efd = t->ofd;
 		}
@@ -547,6 +560,10 @@ cannot open /dev/null for child input: %s", STRERR);
 
 		t->ofd = t->efd = t->mfd = open(argi->stdout_arg, fl, 0644);
 		t->mfn = argi->stdout_arg;
+		if (UNLIKELY(t->ofd < 0)) {
+			ECHS_ERR_LOG("\
+cannot open %s for output: %s", argi->stdout_arg, STRERR);
+		}
 	} else if ((argi->mailout_flag == 0U) ^ (argi->mailerr_flag == 0U) &&
 		   (argi->stdout_arg == NULL || argi->stderr_arg == NULL ||
 		    strcmp(argi->stdout_arg, argi->stderr_arg))) {
