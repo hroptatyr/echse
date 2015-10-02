@@ -865,7 +865,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 				/* couldn't read it */
 				;
 			} else if (UNLIKELY(i < 0 || i >= 077)) {
-				ve->t.max_simul = 0U;
+				/* can't use that value, can we? */
+				;
 			} else {
 				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
@@ -955,7 +956,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 				/* couldn't read it */
 				;
 			} else if (UNLIKELY(i < 0 || i >= 077)) {
-				ve->t.max_simul = 0U;
+				/* can't use that value, can we? */
+				;
 			} else {
 				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
@@ -1129,6 +1131,9 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			    comp->comp != COMP_VCAL) {
 				p->st = ST_VOTHER;
 			} else {
+				/* rinse our bucket */
+				memset(&p->globve, 0, sizeof(p->globve));
+				/* switch state */
 				p->st = ST_VCAL;
 			}
 			break;
@@ -1436,8 +1441,8 @@ send_task(int whither, echs_task_t t)
 	if (t->merrset) {
 		fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	}
-	if ((unsigned int)t->max_simul < 077U) {
-		fdprintf("X-ECHS-MAX-SIMUL:%u\n", (unsigned int)t->max_simul);
+	if (t->max_simul < 077U) {
+		fdprintf("X-ECHS-MAX-SIMUL:%d\n", t->max_simul);
 	}
 	return;
 }
@@ -2476,7 +2481,7 @@ CALSCALE:GREGORIAN\n";
 		}
 		/* use specifics in T to declare defaults */
 		if (i.t->max_simul) {
-			fdprintf("X-ECHS-MAX-SIMUL:%u\n", i.t->max_simul - 1U);
+			fdprintf("X-ECHS-MAX-SIMUL:%d\n", i.t->max_simul);
 		}
 		if (i.t->owner > 0) {
 			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
