@@ -663,6 +663,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 {
 /* vevent field parser */
 	switch (fld) {
+		char *on;
+
 	default:
 	case FLD_UNK:
 		/* how did we get here */
@@ -858,11 +860,42 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
 				ve->t.max_simul = 0U;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
+	case FLD_UMASK:
+		with (long int i = strtol(vp, &on, 8)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i > 0777)) {
+				/* not a umask we want */
+				;
+			} else {
+				/* off by one assignment */
+				ve->t.umsk = i + 1U;
+			}
+		}
+		break;
+
+	case FLD_OWNER:
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* nope */
+				;
+			} else {
+				/* off-by-one assignment here */
+				ve->t.owner = i + 1;
 			}
 		}
 		break;
@@ -897,6 +930,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 
 	/* inspect the field */
 	switch (fld) {
+		char *on;
+
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
 		 * too bad we had to turn these off (b480f83 still has them) */
@@ -915,19 +950,42 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
 				ve->t.max_simul = 0U;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
 			}
 		}
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, NULL, 0)) {
-			/* off-by-one assignment here */
-			ve->t.owner = i + 1;
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* nope */
+				;
+			} else {
+				/* off-by-one assignment here */
+				ve->t.owner = i + 1;
+			}
+		}
+		break;
+
+	case FLD_UMASK:
+		with (long int i = strtol(vp, &on, 8)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i > 0777)) {
+				/* not a umask we want */
+				;
+			} else {
+				ve->t.umsk = i + 1U;
+			}
 		}
 		break;
 
@@ -1203,9 +1261,18 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			}
 			/* return to VCAL state so we can be looking forward
 			 * to other vevents as well */
-
-			/* bang vital globals: owner, etc. */
-			p->ve.t.owner = p->globve.t.owner;
+			if (!p->ve.t.owner) {
+				/* bang owner */
+				p->ve.t.owner = p->globve.t.owner;
+			}
+			if (!p->ve.t.umsk) {
+				/* bang umask */
+				p->ve.t.umsk = p->globve.t.umsk;
+			}
+			if (!p->ve.t.max_simul) {
+				/* bang umask */
+				p->ve.t.max_simul = p->globve.t.max_simul;
+			}
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -1360,14 +1427,17 @@ send_task(int whither, echs_task_t t)
 	if (t->run_as.wd) {
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
+	if (t->umsk <= 0777) {
+		fdprintf("X-ECHS-MAX-SIMUL:0%o\n", t->umsk);
+	}
 	if (t->moutset) {
 		fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
 	}
 	if (t->merrset) {
 		fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	}
-	if (t->max_simul) {
-		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+	if ((unsigned int)t->max_simul < 077U) {
+		fdprintf("X-ECHS-MAX-SIMUL:%u\n", (unsigned int)t->max_simul);
 	}
 	return;
 }
@@ -2192,6 +2262,12 @@ make_task(struct ical_vevent_s *ve)
 	/* off-by-one correction of owner, this is to indicate
 	 * an unset owner by the value of -1 */
 	ve->t.owner--;
+	/* off-by-one correction of umask, this is to indicate
+	 * an unset umask by the value of -1 */
+	ve->t.umsk--;
+	/* off-by-one correction of max_simul, this is to indicate
+	 * an unset max_simul by the value of -1 */
+	ve->t.max_simul--;
 
 	if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */
@@ -2402,7 +2478,7 @@ CALSCALE:GREGORIAN\n";
 		if (i.t->max_simul) {
 			fdprintf("X-ECHS-MAX-SIMUL:%u\n", i.t->max_simul - 1U);
 		}
-		if (i.t->owner) {
+		if (i.t->owner > 0) {
 			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
 		}
 		break;

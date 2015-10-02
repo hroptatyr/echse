@@ -468,10 +468,11 @@ prep_task(echs_task_t t)
 	static char tmpl[] = "/tmp/echsXXXXXXXX";
 	int nulfd = open(nulfn, O_WRONLY, 0600);
 	int nulfd_used = 0;
+	mode_t oldm;
 	int rc = 0;
 
 	/* set the umask here just so we're safe throughout the whole run */
-	(void)umask(0077);
+	oldm = umask(0077);
 
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
@@ -673,6 +674,8 @@ clo:
 		close(nulfd);
 	}
 #undef NULFD
+	/* restore old umask */
+	(void)umask(oldm);
 	return rc;
 }
 
@@ -1062,6 +1065,18 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (argi->umask_arg) {
+		char *on;
+		long unsigned int mstr = strtoul(argi->umask_arg, &on, 8);
+
+		if (on == NULL || *on) {
+			fputs("Error: cannot set umask\n", stderr);
+			rc = 1;
+			goto out;
+		}
+		(void)umask((mode_t)mstr);
+	}
+
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 	} else if (daemonise() < 0) {
@@ -1100,7 +1115,7 @@ cannot set timeout, job execution will be unbounded");
 			rc = 127;
 			goto clean_up;
 		}
-		/* set out sigs loose */
+		/* set our sigs loose */
 		unblock_sigs();
 		/* and here we go */
 		if (run_task(&t) < 0) {

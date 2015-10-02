@@ -16,4 +16,5 @@ Execute job.
   --gid=GID             Run as user GID.
   --cwd=PATH            Run in PATH.
   --shell=SH            Run using shell SH.
+  --umask=OCT           Use umask bits as in umask(1).
   --no-run              Instead of running issue a warning.

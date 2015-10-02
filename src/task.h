@@ -86,11 +86,18 @@ struct echs_task_s {
 	unsigned int moutset:1U;
 	unsigned int mailerr:1U;
 	unsigned int merrset:1U;
+	/* pad to next byte */
+	unsigned int:4U;
 
 	/* maximum number of simultaneous runs, upped by 1, i.e.
 	 * 0 means -1 means infinite, 1 means 0 means never run
 	 * 2 means 1 means don't run concurrently, etc. */
 	unsigned int max_simul:6U;
+	/* more padding */
+	unsigned int:2U;
+
+	/* just an ordinary umask value as supported by umask(1) */
+	unsigned int umsk:10U;
 };
 
 

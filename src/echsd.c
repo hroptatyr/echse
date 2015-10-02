@@ -895,22 +895,40 @@ static pid_t
 run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U], tmo[16U];
+	static char uid[16U], gid[16U], tmo[16U], umsk[16U];
+	enum {
+		TOOL,
+		SW_DRY_RUN,
+		SW_CMD, STR_CMD,
+		SW_UID, STR_UID,
+		SW_GID, STR_GID,
+		SW_CWD, STR_CWD,
+		SW_SH, STR_SH,
+		SW_UMASK, STR_UMASK,
+		SW_TIMEO, STR_TIMEO,
+		SW_MFROM, STR_MFROM,
+		SW_MOUT,
+		SW_MERR,
+		SW_STDIN, STR_STDIN,
+		SW_STDOUT, STR_STDOUT,
+		SW_STDERR, STR_STDERR,
+	};
 	static char *args_proto[] = {
-		[0] = "echsx",
-		[1] = "-n",
-		[2] = "-c", NULL,
-		[4] = "--uid", uid,
-		[6] = "--gid", gid,
-		[8] = "--cwd", NULL,
-		[10] = "--shell", NULL,
-		[12] = "--timeout", tmo,
-		[14] = "--mailfrom", NULL,
-		[16] = "--mailout",
-		[17] = "--mailerr",
-		[18] = "--stdin", NULL,
-		[20] = "--stdout", NULL,
-		[22] = "--stderr", NULL,
+		[TOOL] = "echsx",
+		[SW_DRY_RUN] = "-n",
+		[SW_CMD] = "-c", NULL,
+		[SW_UID] = "--uid", uid,
+		[SW_GID] = "--gid", gid,
+		[SW_CWD] = "--cwd", NULL,
+		[SW_SH] = "--shell", NULL,
+		[SW_UMASK] = "--umask", umsk,
+		[SW_TIMEO] = "--timeout", tmo,
+		[SW_MFROM] = "--mailfrom", NULL,
+		[SW_MOUT] = "--mailout",
+		[SW_MERR] = "--mailerr",
+		[SW_STDIN] = "--stdin", NULL,
+		[SW_STDOUT] = "--stdout", NULL,
+		[SW_STDERR] = "--stderr", NULL,
 		NULL
 	};
 	/* use a VLA for the real args */
@@ -922,9 +940,9 @@ run_task(_task_t t, bool no_run)
 	/* set up the real args */
 	memcpy(args, args_proto, sizeof(args_proto));
 	if (no_run) {
-		args[1U] = "--no-run";
+		args[SW_DRY_RUN] = "--no-run";
 	}
-	args[3U] = deconst(t->t->cmd);
+	args[STR_CMD] = deconst(t->t->cmd);
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
@@ -941,22 +959,27 @@ run_task(_task_t t, bool no_run)
 		if (!run_as.sh) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[9U] = deconst(run_as.wd);
-		args[11U] = deconst(run_as.sh);
+		args[STR_CWD] = deconst(run_as.wd);
+		args[STR_SH] = deconst(run_as.sh);
 	}
 	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
 		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
 
 		snprintf(tmo, sizeof(tmo), "%d", s);
-		args[13U] = tmo;
+	}
+	with (unsigned int um = 0066U) {
+		if (t->t->umsk < 0777U) {
+			um = t->t->umsk;
+		}
+		snprintf(umsk, sizeof(umsk), "0%o", um);
 	}
 
 	if (t->t->org) {
-		args[15U] = deconst(t->t->org);
+		args[STR_MFROM] = deconst(t->t->org);
 	} else {
-		args[15U] = "echse";
+		args[STR_MFROM] = "echse";
 	}
-	with (size_t i = 16U) {
+	with (size_t i = STR_MFROM + 1U) {
 		if (t->t->mailout) {
 			args[i++] = "--mailout";
 		}
