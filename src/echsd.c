@@ -967,10 +967,11 @@ run_task(_task_t t, bool no_run)
 
 		snprintf(tmo, sizeof(tmo), "%d", s);
 	}
-	{
-		const unsigned int dflt_umsk = 0066U;
-
-		snprintf(umsk, sizeof(umsk), "0%o", dflt_umsk);
+	with (unsigned int um = 0066U) {
+		if (t->t->umsk < 0777U) {
+			um = t->t->umsk;
+		}
+		snprintf(umsk, sizeof(umsk), "0%o", um);
 	}
 
 	if (t->t->org) {
