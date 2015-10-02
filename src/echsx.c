@@ -1065,6 +1065,18 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (argi->umask_arg) {
+		char *on;
+		long unsigned int mstr = strtoul(argi->umask_arg, &on, 8);
+
+		if (on == NULL || *on) {
+			fputs("Error: cannot set umask\n", stderr);
+			rc = 1;
+			goto out;
+		}
+		(void)umask((mode_t)mstr);
+	}
+
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 	} else if (daemonise() < 0) {
