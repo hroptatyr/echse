@@ -97,7 +97,7 @@ struct echs_task_s {
 	unsigned int:2U;
 
 	/* just an ordinary umask value as supported by umask(1) */
-	unsigned int umsk:9U;
+	unsigned int umsk:10U;
 };
 
 
