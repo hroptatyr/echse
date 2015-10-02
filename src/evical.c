@@ -864,9 +864,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			if (UNLIKELY(on < ep)) {
 				/* couldn't read it */
 				;
-			} else if (UNLIKELY(i < 0 || i >= 63)) {
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
 				ve->t.max_simul = 0U;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
 			}
 		}
@@ -953,9 +954,10 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 			if (UNLIKELY(on < ep)) {
 				/* couldn't read it */
 				;
-			} else if (UNLIKELY(i < 0 || i >= 63)) {
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
 				ve->t.max_simul = 0U;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
 			}
 		}
@@ -982,7 +984,7 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 				/* not a umask we want */
 				;
 			} else {
-				ve->t.umsk = i;
+				ve->t.umsk = i + 1U;
 			}
 		}
 		break;
@@ -1267,6 +1269,10 @@ _ical_proc(struct ical_parser_s p[static 1U])
 				/* bang umask */
 				p->ve.t.umsk = p->globve.t.umsk;
 			}
+			if (!p->ve.t.max_simul) {
+				/* bang umask */
+				p->ve.t.max_simul = p->globve.t.max_simul;
+			}
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -1430,8 +1436,8 @@ send_task(int whither, echs_task_t t)
 	if (t->merrset) {
 		fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	}
-	if (t->max_simul) {
-		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+	if ((unsigned int)t->max_simul < 077U) {
+		fdprintf("X-ECHS-MAX-SIMUL:%u\n", (unsigned int)t->max_simul);
 	}
 	return;
 }
@@ -2259,6 +2265,9 @@ make_task(struct ical_vevent_s *ve)
 	/* off-by-one correction of umask, this is to indicate
 	 * an unset umask by the value of -1 */
 	ve->t.umsk--;
+	/* off-by-one correction of max_simul, this is to indicate
+	 * an unset max_simul by the value of -1 */
+	ve->t.max_simul--;
 
 	if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */
@@ -2469,7 +2478,7 @@ CALSCALE:GREGORIAN\n";
 		if (i.t->max_simul) {
 			fdprintf("X-ECHS-MAX-SIMUL:%u\n", i.t->max_simul - 1U);
 		}
-		if (i.t->owner) {
+		if (i.t->owner > 0) {
 			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
 		}
 		break;
