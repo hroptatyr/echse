@@ -1103,7 +1103,7 @@ cannot set timeout, job execution will be unbounded");
 			rc = 127;
 			goto clean_up;
 		}
-		/* set out sigs loose */
+		/* set our sigs loose */
 		unblock_sigs();
 		/* and here we go */
 		if (run_task(&t) < 0) {
