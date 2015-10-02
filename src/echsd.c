@@ -1870,7 +1870,7 @@ feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 			break;
 		}
 	default:
-		r.cmd = ECHS_CMD_UNK;
+		r = ECHS_CMD_UNK;
 		break;
 	}
 	return param->cmd = r;
