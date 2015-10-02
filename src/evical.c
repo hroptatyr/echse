@@ -663,6 +663,8 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 {
 /* vevent field parser */
 	switch (fld) {
+		char *on;
+
 	default:
 	case FLD_UNK:
 		/* how did we get here */
@@ -858,8 +860,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 63)) {
 				ve->t.max_simul = 0U;
 			} else {
 				ve->t.max_simul = i + 1;
@@ -868,9 +873,14 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, NULL, 0)) {
-			/* off-by-one assignment here */
-			ve->t.owner = i + 1;
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* nope */
+				;
+			} else {
+				/* off-by-one assignment here */
+				ve->t.owner = i + 1;
+			}
 		}
 		break;
 
@@ -904,6 +914,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 
 	/* inspect the field */
 	switch (fld) {
+		char *on;
+
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
 		 * too bad we had to turn these off (b480f83 still has them) */
@@ -922,8 +934,11 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 63)) {
 				ve->t.max_simul = 0U;
 			} else {
 				ve->t.max_simul = i + 1;
@@ -932,9 +947,14 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, NULL, 0)) {
-			/* off-by-one assignment here */
-			ve->t.owner = i + 1;
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* nope */
+				;
+			} else {
+				/* off-by-one assignment here */
+				ve->t.owner = i + 1;
+			}
 		}
 		break;
 
