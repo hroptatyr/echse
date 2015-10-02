@@ -90,6 +90,8 @@
 
 #define STRERR	(strerror(errno))
 
+typedef unsigned int uint;
+
 typedef struct _task_s *_task_t;
 
 typedef struct {
@@ -1251,7 +1253,7 @@ chkpnt1(uid_t u)
 	for (size_t i = 0U; i < ztask_ht; i++) {
 		if (!task_ht[i].oid) {
 			continue;
-		} else if (task_ht[i].t->t->owner != u) {
+		} else if ((uint)task_ht[i].t->t->owner != u) {
 			continue;
 		} else if (!inittedp) {
 			echs_instruc_t ins = {
@@ -1691,7 +1693,7 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 
 				if (!task_ht[i].oid) {
 					continue;
-				} else if (task_ht[i].t->t->owner != u) {
+				} else if ((uint)task_ht[i].t->t->owner != u) {
 					continue;
 				}
 				/* yep */
