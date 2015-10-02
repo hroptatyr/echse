@@ -1428,7 +1428,7 @@ send_task(int whither, echs_task_t t)
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
 	}
 	if (t->umsk <= 0777) {
-		fdprintf("X-ECHS-MAX-SIMUL:0%o\n", t->umsk);
+		fdprintf("X-ECHS-UMASK:0%o\n", t->umsk);
 	}
 	if (t->moutset) {
 		fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
