@@ -867,6 +867,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		}
 		break;
 
+	case FLD_OWNER:
+		with (long int i = strtol(vp, NULL, 0)) {
+			/* off-by-one assignment here */
+			ve->t.owner = i + 1;
+		}
+		break;
+
 	case FLD_RSTAT:
 		/* aaah we're reading a response (reply) */
 		if (vp < ep) {
