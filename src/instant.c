@@ -233,13 +233,14 @@ fixup_S:
 
 	/* get ready to adjust the day */
 	if (UNLIKELY(msd)) {
+		dd += msd;
+	}
+	if (dd) {
 		int df_y;
 		int df_m;
 		int y;
 		int m;
 		int d;
-
-		dd += msd;
 
 	fixup_d:
 		y = bas.y + dd / (int)DAYS_PER_YEAR;
