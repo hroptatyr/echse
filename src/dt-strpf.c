@@ -472,6 +472,11 @@ idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff)
 		idiff.dd = -idiff.dd;
 	}
 	buf[i++] = 'P';
+	if (echs_nul_idiff_p(idiff)) {
+		buf[i++] = '0';
+		buf[i++] = 'D';
+		goto out;
+	}
 	if (idiff.dd) {
 		i += ui32tostr(buf + i, bsz - i, idiff.dd, 1);
 		if (i >= bsz) {
