@@ -626,7 +626,7 @@ range_strp(const char *str, char **on, size_t len)
 		r.beg = dt_strp(str, &op, len);
 	}
 	switch (*op++) {
-	case '-':
+	case '/':
 		/* just a normal range then, innit? */
 		r.end = dt_strp(op, on, len - (op - str));
 		break;
@@ -659,7 +659,7 @@ range_strf(char *restrict str, size_t ssz, echs_range_t r)
 		n += dt_strf(str, ssz, r.beg);
 	}
 	if (n < ssz && !echs_max_instant_p(r.end)) {
-		str[n++] = '-';
+		str[n++] = '/';
 		n += dt_strf(str + n, ssz - n, r.end);
 	} else if (n < ssz) {
 		str[n++] = '+';
