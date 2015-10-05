@@ -2090,7 +2090,7 @@ resched(ev_periodic *w, ev_tstamp now)
 	}
 
 	/* store the current event range and calculate tstamp for libev */
-	t->cur = (echs_range_t){e.from, e.till};
+	t->cur = (echs_range_t){e.from, echs_instant_add(e.from, e.dur)};
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
