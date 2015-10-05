@@ -963,7 +963,7 @@ run_task(_task_t t, bool no_run)
 		args[STR_SH] = deconst(run_as.sh);
 	}
 	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
-		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
+		const int s = d.d / 1000U + !!(d.d % 1000U);
 
 		snprintf(tmo, sizeof(tmo), "%d", s);
 	}

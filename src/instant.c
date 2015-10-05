@@ -195,15 +195,15 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 		extra_df += df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 	}
 
-	return (echs_idiff_t){extra_df, intra_df};
+	return (echs_idiff_t){extra_df * MSECS_PER_DAY + intra_df};
 }
 
 echs_instant_t
 echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 {
 	echs_instant_t res = bas;
-	int dd = add.dd;
-	int msd = add.msd;
+	int dd = add.d / (int)MSECS_PER_DAY;
+	int msd = add.d % (int)MSECS_PER_DAY;
 	int car;
 
 	if (UNLIKELY(echs_instant_all_day_p(bas))) {

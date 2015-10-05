@@ -345,6 +345,7 @@ idiff_strp(const char *str, char **on, size_t len)
  */
 	size_t i = 0U;
 	echs_idiff_t res = {0};
+	int dd = 0, msd = 0;
 	bool negp = false;
 	bool seen_D_p = false;
 	bool seen_W_p = false;
@@ -395,7 +396,7 @@ more_date:
 			goto out;
 		}
 		seen_W_p = true;
-		res.dd += val * 7U;
+		dd += val * 7U;
 		goto more_date;
 	case 'D':
 		if (UNLIKELY(seen_D_p)) {
@@ -403,7 +404,7 @@ more_date:
 			goto out;
 		}
 		seen_D_p = true;
-		res.dd += val;
+		dd += val;
 		goto more_date;
 	default:
 		goto out;
@@ -427,30 +428,28 @@ more_time:
 	switch (str[i++] | step) {
 	case 'H':
 		step |= 0x1U;
-		res.msd += val * 60U * 60U * 1000U;
+		msd += val * 60U * 60U * 1000U;
 		goto more_time;
 	case 'M':
 		step |= 0x11U;
-		res.msd += val * 60U * 1000U;
+		msd += val * 60U * 1000U;
 		goto more_time;
 	case 'S':
 		step |= 0x21U;
-		res.msd += val * 1000U;
+		msd += val * 1000U;
 		goto more_time;
 	default:
 		goto out;
 	}
 
 out:
+	/* make up the idiff object */
+	res.d = dd * MSECS_PER_DAY + msd;
 	/* check for negativity, in reality we don't want negative durations
 	 * in our problem domain, ever.  they make no sense */
-	if (negp && res.msd) {
+	if (negp) {
 		/* keep a positive rest and negate the dd field */
-		unsigned int dof = res.msd / 86400000U;
-		res.msd = 86400000U - (res.msd % 86400000U);
-		res.dd -= ++dof;
-	} else if (negp && res.dd) {
-		res.dd = -res.dd;
+		res.d = -res.d;
 	}
 
 	if (on != NULL) {
@@ -462,14 +461,15 @@ out:
 size_t
 idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff)
 {
+	unsigned int tmp;
 	size_t i = 0U;
 
 	if (UNLIKELY(bsz < 4U)) {
 		return 0U;
 	}
-	if (UNLIKELY(idiff.dd < 0)) {
+	if (UNLIKELY(idiff.d < 0)) {
 		buf[i++] = '-';
-		idiff.dd = -idiff.dd;
+		idiff.d = -idiff.d;
 	}
 	buf[i++] = 'P';
 	if (echs_nul_idiff_p(idiff)) {
@@ -477,42 +477,41 @@ idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff)
 		buf[i++] = 'D';
 		goto out;
 	}
-	if (idiff.dd) {
-		i += ui32tostr(buf + i, bsz - i, idiff.dd, 1);
+	if ((tmp = idiff.d / MSECS_PER_DAY)) {
+		idiff.d %= MSECS_PER_DAY;
+		i += ui32tostr(buf + i, bsz - i, tmp);
 		if (i >= bsz) {
 			goto out;
 		}
 		buf[i++] = 'D';
 	}
-	if (idiff.msd && i < bsz) {
-		unsigned int tmp;
-
+	if (idiff.d && i < bsz) {
 		buf[i++] = 'T';
 
-		tmp = idiff.msd / (60U * 60U * 1000U);
-		idiff.msd %= 60U * 60U * 1000U;
+		tmp = idiff.d / (60U * 60U * 1000U);
+		idiff.d %= 60U * 60U * 1000U;
 		if (tmp) {
-			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			i += ui32tostr(buf + i, bsz - i, tmp);
 			if (i >= bsz) {
 				goto out;
 			}
 			buf[i++] = 'H';
 		}
 
-		tmp = idiff.msd / (60U * 1000U);
-		idiff.msd %= 60U * 1000U;
+		tmp = idiff.d / (60U * 1000U);
+		idiff.d %= 60U * 1000U;
 		if (tmp) {
-			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			i += ui32tostr(buf + i, bsz - i, tmp);
 			if (i >= bsz) {
 				goto out;
 			}
 			buf[i++] = 'M';
 		}
 
-		tmp = idiff.msd / 1000U;
-		idiff.msd %= 1000U;
+		tmp = idiff.d / 1000U;
+		idiff.d %= 1000U;
 		if (tmp) {
-			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			i += ui32tostr(buf + i, bsz - i, tmp);
 			if (i >= bsz) {
 				goto out;
 			}

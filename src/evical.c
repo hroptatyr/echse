@@ -923,7 +923,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		ve->e.from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
-			ve->e.dur = (echs_idiff_t){.dd = UINT_MAX};
+			ve->e.dur = (echs_idiff_t){.d = INT64_MAX};
 		} else {
 			/* they're just cancelling this one instance */
 			ve->e.dur = echs_nul_idiff();
@@ -1840,7 +1840,7 @@ instant_soup(echs_instant_t broth, echs_instant_t water, echs_tzob_t z, int eof)
 
 		if (fof != eof) {
 			/* we need to add the discrepancy onto from */
-			echs_idiff_t df = {.msd = (eof - fof) * 1000U};
+			echs_idiff_t df = {.d = (eof - fof) * 1000U};
 			soup = echs_instant_add(soup, df);
 		}
 	} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
@@ -1870,7 +1870,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 	/* let the work begin */
 	z = echs_instant_tzob(e.from);
-	e = echs_event_to_utc(e);
+	e.from = echs_instant_to_utc(e.from);
 	eof = echs_instant_tzof(e.from, z);
 
 	if (nd == 1U) {
@@ -2098,7 +2098,7 @@ refill(struct evrrul_s *restrict strm)
 
 		if (UNLIKELY(eof != strm->pof)) {
 			/* discrepancy, convert defo */
-			echs_idiff_t d = {.msd = (strm->pof - eof) * 1000U};
+			echs_idiff_t d = {.d = (strm->pof - eof) * 1000U};
 			strm->cch[i] = echs_instant_add(strm->cch[i], d);
 		}
 	}
@@ -2271,7 +2271,7 @@ make_task(struct ical_vevent_s *ve)
 		    echs_instant_lt_p(i, ve->till)) {
 			/* turn absolute till into duration */
 			ve->e.dur = echs_instant_diff(ve->till, i);
-		} else if (ve->e.dur.dd < 0) {
+		} else if (ve->e.dur.d < 0) {
 			/* negative durations are bullshit */
 			ve->e.dur = echs_nul_idiff();
 		}
