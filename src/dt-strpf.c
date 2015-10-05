@@ -323,7 +323,207 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 	}
 	*bp = '\0';
 	return bp - buf;
+#undef bz
 }
+
+
+echs_idiff_t
+idiff_strp(const char *str, char **on, size_t len)
+{
+/* Format Definition:  This value type is defined by the following
+ * notation:
+ *
+ * dur-value  = (["+"] / "-") "P" (dur-date / dur-time / dur-week)
+ *
+ * dur-date   = dur-day [dur-time]
+ * dur-time   = "T" (dur-hour / dur-minute / dur-second)
+ * dur-week   = 1*DIGIT "W"
+ * dur-hour   = 1*DIGIT "H" [dur-minute]
+ * dur-minute = 1*DIGIT "M" [dur-second]
+ * dur-second = 1*DIGIT "S"
+ * dur-day    = 1*DIGIT "D"
+ */
+	size_t i = 0U;
+	echs_idiff_t res = {0};
+	bool negp = false;
+	bool seen_D_p = false;
+	bool seen_W_p = false;
+	/* a special stepping to combine 'H'-seen, 'M'-seen, 'S'-seen
+	 * based on their ASCII values, 0x1, 0x11, 9x111 */
+	uint8_t step = 0U;
+	unsigned int val;
+
+	if (UNLIKELY(len < 3U)) {
+		goto out;
+	}
+	switch (str[i++]) {
+	case 'P':
+		break;
+	case '-':
+		negp = true;
+	case '+':
+		switch (str[i++]) {
+		case 'P':
+			break;
+		default:
+			/* nope */
+			goto out;
+		}
+	default:
+		goto out;
+	}
+
+more_date:
+	val = 0U;
+	for (; i < len; i++) {
+		unsigned int tmp;
+
+		if ((tmp = str[i] ^ '0') >= 10U) {
+			break;
+		}
+		/* add next 10-power */
+		val *= 10U;
+		val += tmp;
+	}
+	switch (str[i++]) {
+	case 'T':
+		/* switch to time snarfing */
+		break;
+	case 'W':
+		if (UNLIKELY(seen_W_p)) {
+			res = (echs_idiff_t){0};
+			goto out;
+		}
+		seen_W_p = true;
+		res.dd += val * 7U;
+		goto more_date;
+	case 'D':
+		if (UNLIKELY(seen_D_p)) {
+			res = (echs_idiff_t){0};
+			goto out;
+		}
+		seen_D_p = true;
+		res.dd += val;
+		goto more_date;
+	default:
+		goto out;
+	}
+
+more_time:
+	val = 0U;
+	for (; i < len; i++) {
+		unsigned int tmp;
+
+		if ((tmp = str[i] ^ '0') >= 10U) {
+			break;
+		}
+		/* add next 10-power */
+		val *= 10U;
+		val += tmp;
+	}
+	/* here we just deflect the true character by some bits
+	 * made up from STEP because 'M' | 0x1U == 'M', same for 'S'
+	 * and 'S' | 0x11U == 'S' */
+	switch (str[i++] | step) {
+	case 'H':
+		step |= 0x1U;
+		res.msd += val * 60U * 60U * 1000U;
+		goto more_time;
+	case 'M':
+		step |= 0x11U;
+		res.msd += val * 60U * 1000U;
+		goto more_time;
+	case 'S':
+		step |= 0x21U;
+		res.msd += val * 1000U;
+		goto more_time;
+	default:
+		goto out;
+	}
+
+out:
+	/* check for negativity, in reality we don't want negative durations
+	 * in our problem domain, ever.  they make no sense */
+	if (negp && res.msd) {
+		/* keep a positive rest and negate the dd field */
+		unsigned int dof = res.msd / 86400000U;
+		res.msd = 86400000U - (res.msd % 86400000U);
+		res.dd -= ++dof;
+	} else if (negp && res.dd) {
+		res.dd = -res.dd;
+	}
+
+	if (on != NULL) {
+		*on = deconst(str + i);
+	}
+	return res;
+}
+
+size_t
+idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff)
+{
+	size_t i = 0U;
+
+	if (UNLIKELY(bsz < 4U)) {
+		return 0U;
+	}
+	if (UNLIKELY(idiff.dd < 0)) {
+		buf[i++] = '-';
+		idiff.dd = -idiff.dd;
+	}
+	buf[i++] = 'P';
+	if (idiff.dd) {
+		i += ui32tostr(buf + i, bsz - i, idiff.dd, 1);
+		if (i >= bsz) {
+			goto out;
+		}
+		buf[i++] = 'D';
+	}
+	if (idiff.msd && i < bsz) {
+		unsigned int tmp;
+
+		buf[i++] = 'T';
+
+		tmp = idiff.msd / (60U * 60U * 1000U);
+		idiff.msd %= 60U * 60U * 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'H';
+		}
+
+		tmp = idiff.msd / (60U * 1000U);
+		idiff.msd %= 60U * 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'M';
+		}
+
+		tmp = idiff.msd / 1000U;
+		idiff.msd %= 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp, 1);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'S';
+		}
+	}
+
+out:
+	if (LIKELY(i < bsz)) {
+		buf[i] = '\0';
+	} else {
+		buf[--i] = '\0';
+	}
+	return i;
+}
+
 
 echs_range_t
 range_strp(const char *str, char **on, size_t len)

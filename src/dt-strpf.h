@@ -54,6 +54,14 @@ extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
 extern size_t dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst);
 
 /**
+ * Parse ISO 8601 durations as idiff object. */
+extern echs_idiff_t idiff_strp(const char *str, char **on, size_t len);
+
+/**
+ * Print IDIFF into BUF (of size BSZ) in ISO format and return its length. */
+extern size_t idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff);
+
+/**
  * Parse STR as range with the standard parser. */
 extern echs_range_t range_strp(const char *str, char **on, size_t len);
 
