@@ -106,6 +106,8 @@ struct urlst_s {
 
 struct ical_vevent_s {
 	echs_event_t e;
+	/* ancilliary stuff */
+	echs_idiff_t dur;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -686,6 +688,15 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			}
 		}
 		break;
+	case FLD_DURA:
+		with (echs_idiff_t i = idiff_strp(vp, &on, ep - vp)) {
+			if (on >= ep) {
+				/* keep track of it and do the maths later */
+				ve->dur = i;
+			}
+		}
+		break;
+
 	case FLD_XDATE:
 	case FLD_RDATE:
 		/* otherwise snarf */
@@ -2273,6 +2284,14 @@ make_task(struct ical_vevent_s *ve)
 	/* off-by-one correction of max_simul, this is to indicate
 	 * an unset max_simul by the value of -1 */
 	ve->t.max_simul--;
+
+	/* transform e.from + dur into e.till */
+	if (ve->dur.dd || ve->dur.msd) {
+		if (LIKELY(ve->dur.dd >= 0)) {
+			/* prefer durations over absolutes */
+			ve->e.till = echs_instant_add(ve->e.from, ve->dur);
+		}
+	}
 
 	if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */
