@@ -228,6 +228,13 @@ echs_event_to_utc(echs_event_t e)
 	return e;
 }
 
+static inline echs_instant_t
+echs_tzob_shift(echs_instant_t i, int off_from, int off_to)
+{
+	echs_idiff_t df = {.d = (off_to - off_from) * 1000};
+	return echs_instant_add(i, df);
+}
+
 
 static echs_freq_t
 snarf_freq(const char *spec)
@@ -1840,8 +1847,7 @@ instant_soup(echs_instant_t broth, echs_instant_t water, echs_tzob_t z, int eof)
 
 		if (fof != eof) {
 			/* we need to add the discrepancy onto from */
-			echs_idiff_t df = {.d = (eof - fof) * 1000U};
-			soup = echs_instant_add(soup, df);
+			soup = echs_tzob_shift(soup, fof, eof);
 		}
 	} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
 		soup = echs_instant_utc(water, fz);
@@ -2098,8 +2104,8 @@ refill(struct evrrul_s *restrict strm)
 
 		if (UNLIKELY(eof != strm->pof)) {
 			/* discrepancy, convert defo */
-			echs_idiff_t d = {.d = (strm->pof - eof) * 1000U};
-			strm->cch[i] = echs_instant_add(strm->cch[i], d);
+			strm->cch[i] = echs_tzob_shift(
+				strm->cch[i], eof, strm->pof);
 		}
 	}
 	/* otherwise sort the array, just in case */
