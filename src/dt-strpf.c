@@ -92,7 +92,7 @@ static size_t
 ui32tpstr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 {
 /* all strings should be little */
-#define C(x, d)	(char)((x) / (d) % 10 ^ '0')
+#define C(x)	(char)((x) % 10U ^ '0'); x /= 10U
 	size_t res;
 
 	if (UNLIKELY(d > 1000000000)) {
@@ -101,24 +101,24 @@ ui32tpstr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 	switch ((res = (size_t)pad) < bsz ? res : bsz) {
 	case 9:
 		/* for nanoseconds */
-		buf[pad - 9] = C(d, 100000000);
-		buf[pad - 8] = C(d, 10000000);
-		buf[pad - 7] = C(d, 1000000);
+		buf[--pad] = C(d);
+		buf[--pad] = C(d);
+		buf[--pad] = C(d);
 	case 6:
 		/* for microseconds */
-		buf[pad - 6] = C(d, 100000);
-		buf[pad - 5] = C(d, 10000);
+		buf[--pad] = C(d);
+		buf[--pad] = C(d);
 	case 4:
 		/* for western year numbers */
-		buf[pad - 4] = C(d, 1000);
+		buf[--pad] = C(d);
 	case 3:
 		/* for milliseconds or doy et al. numbers */
-		buf[pad - 3] = C(d, 100);
+		buf[--pad] = C(d);
 	case 2:
 		/* hours, mins, secs, doms, moys, etc. */
-		buf[pad - 2] = C(d, 10);
+		buf[--pad] = C(d);
 	case 1:
-		buf[pad - 1] = C(d, 1);
+		buf[--pad] = C(d);
 		break;
 	default:
 	case 0:
