@@ -45,11 +45,54 @@
 #include "dt-strpf.h"
 #include "nifty.h"
 
+#define HOURS_PER_DAY	(24U)
+#define MINS_PER_HOUR	(60U)
+#define SECS_PER_MIN	(60U)
+#define MSECS_PER_SEC	(1000U)
+#define SECS_PER_DAY	(HOURS_PER_DAY * MINS_PER_HOUR * SECS_PER_MIN)
+#define MSECS_PER_DAY	(SECS_PER_DAY * MSECS_PER_SEC)
+#define DAYS_PER_WEEK	(7U)
+#define DAYS_PER_YEAR	(365U)
+
+static __attribute__((const, pure)) unsigned int
+ilog2_ceil(unsigned int n)
+{
+/* return the next 2-power > N, at least 16 though */
+	static const uint8_t de_bruijns[] = {
+		1U, 10U, 2U, 11U, 14U, 22U, 3U, 30U,
+		12U, 15U, 17U, 19U, 23U, 26U, 4U, 31U,
+		9U, 13U, 21U, 29U, 16U, 18U, 25U, 8U,
+		20U, 28U, 24U, 7U, 27U, 6U, 5U, 32U,
+	};
+	n |= 0b1111U;
+	n |= n >> 1U;
+	n |= n >> 2U;
+	n |= n >> 4U;
+	n |= n >> 8U;
+	n |= n >> 16U;
+	return de_bruijns[(uint32_t)(n * 0x07c4acddu) >> 27U];
+}
+
+static __attribute__((const, pure)) unsigned int
+ilog10_ceil(unsigned int n)
+{
+	static unsigned int const _10_pows[] = {
+		1U, 10U, 100U, 1000U, 10000U, 100000U,
+		1000000U, 10000000U, 100000000U, 1000000000U,
+	};
+	unsigned int l2 = ilog2_ceil(n);
+
+	/* get estimate for 10-power */
+	l2 = l2 * 1233U >> 12U;
+	return l2 + (n >= _10_pows[l2]);
+}
+
+
 static size_t
-ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
+ui32tpstr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 {
 /* all strings should be little */
-#define C(x, d)	(char)((x) / (d) % 10 + '0')
+#define C(x, d)	(char)((x) / (d) % 10 ^ '0')
 	size_t res;
 
 	if (UNLIKELY(d > 1000000000)) {
@@ -83,6 +126,18 @@ ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 		break;
 	}
 	return res;
+}
+
+static size_t
+ui32tostr(char *restrict buf, size_t bsz, uint32_t d)
+{
+	unsigned int l = ilog10_ceil(d);
+
+	if (UNLIKELY(l >= bsz)) {
+		return 0U;
+	}
+	for (size_t i = l; i > 0; buf[--i] = (char)((d % 10U) ^ '0'), d /= 10U);
+	return l;
 }
 
 
@@ -282,22 +337,22 @@ dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst)
 	char *restrict bp = buf;
 #define bz	(bsz - (bp - buf))
 
-	bp += ui32tostr(bp, bz, inst.y, 4);
+	bp += ui32tpstr(bp, bz, inst.y, 4);
 	*bp++ = '-';
-	bp += ui32tostr(bp, bz, inst.m, 2);
+	bp += ui32tpstr(bp, bz, inst.m, 2);
 	*bp++ = '-';
-	bp += ui32tostr(bp, bz, inst.d, 2);
+	bp += ui32tpstr(bp, bz, inst.d, 2);
 
 	if (LIKELY(!echs_instant_all_day_p(inst))) {
 		*bp++ = 'T';
-		bp += ui32tostr(bp, bz, inst.H, 2);
+		bp += ui32tpstr(bp, bz, inst.H, 2);
 		*bp++ = ':';
-		bp += ui32tostr(bp, bz, inst.M, 2);
+		bp += ui32tpstr(bp, bz, inst.M, 2);
 		*bp++ = ':';
-		bp += ui32tostr(bp, bz, inst.S, 2);
+		bp += ui32tpstr(bp, bz, inst.S, 2);
 		if (LIKELY(!echs_instant_all_sec_p(inst))) {
 			*bp++ = '.';
-			bp += ui32tostr(bp, bz, inst.ms, 3);
+			bp += ui32tpstr(bp, bz, inst.ms, 3);
 		}
 	}
 	*bp = '\0';
@@ -310,15 +365,15 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 	char *restrict bp = buf;
 #define bz	(bsz - (bp - buf))
 
-	bp += ui32tostr(bp, bz, inst.y, 4);
-	bp += ui32tostr(bp, bz, inst.m, 2);
-	bp += ui32tostr(bp, bz, inst.d, 2);
+	bp += ui32tpstr(bp, bz, inst.y, 4);
+	bp += ui32tpstr(bp, bz, inst.m, 2);
+	bp += ui32tpstr(bp, bz, inst.d, 2);
 
 	if (LIKELY(!echs_instant_all_day_p(inst))) {
 		*bp++ = 'T';
-		bp += ui32tostr(bp, bz, inst.H, 2);
-		bp += ui32tostr(bp, bz, inst.M, 2);
-		bp += ui32tostr(bp, bz, inst.S, 2);
+		bp += ui32tpstr(bp, bz, inst.H, 2);
+		bp += ui32tpstr(bp, bz, inst.M, 2);
+		bp += ui32tpstr(bp, bz, inst.S, 2);
 		*bp++ = 'Z';
 	}
 	*bp = '\0';
