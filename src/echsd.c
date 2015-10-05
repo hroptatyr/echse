@@ -90,8 +90,6 @@
 
 #define STRERR	(strerror(errno))
 
-typedef unsigned int uint;
-
 typedef struct _task_s *_task_t;
 
 typedef struct {
