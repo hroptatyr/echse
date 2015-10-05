@@ -343,7 +343,7 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 				i = e.from;
 				goto cpy_inst;
 			case 'e':
-				i = e.till;
+				i = echs_instant_add(e.from, e.dur);
 				goto cpy_inst;
 			case 's':
 				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {

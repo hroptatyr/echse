@@ -79,8 +79,7 @@ union echs_instant_u {
 } __attribute__((transparent_union));
 
 struct echs_idiff_s {
-	signed int dd;
-	unsigned int msd;
+	int64_t d;
 };
 
 
@@ -186,38 +185,38 @@ echs_max_instant_p(echs_instant_t x)
 static inline __attribute__((const, pure)) echs_idiff_t
 echs_nul_idiff(void)
 {
-	static const echs_idiff_t nul = {0U, 0U};
+	static const echs_idiff_t nul = {0U};
 	return nul;
 }
 
 static inline __attribute__((const, pure)) bool
 echs_nul_idiff_p(echs_idiff_t x)
 {
-	return x.dd == 0U && x.msd == 0U;
+	return x.d == 0;
 }
 
 static inline __attribute__((const, pure)) bool
 echs_idiff_lt_p(echs_idiff_t i1, echs_idiff_t i2)
 {
-	return i1.dd < i2.dd || (i1.dd == i2.dd && i1.msd < i2.msd);
+	return i1.d < i2.d;
 }
 
 static inline __attribute__((const, pure)) bool
 echs_idiff_le_p(echs_idiff_t i1, echs_idiff_t i2)
 {
-	return i1.dd <= i2.dd || (i1.dd == i2.dd && i1.msd <= i2.msd);
+	return i1.d <= i2.d;
 }
 
 static inline __attribute__((const, pure)) bool
 echs_idiff_eq_p(echs_idiff_t i1, echs_idiff_t i2)
 {
-	return i1.dd == i2.dd && i1.msd == i2.msd;
+	return i1.d == i2.d;
 }
 
 static inline __attribute__((const, pure)) echs_idiff_t
 echs_idiff_neg(echs_idiff_t i)
 {
-	return (echs_idiff_t){-i.dd + (i.msd != 0), i.msd};
+	return (echs_idiff_t){-i.d};
 }
 
 #endif	/* INCLUDED_instant_h_ */

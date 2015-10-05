@@ -106,6 +106,8 @@ struct urlst_s {
 
 struct ical_vevent_s {
 	echs_event_t e;
+	/* ancilliary stuff */
+	echs_instant_t till;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -208,18 +210,29 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	return;
 }
 
-static inline echs_event_t
-echs_event_utc(echs_event_t e)
+static inline echs_instant_t
+echs_instant_to_utc(echs_instant_t i)
 {
 	echs_tzob_t z;
 
-	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
-		e.from = echs_instant_utc(e.from, z);
+	if (UNLIKELY(z = echs_instant_tzob(i))) {
+		i = echs_instant_utc(i, z);
 	}
-	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
-		e.till = echs_instant_utc(e.till, z);
-	}
+	return i;
+}
+
+static inline echs_event_t
+echs_event_to_utc(echs_event_t e)
+{
+	e.from = echs_instant_to_utc(e.from);
 	return e;
+}
+
+static inline echs_instant_t
+echs_tzob_shift(echs_instant_t i, int off_from, int off_to)
+{
+	echs_idiff_t df = {.d = (off_to - off_from) * 1000};
+	return echs_instant_add(i, df);
 }
 
 
@@ -675,17 +688,22 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			switch (fld) {
 			case FLD_DTSTART:
 				ve->e.from = i;
-				if (!echs_nul_instant_p(ve->e.till)) {
-					break;
-				}
-				/* otherwise also set the TILL slot to I,
-				 * as kind of a sane default value */
+				break;
 			case FLD_DTEND:
-				ve->e.till = i;
+				ve->till = i;
 				break;
 			}
 		}
 		break;
+	case FLD_DURA:
+		with (echs_idiff_t i = idiff_strp(vp, &on, ep - vp)) {
+			if (on >= ep) {
+				/* keep track of it and do the maths later */
+				ve->e.dur = i;
+			}
+		}
+		break;
+
 	case FLD_XDATE:
 	case FLD_RDATE:
 		/* otherwise snarf */
@@ -912,10 +930,10 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		ve->e.from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
-			ve->e.till = echs_max_instant();
+			ve->e.dur = (echs_idiff_t){.d = INT64_MAX};
 		} else {
 			/* they're just cancelling this one instance */
-			ve->e.till = echs_nul_instant();
+			ve->e.dur = echs_nul_idiff();
 		}
 		break;
 	}
@@ -1549,16 +1567,9 @@ send_ev(int whither, echs_event_t e)
 	}
 	fdwrite(stmp, ztmp + 1U);
 
-	if (LIKELY(!echs_nul_instant_p(e.till))) {
-		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
-		stmp[ztmp++ + 1U] = '\n';
-	} else {
-		e.till = e.from;
-	}
-	fdwrite("DTEND", strlenof("DTEND"));
-	if (echs_instant_all_day_p(e.till)) {
-		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
-	}
+	ztmp = idiff_strf(stmp + 1U, sizeof(stmp) - 1U, e.dur);
+	stmp[++ztmp] = '\n';
+	fdwrite("DURATION", strlenof("DURATION"));
 	fdwrite(stmp, ztmp + 1U);
 	if (e.sts) {
 		fdwrite("X-GA-STATE:", strlenof("X-GA-STATE:"));
@@ -1836,8 +1847,7 @@ instant_soup(echs_instant_t broth, echs_instant_t water, echs_tzob_t z, int eof)
 
 		if (fof != eof) {
 			/* we need to add the discrepancy onto from */
-			echs_idiff_t df = {.msd = (eof - fof) * 1000U};
-			soup = echs_instant_add(soup, df);
+			soup = echs_tzob_shift(soup, fof, eof);
 		}
 	} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
 		soup = echs_instant_utc(water, fz);
@@ -1853,7 +1863,6 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
-	echs_idiff_t dur;
 	echs_tzob_t z;
 	int eof;
 
@@ -1867,14 +1876,12 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 	/* let the work begin */
 	z = echs_instant_tzob(e.from);
-	e = echs_event_utc(e);
+	e.from = echs_instant_to_utc(e.from);
 	eof = echs_instant_tzof(e.from, z);
-	dur = echs_instant_diff(e.till, e.from);
 
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
 		e.from = instant_soup(e.from, d[0U], z, eof);
-		e.till = echs_instant_add(e.from, dur);
 		res->ev[0U] = e;
 	} else {
 		/* blimey, use the bottom bit of res->ev to sort the
@@ -1895,7 +1902,6 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 		/* now spread out the instants as echs events */
 		for (size_t i = 0U; i < nd; i++) {
 			e.from = rd[i];
-			e.till = echs_instant_add(e.from, dur);
 			res->ev[i] = e;
 		}
 	}
@@ -1909,7 +1915,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 static echs_evstrm_t
 __make_evvevt(echs_event_t e)
 {
-	e = echs_event_utc(e);
+	e = echs_event_to_utc(e);
 	return make_evical_vevent(&e, 1U);
 }
 
@@ -1922,8 +1928,6 @@ struct evrrul_s {
 
 	/* proto-event */
 	echs_event_t e;
-	/* proto-duration */
-	echs_idiff_t dur;
 	/* proto-zone */
 	echs_tzob_t zon;
 	/* proto-offset */
@@ -1975,13 +1979,8 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 
 	this->class = &evrrul_cls;
 	this->zon = zon = echs_instant_tzob(e.from);
-	this->e = e = echs_event_utc(e);
+	this->e = e = echs_event_to_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
-	if (echs_instant_le_p(e.from, e.till)) {
-		this->dur = echs_instant_diff(e.till, e.from);
-	} else {
-		this->dur = (echs_idiff_t){0};
-	}
 
 	/* bang the first one */
 	this->rrul = rr[0U];
@@ -2105,8 +2104,8 @@ refill(struct evrrul_s *restrict strm)
 
 		if (UNLIKELY(eof != strm->pof)) {
 			/* discrepancy, convert defo */
-			echs_idiff_t d = {.msd = (strm->pof - eof) * 1000U};
-			strm->cch[i] = echs_instant_add(strm->cch[i], d);
+			strm->cch[i] = echs_tzob_shift(
+				strm->cch[i], eof, strm->pof);
 		}
 	}
 	/* otherwise sort the array, just in case */
@@ -2132,7 +2131,6 @@ next_evrrul(echs_evstrm_t s, bool popp)
 	/* construct the result */
 	res = this->e;
 	res.from = this->cch[this->rdi];
-	res.till = echs_instant_add(res.from, this->dur);
 	if (popp) {
 		this->rdi++;
 	}
@@ -2170,8 +2168,6 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 				e.from = cand;
 			}
 		}
-		/* calc the corresponding TILL instant */
-		e.till = echs_instant_add(e.from, this->dur);
 		send_ev(whither, e);
 	}
 	send_rrul(whither, &this->rrul, this->ncch - this->rdi);
@@ -2273,6 +2269,19 @@ make_task(struct ical_vevent_s *ve)
 	/* off-by-one correction of max_simul, this is to indicate
 	 * an unset max_simul by the value of -1 */
 	ve->t.max_simul--;
+
+	with (echs_instant_t i = echs_instant_to_utc(ve->e.from)) {
+		ve->till = echs_instant_to_utc(ve->till);
+		/* transform e.from + e.till into e.dur */
+		if (echs_nul_idiff_p(ve->e.dur) &&
+		    echs_instant_lt_p(i, ve->till)) {
+			/* turn absolute till into duration */
+			ve->e.dur = echs_instant_diff(ve->till, i);
+		} else if (ve->e.dur.d < 0) {
+			/* negative durations are bullshit */
+			ve->e.dur = echs_nul_idiff();
+		}
+	}
 
 	if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */

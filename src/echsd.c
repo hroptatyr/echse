@@ -90,8 +90,6 @@
 
 #define STRERR	(strerror(errno))
 
-typedef unsigned int uint;
-
 typedef struct _task_s *_task_t;
 
 typedef struct {
@@ -108,7 +106,8 @@ struct _task_s {
 	_task_t next;
 
 	/* currently scheduled run-time */
-	echs_range_t cur;
+	echs_instant_t cur;
+	echs_idiff_t dur;
 
 	/* this is the task as understood by libechse */
 	echs_task_t t;
@@ -964,8 +963,8 @@ run_task(_task_t t, bool no_run)
 		args[STR_CWD] = deconst(run_as.wd);
 		args[STR_SH] = deconst(run_as.sh);
 	}
-	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
-		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
+	with (echs_idiff_t d = t->dur) {
+		const int s = d.d / 1000U + !!(d.d % 1000U);
 
 		snprintf(tmo, sizeof(tmo), "%d", s);
 	}
@@ -1525,7 +1524,9 @@ echs_http_send_sched(_task_t t, const char *tuid, size_t tusz)
 	char rng[64U];
 	size_t rnz;
 
-	rnz = range_strf(rng, sizeof(rng), t->cur);
+	with (echs_range_t r = {t->cur, echs_instant_add(t->cur, t->dur)}) {
+		rnz = range_strf(rng, sizeof(rng), r);
+	}
 	fdwrite(tuid, tusz);
 	fdputc('\t');
 	fdwrite(rng, rnz);
@@ -1544,8 +1545,6 @@ HTTP/1.1 404 Not Found\r\n\r\n";
 HTTP/1.1 500 Internal Server Error\r\n\r\n";
 	static const char rpl200[] = "\
 HTTP/1.1 200 Ok\r\n\r\n";
-	static const char rpl204[] = "\
-HTTP/1.1 204 Found\r\n\r\n";
 	const char *rpl;
 	size_t rpz;
 	ssize_t nwr = 0;
@@ -2081,18 +2080,19 @@ resched(ev_periodic *w, ev_tstamp now)
 		ECHS_NOTI_LOG("event in the past, not scheduling");
 		w->reschedule_cb = NULL;
 		w->cb = unsched;
-		t->cur = (echs_range_t){echs_nul_instant()};
+		t->cur = echs_nul_instant();
 		return now;
 	} else if (UNLIKELY(echs_event_0_p(e))) {
 		/* we need to unschedule AFTER the next run */
 		ECHS_NOTI_LOG("event completed, will not reschedule");
 		w->reschedule_cb = NULL;
-		t->cur = (echs_range_t){echs_nul_instant()};
+		t->cur = echs_nul_instant();
 		return now + 1.e+30;
 	}
 
 	/* store the current event range and calculate tstamp for libev */
-	t->cur = (echs_range_t){e.from, e.till};
+	t->cur = e.from;
+	t->dur = e.dur;
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
