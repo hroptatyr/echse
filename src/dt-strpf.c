@@ -132,12 +132,39 @@ static size_t
 ui32tostr(char *restrict buf, size_t bsz, uint32_t d)
 {
 	unsigned int l = ilog10_ceil(d);
+	unsigned int i;
 
 	if (UNLIKELY(l >= bsz)) {
 		return 0U;
 	}
-	for (size_t i = l; i > 0; buf[--i] = (char)((d % 10U) ^ '0'), d /= 10U);
+	switch ((i = l)) {
+	case 10U:
+		buf[--i] = C(d);
+	case 9U:
+		buf[--i] = C(d);
+	case 8U:
+		buf[--i] = C(d);
+	case 7U:
+		buf[--i] = C(d);
+	case 6U:
+		buf[--i] = C(d);
+	case 5U:
+		buf[--i] = C(d);
+	case 4U:
+		buf[--i] = C(d);
+	case 3U:
+		buf[--i] = C(d);
+	case 2U:
+		buf[--i] = C(d);
+	case 1U:
+		buf[--i] = C(d);
+		break;
+	case 0U:
+	default:
+		break;
+	}
 	return l;
+#undef C
 }
 
 
