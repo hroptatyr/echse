@@ -210,14 +210,21 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	return;
 }
 
-static inline echs_event_t
-echs_event_utc(echs_event_t e)
+static inline echs_instant_t
+echs_instant_to_utc(echs_instant_t i)
 {
 	echs_tzob_t z;
 
-	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
-		e.from = echs_instant_utc(e.from, z);
+	if (UNLIKELY(z = echs_instant_tzob(i))) {
+		i = echs_instant_utc(i, z);
 	}
+	return i;
+}
+
+static inline echs_event_t
+echs_event_to_utc(echs_event_t e)
+{
+	e.from = echs_instant_to_utc(e.from);
 	return e;
 }
 
@@ -1863,7 +1870,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 	/* let the work begin */
 	z = echs_instant_tzob(e.from);
-	e = echs_event_utc(e);
+	e = echs_event_to_utc(e);
 	eof = echs_instant_tzof(e.from, z);
 
 	if (nd == 1U) {
@@ -1902,7 +1909,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 static echs_evstrm_t
 __make_evvevt(echs_event_t e)
 {
-	e = echs_event_utc(e);
+	e = echs_event_to_utc(e);
 	return make_evical_vevent(&e, 1U);
 }
 
@@ -1966,7 +1973,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 
 	this->class = &evrrul_cls;
 	this->zon = zon = echs_instant_tzob(e.from);
-	this->e = e = echs_event_utc(e);
+	this->e = e = echs_event_to_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
 
 	/* bang the first one */
@@ -2257,14 +2264,17 @@ make_task(struct ical_vevent_s *ve)
 	 * an unset max_simul by the value of -1 */
 	ve->t.max_simul--;
 
-	/* transform e.from + dur into e.till */
-	if (echs_nul_idiff_p(ve->e.dur) &&
-	    echs_instant_lt_p(ve->e.from, ve->till)) {
-		/* turn absolute till into duration */
-		ve->e.dur = echs_instant_diff(ve->till, ve->e.from);
-	} else if (ve->e.dur.dd < 0) {
-		/* negative durations are bullshit */
-		ve->e.dur = echs_nul_idiff();
+	with (echs_instant_t i = echs_instant_to_utc(ve->e.from)) {
+		ve->till = echs_instant_to_utc(ve->till);
+		/* transform e.from + e.till into e.dur */
+		if (echs_nul_idiff_p(ve->e.dur) &&
+		    echs_instant_lt_p(i, ve->till)) {
+			/* turn absolute till into duration */
+			ve->e.dur = echs_instant_diff(ve->till, i);
+		} else if (ve->e.dur.dd < 0) {
+			/* negative durations are bullshit */
+			ve->e.dur = echs_nul_idiff();
+		}
 	}
 
 	if (!ve->rrul.nr && !ve->rdat.ndt) {
