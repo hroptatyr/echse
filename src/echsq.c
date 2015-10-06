@@ -457,6 +457,8 @@ CALSCALE:GREGORIAN\n";
 END:VCALENDAR\n";
 	const char *e;
 	int s = -1;
+	size_t i = 0U;
+	int fd;
 
 	/* let's try the local echsd and then the system-wide one */
 	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
@@ -470,20 +472,25 @@ END:VCALENDAR\n";
 	errno = 0, serror("connected to %s ...", e);
 
 	write(s, hdr, strlenof(hdr));
-	for (size_t i = 0U; i < argi->nargs; i++) {
-		int fd;
+	if (!argi->nargs) {
+		fd = STDIN_FILENO;
+		goto proc;
+	}
+	for (; i < argi->nargs; i++) {
+		const char *const fn = argi->args[i];
 
-		if (UNLIKELY((fd = open(argi->args[i], O_RDONLY)) < 0)) {
+		if (UNLIKELY(fn[0U] == '-' && !fn[1U])) {
+			/* that's stdin in disguise */
+			fd = STDIN_FILENO;
+		} else if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
 			serror("\
-Error: cannot open file `%s'", argi->args[i]);
+Error: cannot open file `%s'", fn);
 			continue;
 		}
 
+	proc:
 		add_fd(s, fd);
 		close(fd);
-	}
-	if (!argi->nargs) {
-		add_fd(s, STDIN_FILENO);
 	}
 	write(s, ftr, strlenof(ftr));
 	while (nout && !(poll1(s, 5000) < 0));
