@@ -149,6 +149,8 @@ struct ucred {
 static const char *echsx;
 static int qdirfd = -1;
 static struct ucred meself;
+static char hname[HOST_NAME_MAX];
+static size_t hnamez;
 
 
 static inline size_t
@@ -431,10 +433,8 @@ get_queudir(void)
 		}
 		d[di++] = '/';
 		/* now the machine name */
-		if (gethostname(d + di, sizeof(d) - di) < 0) {
-			/* is there anything that works on this machine? */
-			break;
-		}
+		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
@@ -897,6 +897,7 @@ run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
 	static char uid[16U], gid[16U], tmo[16U], umsk[16U];
+	static char mfrom[64U] = "echse";
 	enum {
 		TOOL,
 		SW_DRY_RUN,
@@ -924,7 +925,7 @@ run_task(_task_t t, bool no_run)
 		[SW_SH] = "--shell", NULL,
 		[SW_UMASK] = "--umask", umsk,
 		[SW_TIMEO] = "--timeout", tmo,
-		[SW_MFROM] = "--mailfrom", NULL,
+		[SW_MFROM] = "--mailfrom", mfrom,
 		[SW_MOUT] = "--mailout",
 		[SW_MERR] = "--mailerr",
 		[SW_STDIN] = "--stdin", NULL,
@@ -977,8 +978,11 @@ run_task(_task_t t, bool no_run)
 
 	if (t->t->org) {
 		args[STR_MFROM] = deconst(t->t->org);
-	} else {
-		args[STR_MFROM] = "echse";
+	} else if (!mfrom[strlenof("echse")] && hnamez) {
+		/* singleton, extend mailfrom by +HOSTNAME */
+		size_t hp = strlenof("echse");
+		mfrom[hp++] = '+';
+		xstrlncpy(mfrom + hp, sizeof(mfrom) - hp, hname, hnamez);
 	}
 	with (size_t i = STR_MFROM + 1U) {
 		if (t->t->mailout) {
@@ -2514,6 +2518,15 @@ main(int argc, char *argv[])
 	meself.pid = getpid();
 	meself.uid = geteuid();
 	meself.gid = getegid();
+
+	/* populate with hostname we're running on */
+	if (UNLIKELY(gethostname(hname, sizeof(hname)) < 0)) {
+		perror("Error: cannot get hostname");
+		rc = 1;
+		goto out;
+	} else {
+		hnamez = strlen(hname);
+	}
 
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
