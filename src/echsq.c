@@ -256,7 +256,7 @@ poll1(int fd, int timeo)
 }
 
 static void
-proc1(int tgt_fd, int src_fd)
+add_fd(int tgt_fd, int src_fd)
 {
 	char buf[32768U];
 	ical_parser_t pp = NULL;
@@ -479,11 +479,11 @@ Error: cannot open file `%s'", argi->args[i]);
 			continue;
 		}
 
-		proc1(s, fd);
+		add_fd(s, fd);
 		close(fd);
 	}
 	if (!argi->nargs) {
-		proc1(s, STDIN_FILENO);
+		add_fd(s, STDIN_FILENO);
 	}
 	write(s, ftr, strlenof(ftr));
 	while (nout && !(poll1(s, 5000) < 0));
