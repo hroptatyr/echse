@@ -897,6 +897,7 @@ run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
 	static char uid[16U], gid[16U], tmo[16U], umsk[16U];
+	static char mfrom[64U] = "echse";
 	enum {
 		TOOL,
 		SW_DRY_RUN,
@@ -924,7 +925,7 @@ run_task(_task_t t, bool no_run)
 		[SW_SH] = "--shell", NULL,
 		[SW_UMASK] = "--umask", umsk,
 		[SW_TIMEO] = "--timeout", tmo,
-		[SW_MFROM] = "--mailfrom", NULL,
+		[SW_MFROM] = "--mailfrom", mfrom,
 		[SW_MOUT] = "--mailout",
 		[SW_MERR] = "--mailerr",
 		[SW_STDIN] = "--stdin", NULL,
@@ -977,8 +978,11 @@ run_task(_task_t t, bool no_run)
 
 	if (t->t->org) {
 		args[STR_MFROM] = deconst(t->t->org);
-	} else {
-		args[STR_MFROM] = "echse";
+	} else if (!mfrom[strlenof("echse")] && hnamez) {
+		/* singleton, extend mailfrom by +HOSTNAME */
+		size_t hp = strlenof("echse");
+		mfrom[hp++] = '+';
+		xstrlncpy(mfrom + hp, sizeof(mfrom) - hp, hname, hnamez);
 	}
 	with (size_t i = STR_MFROM + 1U) {
 		if (t->t->mailout) {
