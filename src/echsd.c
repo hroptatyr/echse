@@ -149,6 +149,8 @@ struct ucred {
 static const char *echsx;
 static int qdirfd = -1;
 static struct ucred meself;
+static char hname[HOST_NAME_MAX];
+static size_t hnamez;
 
 
 static inline size_t
@@ -431,10 +433,8 @@ get_queudir(void)
 		}
 		d[di++] = '/';
 		/* now the machine name */
-		if (gethostname(d + di, sizeof(d) - di) < 0) {
-			/* is there anything that works on this machine? */
-			break;
-		}
+		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
@@ -2514,6 +2514,15 @@ main(int argc, char *argv[])
 	meself.pid = getpid();
 	meself.uid = geteuid();
 	meself.gid = getegid();
+
+	/* populate with hostname we're running on */
+	if (UNLIKELY(gethostname(hname, sizeof(hname)) < 0)) {
+		perror("Error: cannot get hostname");
+		rc = 1;
+		goto out;
+	} else {
+		hnamez = strlen(hname);
+	}
 
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
