@@ -57,6 +57,9 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <assert.h>
+#if defined HAVE_SENDFILE
+# include <sys/sendfile.h>
+#endif	/* HAVE_SENDFILE */
 #if defined HAVE_PATHS_H
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
@@ -412,7 +415,7 @@ out:
 }
 
 static int
-add_tmpl(void)
+add_tmpl(const char *fn)
 {
 	static const char builtin_proto[] = "\
 BEGIN:VCALENDAR\n\
@@ -437,10 +440,27 @@ END:VCALENDAR\n";
 		"sh", "-s", NULL
 	};
 	posix_spawn_file_actions_t fa;
+	size_t fz;
 	int pd[2U] = {-1, -1};
 	int rc = 0;
 	pid_t p;
+	int ifd;
 	int fd;
+
+	/* check input file */
+	if (UNLIKELY(fn == NULL)) {
+		fz = 0U;
+	} else {
+		struct stat st;
+
+		if (stat(fn, &st) < 0) {
+			return -1;
+		} else if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
+			return -1;
+		}
+		/* otherwise keep track of size */
+		fz = st.st_size;
+	}
 
 	/* get ourselves a temporary file */
 	if ((fd = mkstemp(tmpf)) < 0) {
@@ -475,7 +495,32 @@ END:VCALENDAR\n";
 
 	/* feed the shell */
 	write(pd[1U], "cat <<EOF\n", sizeof("cat <<EOF\n"));
-	write(pd[1U], builtin_proto, sizeof(builtin_proto));
+	if (!(ifd < 0)) {
+#if defined HAVE_SENDFILE
+		for (ssize_t nsf;
+		     fz && (nsf = sendfile(pd[1U], ifd, NULL, fz)) > 0;
+		     fz -= nsf);
+#else  /* !HAVE_SENDFILE */
+		char buf[16U * 4096U];
+
+		for (ssize_t nrd; (nrd = read(ifd, buf, sizeof(buf))) > 0;) {
+			for (ssize_t nwr;
+			     nrd > 0 && (nwr = write(pd[1U], buf, nrd)) > 0;
+			     nrd -= nwr);
+		}
+		(void)fz;
+#endif	/* HAVE_SENDFILE */
+	} else {
+		/* just write the built-in proto */
+		const char *const bp = builtin_proto;
+		const size_t bz = strlenof(builtin_proto);
+		size_t tot = 0U;
+
+		for (ssize_t nwr;
+		     tot < bz && (nwr = write(pd[1U], bp + tot, bz - tot)) > 0;
+		     tot += nwr);
+	}
+	/* feed more to shell */
 	write(pd[1U], "EOF\n", sizeof("EOF\n"));
 	close(pd[1U]);
 
@@ -529,6 +574,65 @@ massage(echs_task_t t)
 		_t->umsk = cur;
 	}
 	return 0;
+}
+
+static size_t
+get_dirs(char *restrict buf, size_t bsz, char **eoh, char **eoe)
+{
+/* return /home/USER/.echse/MACHINE and set pointer EOH to .echse
+ * and EOE to MACHINE.
+ * Return the size of the whole path in bytes. */
+	static char dotechs[] = ".echse";
+	uid_t u = getuid();
+	struct passwd *pw;
+	size_t bi;
+
+	if (UNLIKELY((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL)) {
+		/* there's nothing else we can do */
+		return 0U;
+	}
+	if (UNLIKELY((bi = xstrlcpy(buf, pw->pw_dir, bsz)) + 8U >= bsz)) {
+		/* not even space for two /'s? */
+		return 0U;
+	}
+	buf[bi++] = '/';
+	*eoh = buf + bi;
+	bi += xstrlncpy(buf + bi, bsz - bi, dotechs, strlenof(dotechs));
+	buf[bi++] = '/';
+	*eoe = buf + bi;
+	if (UNLIKELY(gethostname(buf + bi, bsz - bi) < 0)) {
+		return 0U;
+	}
+	return bi + strlen(*eoe);
+}
+
+static int
+use_tmpl(void)
+{
+	/* look for templates in queuedir first, then ~/.echse
+	 * then fall back to the built-in template */
+	static const char proto_fn[] = "proto";
+	char fn[PATH_MAX];
+	char *h, *m;
+	size_t fi;
+	int fd;
+
+	if (!(fi = get_dirs(fn, sizeof(fn), &h, &m))) {
+		goto builtin;
+	}
+	/* massage PROTO behind all of FN */
+	xstrlncpy(fn + fi, sizeof(fn) - fi, proto_fn, strlenof(proto_fn));
+	if ((fd = add_tmpl(fn)) >= 0) {
+		return fd;
+	}
+	/* massage PROTO behind .echse portion of FN */
+	xstrlncpy(m, sizeof(fn) - (m - fn), proto_fn, strlenof(proto_fn));
+	if ((fd = add_tmpl(fn)) >= 0) {
+		return fd;
+	}
+builtin:
+	/* fallback to built-in */
+	return add_tmpl(NULL);
 }
 
 
@@ -681,7 +785,8 @@ END:VCALENDAR\n";
 	int fd;
 
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
-		if (UNLIKELY((fd = add_tmpl()) < 0)) {
+		/* ah, use a template and fire up an editor */
+		if (UNLIKELY((fd = use_tmpl()) < 0)) {
 			return 1;
 		}
 	}
