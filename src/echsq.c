@@ -488,7 +488,10 @@ END:VCALENDAR\n";
 	if (run_editor(tmpf, fd) < 0) {
 		goto clo;
 	}
+	/* don't keep this file, we talk descriptors */
 	unlink(tmpf);
+	/* rewind it though */
+	lseek(fd, 0, SEEK_SET);
 	return fd;
 clo:
 	unlink(tmpf);
