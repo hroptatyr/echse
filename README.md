@@ -31,9 +31,9 @@ Features
 * [X] Per-task configuration of timezones
 * [X] Built-in timeouts by constraining a task through DTEND
 * [X] Built-in timeouts by constraining a task through DURATION
+* [X] Custom task templates
 * [ ] Per-task configuration of the environment
 * [ ] Job metadata logging as VJOURNAL
-* [ ] Custom task templates
 
 
 iCalendar extensions
