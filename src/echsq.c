@@ -657,15 +657,18 @@ END:VCALENDAR\n";
 	}
 
 	/* let's try the local echsd and then the system-wide one */
-	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	if (UNLIKELY(argi->dry_run_flag)) {
+		s = STDOUT_FILENO;
+	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	} else if ((s = make_conn(e)) < 0) {
 		serror("Error: cannot connect to `%s'", e);
 		return 1;
+	} else {
+		/* otherwise it's time for a `yay' */
+		errno = 0, serror("connected to %s ...", e);
 	}
-	/* otherwise it's time for a `yay' */
-	errno = 0, serror("connected to %s ...", e);
 
 	write(s, hdr, strlenof(hdr));
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
@@ -692,6 +695,13 @@ Error: cannot open file `%s'", fn);
 		close(fd);
 	}
 	write(s, ftr, strlenof(ftr));
+
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
+	/* wait for all the season greetings and congrats ... */
 	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
@@ -717,15 +727,18 @@ END:VCALENDAR\n";
 	int s = -1;
 
 	/* let's try the local echsd and then the system-wide one */
-	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	if (argi->dry_run_flag) {
+		s = STDOUT_FILENO;
+	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	} else if ((s = make_conn(e)) < 0) {
 		serror("Error: cannot connect to `%s'", e);
 		return 1;
+	} else {
+		/* otherwise it's time for a `yay' */
+		errno = 0, serror("connected to %s ...", e);
 	}
-	/* otherwise it's time for a `yay' */
-	errno = 0, serror("connected to %s ...", e);
 	/* we'll be writing to S, better believe it */
 	fdbang(s);
 
@@ -743,6 +756,13 @@ END:VCALENDAR\n";
 
 	(void)fdputc;
 	fdflush();
+
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
+	/* wait for outstanding beer offers */
 	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
