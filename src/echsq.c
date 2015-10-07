@@ -260,6 +260,7 @@ poll1(int fd, int timeo)
 static void
 add_fd(int tgt_fd, int src_fd)
 {
+	static int massage(echs_task_t t);
 	char buf[32768U];
 	ical_parser_t pp = NULL;
 	size_t nrd;
@@ -281,6 +282,8 @@ more:
 			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			} else if (UNLIKELY(massage(ins.t) < 0)) {
 				continue;
 			}
 			/* and otherwise inject him */
@@ -499,6 +502,33 @@ clo:
 	close(pd[1U]);
 	close(fd);
 	return -1;
+}
+
+static int
+massage(echs_task_t t)
+{
+	struct echs_task_s *_t = deconst(t);
+
+	if (_t->run_as.wd == NULL) {
+		/* fill in pwd */
+		size_t z = (size_t)pathconf(".", _PC_PATH_MAX);
+		char *p;
+
+		if (LIKELY((p = malloc(z)) != NULL)) {
+			_t->run_as.wd = getcwd(p, z);
+		}
+	}
+	if (_t->run_as.sh == NULL) {
+		/* use /bin/sh */
+		_t->run_as.sh = strdup("/bin/sh");
+	}
+	if (_t->umsk > 0777) {
+		/* use current umask */
+		mode_t cur = umask(0777);
+		(void)umask(cur);
+		_t->umsk = cur;
+	}
+	return 0;
 }
 
 
