@@ -53,6 +53,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <assert.h>
@@ -60,6 +61,7 @@
 # include <paths.h>
 #endif	/* HAVE_PATHS_H */
 #include <pwd.h>
+#include <spawn.h>
 #include "nifty.h"
 #include "evical.h"
 #include "fdprnt.h"
@@ -256,7 +258,7 @@ poll1(int fd, int timeo)
 }
 
 static void
-proc1(int tgt_fd, int src_fd)
+add_fd(int tgt_fd, int src_fd)
 {
 	char buf[32768U];
 	ical_parser_t pp = NULL;
@@ -309,6 +311,194 @@ more:
 		break;
 	}
 	return;
+}
+
+static const char*
+get_editor(void)
+{
+#if !defined DEFAULT_EDITOR
+# define DEFAULT_EDITOR	"vi"
+#endif	/* !DEFAULT_EDITOR */
+	const char *editor;
+	const char *term;
+
+	/* check for term */
+	if (UNLIKELY((term = getenv("TERM")) == NULL)) {
+		/* ah well, less work to do */
+		;
+	} else if (!strcmp(term, "dumb")) {
+		/* I see */
+		term = NULL;
+	}
+	/* check for editor */
+	if (term && (editor = getenv("VISUAL"))) {
+		/* brilliant */
+		;
+	} else if ((editor = getenv("EDITOR"))) {
+		/* very well then */
+		;
+	} else if (term) {
+		/* can always use the default editor */
+		editor = DEFAULT_EDITOR;
+	}
+	return editor;
+}
+
+static int
+run_editor(const char *fn, int fd)
+{
+	static const char sh[] = "/bin/sh";
+	static char *args[] = {"sh", "-c", NULL, NULL};
+	const char *editor;
+	posix_spawn_file_actions_t fa;
+	int rc = 0;
+	pid_t p;
+
+	if (UNLIKELY((editor = get_editor()) == NULL)) {
+		errno = 0, serror("Error: cannot find EDITOR to use");
+		return -1;
+	} else if (editor[0U] == ':' && (uint8_t)editor[1U] <= ' ') {
+		/* aaah, they want us to fucking hurry up ... aye aye */
+		return 0;
+	}
+	/* start EDITOR through sh */
+	with (size_t elen = strlen(editor), flen = strlen(fn)) {
+		/* we need an extra space and 2 quote characters */
+		const size_t z =
+			elen + 1U/*SPC*/ + 2U/*quotes*/ + flen + 1U/*nul*/;
+
+		if (UNLIKELY((args[2U] = malloc(z)) == NULL)) {
+			serror("Error: cannot start EDITOR");
+			return -1;
+		}
+		memcpy(args[2U], editor, elen);
+		args[2U][elen + 0U] = ' ';
+		args[2U][elen + 1U] = '\'';
+		memcpy(args[2U] + elen + 2U, fn, flen);
+		args[2U][elen + 2U + flen + 0U] = '\'';
+		args[2U][elen + 2U + flen + 1U] = '\0';
+	}
+
+	if (posix_spawn_file_actions_init(&fa) < 0) {
+		serror("Error: cannot initialise file actions");
+		rc = -1;
+		goto out;
+	}
+
+	/* fiddle with the child's descriptors */
+	rc += posix_spawn_file_actions_addclose(&fa, fd);
+
+	/* call /bin/sh with the above proto-task as here-document
+	 * and stdout redir'd to FD */
+	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+		serror("Error: cannot run /bin/sh");
+		rc = -1;
+	} else {
+		int st;
+		while (waitpid(p, &st, 0) != p);
+		if (!WIFEXITED(st) || WEXITSTATUS(st) != EXIT_SUCCESS) {
+			rc = -1;
+		}
+	}
+
+	/* also get rid of the file actions resources */
+	posix_spawn_file_actions_destroy(&fa);
+out:
+	free(args[2U]);
+	return rc;
+}
+
+static int
+add_tmpl(void)
+{
+	static const char builtin_proto[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+METHOD:PUBLISH\n\
+CALSCALE:GREGORIAN\n\
+BEGIN:VEVENT\n\
+SUMMARY:\n\
+ATTENDEE:$USER\n\
+X-ECHS-MAIL-OUT:true\n\
+X-ECHS-MAIL-ERR:true\n\
+LOCATION:$PWD\n\
+DTSTART:\n\
+DURATION:P1D\n\
+RRULE:FREQ=DAILY\n\
+END:VEVENT\n\
+END:VCALENDAR\n";
+	static char tmpf[] = "/tmp/taskXXXXXXXX";
+	static const char sh[] = "/bin/sh";
+	static char *args[] = {
+		"sh", "-s", NULL
+	};
+	posix_spawn_file_actions_t fa;
+	int pd[2U] = {-1, -1};
+	int rc = 0;
+	pid_t p;
+	int fd;
+
+	/* get ourselves a temporary file */
+	if ((fd = mkstemp(tmpf)) < 0) {
+		serror("Error: cannot create temporary file `%s'", tmpf);
+		goto clo;
+	} else if (pipe(pd) < 0) {
+		serror("Error: cannot set up pipe to shell");
+		goto clo;
+	} else if (posix_spawn_file_actions_init(&fa) < 0) {
+		serror("Error: cannot initialise file actions");
+		goto clo;
+	}
+	/* fiddle with the child's descriptors */
+	rc += posix_spawn_file_actions_adddup2(&fa, pd[0U], STDIN_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDOUT_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDERR_FILENO);
+	rc += posix_spawn_file_actions_addclose(&fa, fd);
+	rc += posix_spawn_file_actions_addclose(&fa, pd[0U]);
+	rc += posix_spawn_file_actions_addclose(&fa, pd[1U]);
+
+	/* call /bin/sh with the above proto-task as here-document
+	 * and stdout redir'd to FD */
+	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+		serror("Error: cannot run /bin/sh");
+		posix_spawn_file_actions_destroy(&fa);
+		goto clo;
+	}
+	/* also get rid of the file actions resources */
+	posix_spawn_file_actions_destroy(&fa);
+	/* close read-end of pipe */
+	close(pd[0U]);
+
+	/* feed the shell */
+	write(pd[1U], "cat <<EOF\n", sizeof("cat <<EOF\n"));
+	write(pd[1U], builtin_proto, sizeof(builtin_proto));
+	write(pd[1U], "EOF\n", sizeof("EOF\n"));
+	close(pd[1U]);
+
+	/* let's hang around and have a beer */
+	with (int st) {
+		while (waitpid(p, &st, 0) != p);
+		if (!WIFEXITED(st) || WEXITSTATUS(st) != EXIT_SUCCESS) {
+			goto clo;
+		}
+	}
+
+	/* launch the editor so the user can peruse the proto-task */
+	if (run_editor(tmpf, fd) < 0) {
+		goto clo;
+	}
+	/* don't keep this file, we talk descriptors */
+	unlink(tmpf);
+	/* rewind it though */
+	lseek(fd, 0, SEEK_SET);
+	return fd;
+clo:
+	unlink(tmpf);
+	close(pd[0U]);
+	close(pd[1U]);
+	close(fd);
+	return -1;
 }
 
 
@@ -457,6 +647,14 @@ CALSCALE:GREGORIAN\n";
 END:VCALENDAR\n";
 	const char *e;
 	int s = -1;
+	size_t i = 0U;
+	int fd;
+
+	if (!argi->nargs && isatty(STDIN_FILENO)) {
+		if (UNLIKELY((fd = add_tmpl()) < 0)) {
+			return 1;
+		}
+	}
 
 	/* let's try the local echsd and then the system-wide one */
 	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
@@ -470,20 +668,28 @@ END:VCALENDAR\n";
 	errno = 0, serror("connected to %s ...", e);
 
 	write(s, hdr, strlenof(hdr));
-	for (size_t i = 0U; i < argi->nargs; i++) {
-		int fd;
+	if (!argi->nargs && isatty(STDIN_FILENO)) {
+		/* template mode */
+		goto proc;
+	} else if (!argi->nargs) {
+		fd = STDIN_FILENO;
+		goto proc;
+	}
+	for (; i < argi->nargs; i++) {
+		const char *const fn = argi->args[i];
 
-		if (UNLIKELY((fd = open(argi->args[i], O_RDONLY)) < 0)) {
+		if (UNLIKELY(fn[0U] == '-' && !fn[1U])) {
+			/* that's stdin in disguise */
+			fd = STDIN_FILENO;
+		} else if (UNLIKELY((fd = open(fn, O_RDONLY)) < 0)) {
 			serror("\
-Error: cannot open file `%s'", argi->args[i]);
+Error: cannot open file `%s'", fn);
 			continue;
 		}
 
-		proc1(s, fd);
+	proc:
+		add_fd(s, fd);
 		close(fd);
-	}
-	if (!argi->nargs) {
-		proc1(s, STDIN_FILENO);
 	}
 	write(s, ftr, strlenof(ftr));
 	while (nout && !(poll1(s, 5000) < 0));
