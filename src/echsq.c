@@ -192,6 +192,8 @@ free_conn(int s)
 /* counter for outstanding requests */
 static size_t nout;
 
+static int massage(echs_task_t t);
+
 static int
 poll1(int fd, int timeo)
 {
@@ -263,7 +265,6 @@ poll1(int fd, int timeo)
 static void
 add_fd(int tgt_fd, int src_fd)
 {
-	static int massage(echs_task_t t);
 	char buf[32768U];
 	ical_parser_t pp = NULL;
 	size_t nrd;
