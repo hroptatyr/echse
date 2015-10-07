@@ -3,6 +3,7 @@ Usage: echsq COMMAND
 Control echse queues.
 
   -l, --list            List jobs in the queue (much like crontab's -l)
+  -n, --dry-run         Do not sent tasks to echsd server.
 
 
 Usage: echsq add [FILE]...

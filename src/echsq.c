@@ -260,6 +260,7 @@ poll1(int fd, int timeo)
 static void
 add_fd(int tgt_fd, int src_fd)
 {
+	static int massage(echs_task_t t);
 	char buf[32768U];
 	ical_parser_t pp = NULL;
 	size_t nrd;
@@ -281,6 +282,8 @@ more:
 			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 				break;
 			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			} else if (UNLIKELY(massage(ins.t) < 0)) {
 				continue;
 			}
 			/* and otherwise inject him */
@@ -501,6 +504,33 @@ clo:
 	return -1;
 }
 
+static int
+massage(echs_task_t t)
+{
+	struct echs_task_s *_t = deconst(t);
+
+	if (_t->run_as.wd == NULL) {
+		/* fill in pwd */
+		size_t z = (size_t)pathconf(".", _PC_PATH_MAX);
+		char *p;
+
+		if (LIKELY((p = malloc(z)) != NULL)) {
+			_t->run_as.wd = getcwd(p, z);
+		}
+	}
+	if (_t->run_as.sh == NULL) {
+		/* use /bin/sh */
+		_t->run_as.sh = strdup("/bin/sh");
+	}
+	if (_t->umsk > 0777) {
+		/* use current umask */
+		mode_t cur = umask(0777);
+		(void)umask(cur);
+		_t->umsk = cur;
+	}
+	return 0;
+}
+
 
 #if defined STANDALONE
 #include "echsq.yucc"
@@ -657,15 +687,18 @@ END:VCALENDAR\n";
 	}
 
 	/* let's try the local echsd and then the system-wide one */
-	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	if (UNLIKELY(argi->dry_run_flag)) {
+		s = STDOUT_FILENO;
+	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	} else if ((s = make_conn(e)) < 0) {
 		serror("Error: cannot connect to `%s'", e);
 		return 1;
+	} else {
+		/* otherwise it's time for a `yay' */
+		errno = 0, serror("connected to %s ...", e);
 	}
-	/* otherwise it's time for a `yay' */
-	errno = 0, serror("connected to %s ...", e);
 
 	write(s, hdr, strlenof(hdr));
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
@@ -692,6 +725,13 @@ Error: cannot open file `%s'", fn);
 		close(fd);
 	}
 	write(s, ftr, strlenof(ftr));
+
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
+	/* wait for all the season greetings and congrats ... */
 	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
@@ -717,15 +757,18 @@ END:VCALENDAR\n";
 	int s = -1;
 
 	/* let's try the local echsd and then the system-wide one */
-	if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	if (argi->dry_run_flag) {
+		s = STDOUT_FILENO;
+	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	} else if ((s = make_conn(e)) < 0) {
 		serror("Error: cannot connect to `%s'", e);
 		return 1;
+	} else {
+		/* otherwise it's time for a `yay' */
+		errno = 0, serror("connected to %s ...", e);
 	}
-	/* otherwise it's time for a `yay' */
-	errno = 0, serror("connected to %s ...", e);
 	/* we'll be writing to S, better believe it */
 	fdbang(s);
 
@@ -743,6 +786,13 @@ END:VCALENDAR\n";
 
 	(void)fdputc;
 	fdflush();
+
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
+	/* wait for outstanding beer offers */
 	while (nout && !(poll1(s, 5000) < 0));
 
 	free_conn(s);
