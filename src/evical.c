@@ -675,6 +675,11 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
 /* vevent field parser */
+	if (UNLIKELY(!(ep - vp))) {
+		/* don't want empty values */
+		return -1;
+	}
+
 	switch (fld) {
 		char *on;
 
@@ -946,6 +951,11 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 {
 /* prologue snarfer, should only be called whilst being in VCAL state */
 	(void)eof;
+
+	if (UNLIKELY(!(ep - vp))) {
+		/* don't want empty values */
+		return -1;
+	}
 
 	/* inspect the field */
 	switch (fld) {
