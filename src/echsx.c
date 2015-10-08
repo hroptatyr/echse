@@ -341,24 +341,13 @@ fdwr_stmp(void)
 {
 	static char stmp[32U] = "DTSTAMP:";
 	size_t ztmp = strlenof("DTSTAMP:");
-	echs_instant_t nowi;
 	time_t now;
-	struct tm tm;
 
-	if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
+	if (UNLIKELY(time(&now) <= 0)) {
 		/* nah, leave early */
 		return -1;
 	}
-	/* otherwise fill in now and materialise */
-	nowi.y = tm.tm_year + 1900,
-		nowi.m = tm.tm_mon + 1,
-		nowi.d = tm.tm_mday,
-		nowi.H = tm.tm_hour,
-		nowi.M = tm.tm_min,
-		nowi.S = tm.tm_sec,
-		nowi.ms = ECHS_ALL_SEC;
-
-	ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
+	ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, timetoinst(now));
 	stmp[ztmp++] = '\n';
 	fdwrite(stmp, ztmp);
 	return 0;
