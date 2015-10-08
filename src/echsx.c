@@ -195,16 +195,21 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static size_t
-strfts(char *restrict buf, size_t bsz, struct timespec t)
+static echs_instant_t
+timetoinst(time_t t)
 {
-	time_t s = t.tv_sec;
-	struct tm *tm = gmtime(&s);
+	struct tm *tm;
+	echs_instant_t ti;
 
-	if (UNLIKELY(tm == NULL)) {
-		return 0U;
+	if (UNLIKELY((tm = gmtime(&t)) == NULL)) {
+		return echs_nul_instant();
 	}
-	return strftime(buf, bsz, "%FT%TZ", tm);
+	ti = (echs_instant_t){
+		tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+		tm->tm_hour, tm->tm_min, tm->tm_sec,
+		ECHS_ALL_SEC,
+	};
+	return ti;
 }
 
 static struct ts_dur_s {
@@ -249,8 +254,8 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	struct tv_dur_s sys;
 	double cpu;
 
-	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
-	strfts(tstmp2, sizeof(tstmp2), t->t_end);
+	dt_strf(tstmp1, sizeof(tstmp1), timetoinst(t->t_sta.tv_sec));
+	dt_strf(tstmp2, sizeof(tstmp2), timetoinst(t->t_end.tv_sec));
 	real = ts_dur(t->t_sta, t->t_end);
 	user = tv_dur((struct timeval){0}, t->rus.ru_utime);
 	sys = tv_dur((struct timeval){0}, t->rus.ru_stime);
@@ -961,13 +966,13 @@ cannot spawn `sendmail': %s", STRERR);
 
 	if (chld > 0) {
 		char tstmp[32U];
-		struct timespec now;
+		time_t now;
 
 		/* get ourselves a time stamp */
-		clock_gettime(CLOCK_REALTIME, &now);
+		now = time(NULL);
 
 		/* now it's time to send the actual mail */
-		strfts(tstmp, sizeof(tstmp), now);
+		dt_strf(tstmp, sizeof(tstmp), timetoinst(now));
 
 		fdbang(mfd);
 		if (argi->mailfrom_arg) {
