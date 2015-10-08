@@ -195,23 +195,6 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static echs_instant_t
-timetoinst(time_t t)
-{
-	struct tm *tm;
-	echs_instant_t ti;
-
-	if (UNLIKELY((tm = gmtime(&t)) == NULL)) {
-		return echs_nul_instant();
-	}
-	ti = (echs_instant_t){
-		tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-		tm->tm_hour, tm->tm_min, tm->tm_sec,
-		ECHS_ALL_SEC,
-	};
-	return ti;
-}
-
 static struct ts_dur_s {
 	long int s;
 	long int n;
@@ -254,8 +237,8 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	struct tv_dur_s sys;
 	double cpu;
 
-	dt_strf(tstmp1, sizeof(tstmp1), timetoinst(t->t_sta.tv_sec));
-	dt_strf(tstmp2, sizeof(tstmp2), timetoinst(t->t_end.tv_sec));
+	dt_strf(tstmp1, sizeof(tstmp1), epoch_to_echs_instant(t->t_sta.tv_sec));
+	dt_strf(tstmp2, sizeof(tstmp2), epoch_to_echs_instant(t->t_end.tv_sec));
 	real = ts_dur(t->t_sta, t->t_end);
 	user = tv_dur((struct timeval){0}, t->rus.ru_utime);
 	sys = tv_dur((struct timeval){0}, t->rus.ru_stime);
@@ -347,7 +330,8 @@ fdwr_stmp(void)
 		/* nah, leave early */
 		return -1;
 	}
-	ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, timetoinst(now));
+	ztmp += dt_strf_ical(
+		stmp + ztmp, sizeof(stmp) - ztmp, epoch_to_echs_instant(now));
 	stmp[ztmp++] = '\n';
 	fdwrite(stmp, ztmp);
 	return 0;
@@ -961,7 +945,7 @@ cannot spawn `sendmail': %s", STRERR);
 		now = time(NULL);
 
 		/* now it's time to send the actual mail */
-		dt_strf(tstmp, sizeof(tstmp), timetoinst(now));
+		dt_strf(tstmp, sizeof(tstmp), epoch_to_echs_instant(now));
 
 		fdbang(mfd);
 		if (argi->mailfrom_arg) {
