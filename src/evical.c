@@ -1480,7 +1480,7 @@ send_ical_hdr(int whither)
 {
 	static const char beg[] = "BEGIN:VEVENT\n";
 	static char stmp[32U] = "DTSTAMP:";
-	size_t ztmp = strlenof("DTSTAMP:");
+	static size_t ztmp = strlenof("DTSTAMP:");
 	/* singleton, there's only one now */
 	static time_t now;
 
