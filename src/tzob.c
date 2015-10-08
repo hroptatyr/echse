@@ -288,6 +288,7 @@ __epoch_to_inst(time_t t)
 			ti.y = by + DAISY_BASE_YEAR + (mon > 10U);
 			ti.m = rm[mon];
 			ti.d = dom;
+#undef GET_REM
 		}
 	}
 	/* assign times */
