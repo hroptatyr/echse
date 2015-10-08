@@ -60,6 +60,7 @@
 #endif	/* HAVE_NET_PROTO_UIPC_H */
 #include <ev.h>
 #include <assert.h>
+#include "dt-strpf.h"
 #include "logger.h"
 #include "nifty.h"
 #include "fdprnt.h"
@@ -327,6 +328,34 @@ xsplice(int tgtfd, int srcfd)
 		}
 	}
 #endif	/* HAVE_SENDFILE */
+	return 0;
+}
+
+static int
+fdwr_stmp(void)
+{
+	static char stmp[32U] = "DTSTAMP:";
+	size_t ztmp = strlenof("DTSTAMP:");
+	echs_instant_t nowi;
+	time_t now;
+	struct tm tm;
+
+	if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
+		/* nah, leave early */
+		return -1;
+	}
+	/* otherwise fill in now and materialise */
+	nowi.y = tm.tm_year + 1900,
+		nowi.m = tm.tm_mon + 1,
+		nowi.d = tm.tm_mday,
+		nowi.H = tm.tm_hour,
+		nowi.M = tm.tm_min,
+		nowi.S = tm.tm_sec,
+		nowi.ms = ECHS_ALL_SEC;
+
+	ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
+	stmp[ztmp++] = '\n';
+	fdwrite(stmp, ztmp);
 	return 0;
 }
 
@@ -813,8 +842,7 @@ mail_task(echs_task_t t)
 
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
-		mfd = STDOUT_FILENO;
-		goto mail;
+		return 0;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", STRERR);
@@ -844,7 +872,6 @@ cannot spawn `sendmail': %s", STRERR);
 	close(mpip[0U]);
 
 	if (chld > 0) {
-	mail:
 		/* now it's time to send the actual mail */
 		mail_hdrs(mfd, t);
 
@@ -872,6 +899,22 @@ cannot spawn `sendmail': %s", STRERR);
 }
 
 static int
+jlog_task(echs_task_t t)
+{
+	static const char jhdr[] = "BEGIN:VJOURNAL\n";
+	static const char jftr[] = "END:VJOURNAL\n";
+
+	fdbang(STDOUT_FILENO);
+	fdwrite(jhdr, strlenof(jhdr));
+	/* kick off with a nice time stamp */
+	fdwr_stmp();
+
+	fdwrite(jftr, strlenof(jftr));
+	fdflush();
+	return 0;
+}
+
+static int
 mail_warn(void)
 {
 /* mail some error about task not being run */
@@ -887,8 +930,7 @@ and hence will not be run.\n\
 
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
-		mfd = STDOUT_FILENO;
-		goto mail;
+		return 0;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", STRERR);
@@ -921,7 +963,6 @@ cannot spawn `sendmail': %s", STRERR);
 		char tstmp[32U];
 		struct timespec now;
 
-	mail:
 		/* get ourselves a time stamp */
 		clock_gettime(CLOCK_REALTIME, &now);
 
@@ -1125,6 +1166,10 @@ cannot set timeout, job execution will be unbounded");
 		}
 		/* no disruptions please */
 		block_sigs();
+		/* write out VJOURNAL */
+		if (argi->vjournal_flag) {
+			jlog_task(&t);
+		}
 		/* brag about our findings */
 		if (mail_task(&t) < 0) {
 			rc = 127;
