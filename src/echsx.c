@@ -227,6 +227,17 @@ static struct tv_dur_s {
 	return res;
 }
 
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
+{
+	if (UNLIKELY(ssz > dsz)) {
+		ssz = dsz - 1U;
+	}
+	memcpy(dst, src, ssz);
+	dst[ssz] = '\0';
+	return ssz;
+}
+
 
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
@@ -886,6 +897,68 @@ jlog_task(echs_task_t t)
 	fdwrite(jhdr, strlenof(jhdr));
 	/* kick off with a nice time stamp */
 	fdwr_stmp();
+
+	/* write start/end (and their high-res counterparts?) */
+	{
+		static char stmp1[32U] = "DTSTART:";
+		static char stmp2[32U] = "DTEND:";
+		size_t n;
+		echs_instant_t ts = epoch_to_echs_instant(t->t_sta.tv_sec);
+		echs_instant_t te = epoch_to_echs_instant(t->t_end.tv_sec);
+
+		n = strlenof("DTSTART:");
+		n += dt_strf_ical(stmp1 + n, sizeof(stmp2) - n, ts);
+		stmp1[n++] = '\n';
+		fdwrite(stmp1, n);
+
+		n = strlenof("DTEND:");
+		n += dt_strf_ical(stmp2 + n, sizeof(stmp2) - n, te);
+		stmp2[n++] = '\n';
+		fdwrite(stmp2, n);
+	}
+
+	with (size_t cmdz = strlen(t->cmd)) {
+		static char fld[] = "SUMMARY:";
+		char sum[cmdz + strlenof(fld) + 1U];
+		size_t si;
+
+		si = xstrlncpy(sum, sizeof(sum), fld, strlenof(fld));
+		si += xstrlncpy(sum + si, sizeof(sum) - si, t->cmd, cmdz);
+		sum[si++] = '\n';
+		fdwrite(sum, si);
+	}
+
+	{
+		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
+		struct tv_dur_s user =
+			tv_dur((struct timeval){0}, t->rus.ru_utime);
+		struct tv_dur_s sys =
+			tv_dur((struct timeval){0}, t->rus.ru_stime);
+		double cpu =
+			((double)(user.s + sys.s) +
+			 (double)(user.u + sys.u) * 1.e-6) /
+			((double)real.s + (double)real.n * 1.e-9) * 100.;
+
+		fdprintf("\
+X-USER-TIME:%ld.%06lis\n\
+X-SYSTEM-TIME:%ld.%06lis\n\
+X-REAL-TIME:%ld.%09lis\n", user.s, user.u, sys.s, sys.u, real.s, real.n);
+		fdprintf("\
+X-CPU-USAGE:%.2f%%\n", cpu);
+		fdprintf("\
+X-MEM-USAGE:%ldkB\n", t->rus.ru_maxrss);
+	}
+
+	if (WIFEXITED(t->xc)) {
+		fdprintf("\
+X-EXIT-STATUS:%d\n", WEXITSTATUS(t->xc));
+	} else if (WIFSIGNALED(t->xc)) {
+		int sig = WTERMSIG(t->xc);
+		fdprintf("\
+X-EXIT-STATUS:%d\n\
+X-SIGNAL:%d\n\
+X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
+	}
 
 	fdwrite(jftr, strlenof(jftr));
 	fdflush();
