@@ -1741,8 +1741,6 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	static time_t now;
 	static char stmp[32U];
 	static size_t nrpl = 0U;
-	struct tm tm;
-	time_t tmp;
 	ssize_t nwr = 0;
 
 	fdbang(ofd);
@@ -1760,16 +1758,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 		nwr += fdwrite(rpl_rpl, strlenof(rpl_rpl));
 	}
 
-	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
-		echs_instant_t nowi;
-
-		nowi.y = tm.tm_year + 1900,
-		nowi.m = tm.tm_mon + 1,
-		nowi.d = tm.tm_mday,
-		nowi.H = tm.tm_hour,
-		nowi.M = tm.tm_min,
-		nowi.S = tm.tm_sec,
-		nowi.ms = ECHS_ALL_SEC,
+	if_with (time_t tmp = time(NULL), tmp > now) {
+		echs_instant_t nowi = epoch_to_echs_instant(tmp);
 
 		dt_strf_ical(stmp, sizeof(stmp), nowi);
 		now = tmp;
