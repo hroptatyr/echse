@@ -99,6 +99,14 @@ extern echs_instant_t echs_instant_add(echs_instant_t bas, echs_idiff_t add);
  * Sort an array IN of NIN elements stable and in-place. */
 extern void echs_instant_sort(echs_instant_t *restrict in, size_t nin);
 
+/**
+ * Convert echs_instant_t to epoch time. */
+extern time_t echs_instant_to_epoch(echs_instant_t);
+
+/**
+ * Convert epoch time to echs_instant_t. */
+extern echs_instant_t epoch_to_echs_instant(time_t);
+
 
 #define ECHS_ALL_DAY	(0xffU)
 #define ECHS_ALL_SEC	(0x3ffU)

@@ -234,6 +234,71 @@ __inst_to_epoch(echs_instant_t i)
 		  (LIKELY(i.H <= 24U) ? i.H : 24U)) * 60U + i.M) * 60U) + i.S;
 }
 
+static echs_instant_t
+__epoch_to_inst(time_t t)
+{
+#define DAISY_UNIX_BASE	(7977U)
+#define DAISY_BASE_YEAR	(1948U)
+	unsigned int d = t / 86400U + DAISY_UNIX_BASE;
+	unsigned int s = t % 86400U;
+	echs_instant_t ti;
+
+	/* now here's the deal:
+	 * d is actually y * 365U + y / 4U + doy
+	 * or more abstractly (ya + y/b + c), multiply by b yields
+	 * (ya + y/b + c) b = yab + y + cb = y(ab + 1) + cb
+	 * and since ab+1 > cb always we can simply divide to get y */
+	with (unsigned int by = d / 365U) {
+		unsigned int f0 = by * 365U + by / 4U;
+		unsigned int doy;
+
+		if (UNLIKELY(f0 >= d)) {
+			f0 = (by--, by * 365U + by / 4U);
+		}
+		/* get the doy in the year going from Mar to Feb */
+		doy = d - f0;
+
+		/* freundt method for doy -> m+d conversion
+		 * stolen from dateutils but adapted for Mar->Feb years */
+		{
+#define GET_REM(x)	(rem[x])
+			static const uint8_t rem[] = {
+				19, 19, 18, 16, 15, 13, 12, 11, 9, 8, 6, 5, 4, 1
+			};
+			static const uint8_t rm[] = {
+				0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 0
+			};
+			unsigned int mon;
+			unsigned int dom;
+			unsigned int beef;
+			unsigned int cake;
+
+			/* get 32-adic doys */
+			mon = (doy + 19U) / 32U;
+			dom = (doy + 19U) % 32U;
+			beef = GET_REM(mon);
+			cake = GET_REM(mon + 1U);
+
+			if (dom <= cake) {
+				dom = doy - ((mon - 1U) * 32U - 19U + beef);
+			} else {
+				dom = doy - (mon++ * 32U - 19U + cake);
+			}
+
+			ti.y = by + DAISY_BASE_YEAR + (mon > 10U);
+			ti.m = rm[mon];
+			ti.d = dom;
+		}
+	}
+	/* assign times */
+	ti.S = s % 60U, s /= 60U;
+	ti.M = s % 60U, s /= 60U;
+	ti.H = s;
+	/* unix epoch has second resolution */
+	ti.ms = ECHS_ALL_DAY;
+	return ti;
+}
+
 
 echs_tzob_t
 echs_tzob(const char *str, size_t len)
@@ -422,6 +487,19 @@ echs_tzob_offs(echs_tzob_t z, echs_instant_t i, int x)
 	/* just convert the instant now */
 	nix = __inst_to_epoch(i);
 	return zif_find_zrng(_z, nix + x).offs;
+}
+
+/* these are borrowed from instant.h, seeing as we've got the routines here */
+time_t
+echs_instant_to_epoch(echs_instant_t i)
+{
+	return __inst_to_epoch(i);
+}
+
+echs_instant_t
+epoch_to_echs_instant(time_t t)
+{
+	return __epoch_to_inst(t);
 }
 
 /* tzob.c ends here */
