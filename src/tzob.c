@@ -212,33 +212,34 @@ __tzob_zif(echs_tzob_t zob)
 	return this;
 }
 
+
+#define DAISY_UNIX_BASE	(7977U)
+#define DAISY_BASE_YEAR	(1948U)
+
 static time_t
 __inst_to_epoch(echs_instant_t i)
 {
 	static const uint16_t __mon_yday[] = {
-		/* this is \sum ml,
-		 * first element is a bit set of leap days to add */
-		0U, 0U,
-		31U, 59U, 90U, 120U, 151U, 181U,
-		212U, 243U, 273U, 304U, 334U, 365U
+		/* this is \sum ml, for mar->feb years */
+		0U,
+		306U, 337U, 0U, 31U, 61U, 92U,
+		122U, 153U, 184U, 214U, 245U, 275U
 	};
-	unsigned int by = i.y - 1917U;
+	unsigned int by = i.y - DAISY_BASE_YEAR;
 	/* no bullshit years in our lifetime */
 	unsigned int j0 = by * 365U + by / 4U;
 	/* yday by lookup */
 	unsigned int yd = (LIKELY(i.m <= 12U))
-		? __mon_yday[i.m] + i.d + UNLIKELY(!(i.y % 4U) && i.m >= 3U)
+		? __mon_yday[i.m] + i.d
 		: 0U;
 
-	return ((((j0 + yd - 19359U/*our epoch v unix epoch*/) * 24U +
+	return ((((j0 + yd - DAISY_UNIX_BASE) * 24U +
 		  (LIKELY(i.H <= 24U) ? i.H : 24U)) * 60U + i.M) * 60U) + i.S;
 }
 
 static echs_instant_t
 __epoch_to_inst(time_t t)
 {
-#define DAISY_UNIX_BASE	(7977U)
-#define DAISY_BASE_YEAR	(1948U)
 	unsigned int d = t / 86400U + DAISY_UNIX_BASE;
 	unsigned int s = t % 86400U;
 	echs_instant_t ti;
