@@ -1033,7 +1033,8 @@ run_task(_task_t t, bool no_run)
 	} else if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
 		/* shit, what are we gonna do?*/
 		;
-	} else if (snprintf(vjfn, sizeof(vjfn), "echsj_%u.ics", t->dflt_cred.u) < 0) {
+	} else if (snprintf(vjfn, sizeof(vjfn),
+			    "echsj_%u.ics", t->dflt_cred.u) < 0) {
 		/* couldn't care less */
 		;
 	} else if ((vjfd = openat(qdirfd, vjfn, O_RDWR | O_CREAT, 0600)) < 0) {
