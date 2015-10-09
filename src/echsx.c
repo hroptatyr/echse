@@ -922,6 +922,17 @@ jlog_task(echs_task_t t)
 		fdwrite(sum, si);
 	}
 
+	if (WIFEXITED(t->xc)) {
+		fdprintf("\
+X-EXIT-STATUS:%d\n", WEXITSTATUS(t->xc));
+	} else if (WIFSIGNALED(t->xc)) {
+		int sig = WTERMSIG(t->xc);
+		fdprintf("\
+X-EXIT-STATUS:%d\n\
+X-SIGNAL:%d\n\
+X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
+	}
+
 	{
 		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
 		struct tv_dur_s user =
@@ -932,6 +943,11 @@ jlog_task(echs_task_t t)
 			((double)(user.s + sys.s) +
 			 (double)(user.u + sys.u) * 1.e-6) /
 			((double)real.s + (double)real.n * 1.e-9) * 100.;
+		int s = WIFEXITED(t->xc)
+			? WEXITSTATUS(t->xc)
+			: WIFSIGNALED(t->xc)
+			? WTERMSIG(t->xc) ^ 128
+			: -1;
 
 		fdprintf("\
 X-USER-TIME:%ld.%06lis\n\
@@ -941,17 +957,12 @@ X-REAL-TIME:%ld.%09lis\n", user.s, user.u, sys.s, sys.u, real.s, real.n);
 X-CPU-USAGE:%.2f%%\n", cpu);
 		fdprintf("\
 X-MEM-USAGE:%ldkB\n", t->rus.ru_maxrss);
-	}
 
-	if (WIFEXITED(t->xc)) {
 		fdprintf("\
-X-EXIT-STATUS:%d\n", WEXITSTATUS(t->xc));
-	} else if (WIFSIGNALED(t->xc)) {
-		int sig = WTERMSIG(t->xc);
-		fdprintf("\
-X-EXIT-STATUS:%d\n\
-X-SIGNAL:%d\n\
-X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
+DESCRIPTION:$?=%d  %ldkB mem\\n\n\
+ %ld.%06lis user  %ld.%06lis sys  %.2f%% cpu  %ld.%09lis real\n",
+			 s, t->rus.ru_maxrss,
+			 user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
 	}
 
 	fdwrite(jftr, strlenof(jftr));
