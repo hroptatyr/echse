@@ -901,6 +901,7 @@ run_task(_task_t t, bool no_run)
 	enum {
 		TOOL,
 		SW_DRY_RUN,
+		SW_JLOG,
 		SW_CMD, STR_CMD,
 		SW_UID, STR_UID,
 		SW_GID, STR_GID,
@@ -918,6 +919,7 @@ run_task(_task_t t, bool no_run)
 	static char *args_proto[] = {
 		[TOOL] = "echsx",
 		[SW_DRY_RUN] = "-n",
+		[SW_JLOG] = "-v",
 		[SW_CMD] = "-c", NULL,
 		[SW_UID] = "--uid", uid,
 		[SW_GID] = "--gid", gid,
@@ -937,6 +939,12 @@ run_task(_task_t t, bool no_run)
 	const size_t natt = t->t->att ? t->t->att->nl : 0U;
 	char *args[countof(args_proto) + 2U * natt];
 	char *const *env = deconst(t->t->env);
+	/* for the journal */
+	posix_spawn_file_actions_t fa, *_fap = NULL;
+	char vjfn[PATH_MAX];
+	int vjfd;
+	off_t vjof;
+	/* the actual process */
 	pid_t r;
 
 	/* set up the real args */
@@ -1022,10 +1030,31 @@ run_task(_task_t t, bool no_run)
 			fputc('\'', stdout);
 		}
 		fputc('\n', stdout);
+	} else if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
+		/* shit, what are we gonna do?*/
+		;
+	} else if (snprintf(vjfn, sizeof(vjfn), "echsj_%u.ics", t->dflt_cred.u) < 0) {
+		/* couldn't care less */
+		;
+	} else if ((vjfd = openat(qdirfd, vjfn, O_RDWR | O_CREAT, 0600)) < 0) {
+		/* brilliant */
+		;
+	} else if ((vjof = lseek(vjfd, 0, SEEK_END)) < 0) {
+		/* make sure we don't shed a tear over this one */
+		close(vjfd);
+	} else {
+		/* all's well in either case */
+		posix_spawn_file_actions_adddup2(&fa, vjfd, STDOUT_FILENO);
+		posix_spawn_file_actions_addclose(&fa, vjfd);
+		_fap = &fa;
 	}
-	if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
+	if (UNLIKELY(posix_spawn(&r, echsx, _fap, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		r = -1;
+	}
+	if (LIKELY(_fap != NULL)) {
+		close(vjfd);
+		posix_spawn_file_actions_destroy(_fap);
 	}
 	return r;
 }
