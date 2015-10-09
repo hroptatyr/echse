@@ -891,9 +891,17 @@ jlog_task(echs_task_t t)
 			epoch_to_echs_instant(now));
 		stmp[ztmp++] = '\n';
 		fdwrite(stmp, ztmp);
+
+		if (t->t_sta.tv_sec <= 0) {
+			/* turn STAMP into START */
+			stmp[5U] = 'R', stmp[6U] = 'T';
+			fdwrite(stmp, ztmp);
+			/* and back */
+			stmp[5U] = 'M', stmp[6U] = 'P';
+		}
 	}
 	/* write start/end (and their high-res counterparts?) */
-	{
+	if (t->t_sta.tv_sec > 0) {
 		static char stmp1[32U] = "DTSTART:";
 		static char stmp2[32U] = "DTEND:";
 		size_t n;
@@ -933,7 +941,7 @@ X-SIGNAL:%d\n\
 X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
 	}
 
-	{
+	if (t->t_sta.tv_sec > 0) {
 		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
 		struct tv_dur_s user =
 			tv_dur((struct timeval){0}, t->rus.ru_utime);
@@ -963,6 +971,10 @@ DESCRIPTION:$?=%d  %ldkB mem\\n\n\
  %ld.%06lis user  %ld.%06lis sys  %.2f%% cpu  %ld.%09lis real\n",
 			 s, t->rus.ru_maxrss,
 			 user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
+	} else {
+		static const char nr[] = "\
+DESCRIPTION:not run\n";
+		fdwrite(nr, strlenof(nr));
 	}
 
 	fdwrite(jftr, strlenof(jftr));
@@ -1239,6 +1251,13 @@ cannot set timeout, job execution will be unbounded");
 		free_task(&t);
 	} else {
 		/* jsut mail a warning and come back */
+		if (argi->vjournal_flag) {
+			struct echs_task_s t = {
+				.cmd = argi->command_arg,
+				.xc = -1
+			};
+			jlog_task(&t);
+		}
 		if (mail_warn() < 0) {
 			rc = 127;
 			goto clean_up;
