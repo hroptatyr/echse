@@ -330,24 +330,6 @@ xsplice(int tgtfd, int srcfd)
 	return 0;
 }
 
-static int
-fdwr_stmp(void)
-{
-	static char stmp[32U] = "DTSTAMP:";
-	size_t ztmp = strlenof("DTSTAMP:");
-	time_t now;
-
-	if (UNLIKELY(time(&now) <= 0)) {
-		/* nah, leave early */
-		return -1;
-	}
-	ztmp += dt_strf_ical(
-		stmp + ztmp, sizeof(stmp) - ztmp, epoch_to_echs_instant(now));
-	stmp[ztmp++] = '\n';
-	fdwrite(stmp, ztmp);
-	return 0;
-}
-
 
 /* callbacks for run task */
 struct data_s {
@@ -895,9 +877,21 @@ jlog_task(echs_task_t t)
 
 	fdbang(STDOUT_FILENO);
 	fdwrite(jhdr, strlenof(jhdr));
-	/* kick off with a nice time stamp */
-	fdwr_stmp();
+	/* kick off with a nice time stamp and uid */
+	with (time_t now) {
+		static char stmp[32U] = "DTSTAMP:";
+		size_t ztmp = strlenof("DTSTAMP:");
 
+		if (UNLIKELY(time(&now) <= 0)) {
+			/* nah, leave early */
+			break;
+		}
+		ztmp += dt_strf_ical(
+			stmp + ztmp, sizeof(stmp) - ztmp,
+			epoch_to_echs_instant(now));
+		stmp[ztmp++] = '\n';
+		fdwrite(stmp, ztmp);
+	}
 	/* write start/end (and their high-res counterparts?) */
 	{
 		static char stmp1[32U] = "DTSTART:";
