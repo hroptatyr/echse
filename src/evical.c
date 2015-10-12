@@ -618,7 +618,7 @@ static struct dtlst_s
 snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
-	echs_tzob_t z;
+	echs_tzob_t z = 0U;
 
 	if (*eof++ == ';') {
 		/* we've got a field modifier, the only modifier
