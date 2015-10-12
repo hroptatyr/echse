@@ -473,6 +473,25 @@ echs_instant_utc(echs_instant_t i, echs_tzob_t zob)
 	return i;
 }
 
+echs_instant_t
+echs_instant_loc(echs_instant_t i, echs_tzob_t zob)
+{
+	zif_t z;
+
+	i = echs_instant_detach_tzob(i);
+	if (UNLIKELY(echs_instant_all_day_p(i))) {
+		/* just do fuckall */
+		;
+	} else if (LIKELY((z = __tzob_zif(zob)) != NULL)) {
+		time_t nix = __inst_to_epoch(i);
+		time_t loc = zif_local_time(z, nix);
+		echs_idiff_t d = {.d = 1000 * (loc - nix)};
+
+		i = echs_instant_add(i, d);
+	}
+	return i;
+}
+
 int
 echs_tzob_offs(echs_tzob_t z, echs_instant_t i, int x)
 {

@@ -1551,10 +1551,11 @@ send_stset(int whither, echs_stset_t sts)
 }
 
 static void
-send_ev(int whither, echs_event_t e)
+send_ev(int whither, echs_event_t e, echs_tzob_t z)
 {
 	char stmp[32U] = {':'};
 	size_t ztmp = 1U;
+	const char *zn;
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
 		return;
@@ -1563,12 +1564,22 @@ send_ev(int whither, echs_event_t e)
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
 
-	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
-	stmp[ztmp++ + 1U] = '\n';
+	/* never wrong with this one */
 	fdwrite("DTSTART", strlenof("DTSTART"));
 	if (echs_instant_all_day_p(e.from)) {
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
+	} else if (z && (zn = echs_zone(z))) {
+		size_t zz = strlen(zn);
+
+		fdwrite(";TZID=", strlenof(";TZID="));
+		fdwrite(zn, zz);
+
+		/* also convert e.from to local Z-time */
+		e.from = echs_instant_loc(e.from, z);
 	}
+	/* the actual stamp */
+	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
+	stmp[ztmp++ + 1U] = '\n';
 	fdwrite(stmp, ztmp + 1U);
 
 	ztmp = idiff_strf(stmp + 1U, sizeof(stmp) - 1U, e.dur);
@@ -1830,7 +1841,7 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 	if (UNLIKELY(this->i >= this->nev)) {
 		return;
 	}
-	send_ev(whither, this->ev[this->i]);
+	send_ev(whither, this->ev[this->i], 0U);
 	return;
 }
 
@@ -2172,7 +2183,7 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 				e.from = cand;
 			}
 		}
-		send_ev(whither, e);
+		send_ev(whither, e, this->zon);
 	}
 	send_rrul(whither, &this->rrul, this->ncch - this->rdi);
 	return;
@@ -2210,7 +2221,7 @@ void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
 	send_ical_hdr(STDOUT_FILENO);
-	send_ev(STDOUT_FILENO, ev);
+	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
 	send_ical_ftr(STDOUT_FILENO);
 	return;
