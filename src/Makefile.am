@@ -97,9 +97,11 @@ if HAVE_LIBEV
 if HAVE_RT_FUNS
 bin_PROGRAMS += echsx
 echsx_SOURCES = echsx.c echsx.yuck
+echsx_SOURCES += version.h version.c
 echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
 echsx_CPPFLAGS = $(AM_CPPFLAGS)
+echsx_CPPFLAGS += -DHAVE_VERSION_H
 echsx_LDFLAGS = $(AM_LDFLAGS)
 echsx_LDFLAGS += $(rt_LIBS)
 echsx_CPPFLAGS += $(ev_CFLAGS)
