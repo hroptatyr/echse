@@ -238,6 +238,33 @@ xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
 	return ssz;
 }
 
+static int
+fdlock(int fd)
+{
+	struct flock flck = {
+		.l_type = F_WRLCK,
+		.l_whence = SEEK_END,
+	};
+
+	if (fcntl(fd, F_SETLKW, &flck) < 0) {
+		return -1;
+	}
+	(void)lseek(fd, 0, SEEK_END);
+	return 0;
+}
+
+static int
+fdunlck(int fd)
+{
+	struct flock flck = {
+		.l_type = F_UNLCK,
+		.l_whence = SEEK_SET,
+		.l_start = 0,
+	};
+
+	return fcntl(fd, F_SETLK, &flck);
+}
+
 
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
@@ -876,6 +903,12 @@ jlog_task(echs_task_t t)
 	static const char jftr[] = "END:VJOURNAL\n";
 
 	fdbang(STDOUT_FILENO);
+	if (fdlock(STDOUT_FILENO) < 0) {
+		ECHS_ERR_LOG("\
+cannot obtain lock", STRERR);
+		return -1;
+	}
+
 	fdwrite(jhdr, strlenof(jhdr));
 	/* kick off with a nice time stamp and uid */
 	with (time_t now) {
@@ -979,6 +1012,7 @@ DESCRIPTION:not run\n";
 
 	fdwrite(jftr, strlenof(jftr));
 	fdflush();
+	fdunlck(STDOUT_FILENO);
 	return 0;
 }
 
