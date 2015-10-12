@@ -64,6 +64,10 @@ extern void clear_tzobs(void);
 extern echs_instant_t echs_instant_utc(echs_instant_t i, echs_tzob_t z);
 
 /**
+ * Convert instant I (in UTC) to local time in zone Z. */
+extern echs_instant_t echs_instant_loc(echs_instant_t i, echs_tzob_t z);
+
+/**
  * Return the curent UTC-offset of Z (in seconds) at instant I (+X seconds). */
 extern int echs_tzob_offs(echs_tzob_t z, echs_instant_t i, int x);
 
