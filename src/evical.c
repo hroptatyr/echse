@@ -417,30 +417,32 @@ snarf_rrule(const char *s, size_t z)
 		case BY_MIN:
 		case BY_SEC:
 			do {
+				long unsigned int tmu;
+
 				on = NULL;
 				/* tmp == 0U is explicitly allowed sometimes
 				 * so do the naught check where it matters */
-				tmp = strtoul(++kv, &on, 10);
+				tmu = strtoul(++kv, &on, 10);
 
 				switch (c->key) {
 				case BY_MON:
-					if (LIKELY(tmp && tmp <= 12U)) {
-						rr.mon = ass_bui31(rr.mon, tmp);
+					if (LIKELY(tmu && tmu <= 12U)) {
+						rr.mon = ass_bui31(rr.mon, tmu);
 					}
 					break;
 				case BY_HOUR:
-					if (LIKELY(tmp <= 24U)) {
-						rr.H = ass_bui31(rr.H, tmp);
+					if (LIKELY(tmu <= 24U)) {
+						rr.H = ass_bui31(rr.H, tmu);
 					}
 					break;
 				case BY_MIN:
-					if (LIKELY(tmp < 60U)) {
-						rr.M = ass_bui63(rr.M, tmp);
+					if (LIKELY(tmu < 60U)) {
+						rr.M = ass_bui63(rr.M, tmu);
 					}
 					break;
 				case BY_SEC:
-					if (LIKELY(tmp <= 60U)) {
-						rr.S = ass_bui63(rr.S, tmp);
+					if (LIKELY(tmu <= 60U)) {
+						rr.S = ass_bui63(rr.S, tmu);
 					}
 					break;
 				}
