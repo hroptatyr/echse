@@ -909,47 +909,25 @@ cannot obtain lock", STRERR);
 		return -1;
 	}
 
+	/* introduce ourselves */
 	fdwrite(jhdr, strlenof(jhdr));
-	/* kick off with a nice time stamp and uid */
-	with (time_t now) {
-		static char stmp[32U] = "DTSTAMP:";
-		size_t ztmp = strlenof("DTSTAMP:");
-
-		if (UNLIKELY(time(&now) <= 0)) {
-			/* nah, leave early */
-			break;
-		}
-		ztmp += dt_strf_ical(
-			stmp + ztmp, sizeof(stmp) - ztmp,
-			epoch_to_echs_instant(now));
-		stmp[ztmp++] = '\n';
-		fdwrite(stmp, ztmp);
-
-		if (t->t_sta.tv_sec <= 0) {
-			/* turn STAMP into START */
-			stmp[5U] = 'R', stmp[6U] = 'T';
-			fdwrite(stmp, ztmp);
-			/* and back */
-			stmp[5U] = 'M', stmp[6U] = 'P';
-		}
-	}
 	/* write start/end (and their high-res counterparts?) */
 	if (t->t_sta.tv_sec > 0) {
 		static char stmp1[32U] = "DTSTART:";
-		static char stmp2[32U] = "DTEND:";
+		static char stmp2[32U] = "DTSTAMP:";
 		size_t n;
 		echs_instant_t ts = epoch_to_echs_instant(t->t_sta.tv_sec);
 		echs_instant_t te = epoch_to_echs_instant(t->t_end.tv_sec);
+
+		n = strlenof("DTSTAMP:");
+		n += dt_strf_ical(stmp2 + n, sizeof(stmp2) - n, te);
+		stmp2[n++] = '\n';
+		fdwrite(stmp2, n);
 
 		n = strlenof("DTSTART:");
 		n += dt_strf_ical(stmp1 + n, sizeof(stmp2) - n, ts);
 		stmp1[n++] = '\n';
 		fdwrite(stmp1, n);
-
-		n = strlenof("DTEND:");
-		n += dt_strf_ical(stmp2 + n, sizeof(stmp2) - n, te);
-		stmp2[n++] = '\n';
-		fdwrite(stmp2, n);
 	}
 
 	with (size_t cmdz = strlen(t->cmd)) {
@@ -974,7 +952,7 @@ X-SIGNAL:%d\n\
 X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
 	}
 
-	if (t->t_sta.tv_sec > 0) {
+	if (t->xc >= 0) {
 		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
 		struct tv_dur_s user =
 			tv_dur((struct timeval){0}, t->rus.ru_utime);
@@ -1290,6 +1268,9 @@ cannot set timeout, job execution will be unbounded");
 				.cmd = argi->command_arg,
 				.xc = -1
 			};
+			if (time(&t.t_sta.tv_sec) > 0) {
+				t.t_end.tv_sec = t.t_sta.tv_sec;
+			}
 			jlog_task(&t);
 		}
 		if (mail_warn() < 0) {
