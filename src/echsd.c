@@ -903,6 +903,7 @@ run_task(_task_t t, bool no_run)
 		SW_DRY_RUN,
 		SW_JLOG,
 		SW_CMD, STR_CMD,
+		SW_TID, STR_TID,
 		SW_UID, STR_UID,
 		SW_GID, STR_GID,
 		SW_CWD, STR_CWD,
@@ -921,6 +922,7 @@ run_task(_task_t t, bool no_run)
 		[SW_DRY_RUN] = "-n",
 		[SW_JLOG] = "-v",
 		[SW_CMD] = "-c", NULL,
+		[SW_TID] = "--tid", NULL,
 		[SW_UID] = "--uid", uid,
 		[SW_GID] = "--gid", gid,
 		[SW_CWD] = "--cwd", NULL,
@@ -953,6 +955,7 @@ run_task(_task_t t, bool no_run)
 		args[SW_DRY_RUN] = "--no-run";
 	}
 	args[STR_CMD] = deconst(t->t->cmd);
+	args[STR_TID] = deconst(obint_name(t->t->oid));
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;

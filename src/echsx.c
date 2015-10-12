@@ -108,6 +108,10 @@ struct echs_task_s {
 	int teeo;
 	int teee;
 
+	/* task uid */
+	const char *tid;
+
+	/* mail file name and whether to rm the mail file */
 	const char *mfn;
 	unsigned int mrm:1U;
 
@@ -930,6 +934,14 @@ cannot obtain lock", STRERR);
 		fdwrite(stmp1, n);
 	}
 
+	if (LIKELY(t->tid != NULL)) {
+		static const char fld[] = "UID:";
+
+		fdwrite(fld, strlenof(fld));
+		fdwrite(t->tid, strlen(t->tid));
+		fdputc('\n');
+	}
+
 	with (size_t cmdz = strlen(t->cmd)) {
 		static char fld[] = "SUMMARY:";
 		char sum[cmdz + strlenof(fld) + 1U];
@@ -1248,6 +1260,7 @@ cannot set timeout, job execution will be unbounded");
 		block_sigs();
 		/* write out VJOURNAL */
 		if (argi->vjournal_flag) {
+			t.tid = argi->tid_arg;
 			jlog_task(&t);
 		}
 		/* brag about our findings */
@@ -1266,6 +1279,7 @@ cannot set timeout, job execution will be unbounded");
 		if (argi->vjournal_flag) {
 			struct echs_task_s t = {
 				.cmd = argi->command_arg,
+				.tid = argi->tid_arg,
 				.xc = -1
 			};
 			if (time(&t.t_sta.tv_sec) > 0) {
