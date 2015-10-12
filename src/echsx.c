@@ -60,6 +60,7 @@
 #endif	/* HAVE_NET_PROTO_UIPC_H */
 #include <ev.h>
 #include <assert.h>
+#include "dt-strpf.h"
 #include "logger.h"
 #include "nifty.h"
 #include "fdprnt.h"
@@ -194,18 +195,6 @@ set_timeout(unsigned int tdiff)
 	return alarm(tdiff);
 }
 
-static size_t
-strfts(char *restrict buf, size_t bsz, struct timespec t)
-{
-	time_t s = t.tv_sec;
-	struct tm *tm = gmtime(&s);
-
-	if (UNLIKELY(tm == NULL)) {
-		return 0U;
-	}
-	return strftime(buf, bsz, "%FT%TZ", tm);
-}
-
 static struct ts_dur_s {
 	long int s;
 	long int n;
@@ -238,6 +227,44 @@ static struct tv_dur_s {
 	return res;
 }
 
+static inline size_t
+xstrlncpy(char *restrict dst, size_t dsz, const char *src, size_t ssz)
+{
+	if (UNLIKELY(ssz > dsz)) {
+		ssz = dsz - 1U;
+	}
+	memcpy(dst, src, ssz);
+	dst[ssz] = '\0';
+	return ssz;
+}
+
+static int
+fdlock(int fd)
+{
+	struct flock flck = {
+		.l_type = F_WRLCK,
+		.l_whence = SEEK_END,
+	};
+
+	if (fcntl(fd, F_SETLKW, &flck) < 0) {
+		return -1;
+	}
+	(void)lseek(fd, 0, SEEK_END);
+	return 0;
+}
+
+static int
+fdunlck(int fd)
+{
+	struct flock flck = {
+		.l_type = F_UNLCK,
+		.l_whence = SEEK_SET,
+		.l_start = 0,
+	};
+
+	return fcntl(fd, F_SETLK, &flck);
+}
+
 
 static int
 mail_hdrs(int tgtfd, echs_task_t t)
@@ -248,8 +275,8 @@ mail_hdrs(int tgtfd, echs_task_t t)
 	struct tv_dur_s sys;
 	double cpu;
 
-	strfts(tstmp1, sizeof(tstmp1), t->t_sta);
-	strfts(tstmp2, sizeof(tstmp2), t->t_end);
+	dt_strf(tstmp1, sizeof(tstmp1), epoch_to_echs_instant(t->t_sta.tv_sec));
+	dt_strf(tstmp2, sizeof(tstmp2), epoch_to_echs_instant(t->t_end.tv_sec));
 	real = ts_dur(t->t_sta, t->t_end);
 	user = tv_dur((struct timeval){0}, t->rus.ru_utime);
 	sys = tv_dur((struct timeval){0}, t->rus.ru_stime);
@@ -813,8 +840,7 @@ mail_task(echs_task_t t)
 
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
-		mfd = STDOUT_FILENO;
-		goto mail;
+		return 0;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", STRERR);
@@ -844,7 +870,6 @@ cannot spawn `sendmail': %s", STRERR);
 	close(mpip[0U]);
 
 	if (chld > 0) {
-	mail:
 		/* now it's time to send the actual mail */
 		mail_hdrs(mfd, t);
 
@@ -872,6 +897,104 @@ cannot spawn `sendmail': %s", STRERR);
 }
 
 static int
+jlog_task(echs_task_t t)
+{
+	static const char jhdr[] = "BEGIN:VJOURNAL\n";
+	static const char jftr[] = "END:VJOURNAL\n";
+
+	fdbang(STDOUT_FILENO);
+	if (fdlock(STDOUT_FILENO) < 0) {
+		ECHS_ERR_LOG("\
+cannot obtain lock", STRERR);
+		return -1;
+	}
+
+	/* introduce ourselves */
+	fdwrite(jhdr, strlenof(jhdr));
+	/* write start/end (and their high-res counterparts?) */
+	if (t->t_sta.tv_sec > 0) {
+		static char stmp1[32U] = "DTSTART:";
+		static char stmp2[32U] = "DTSTAMP:";
+		size_t n;
+		echs_instant_t ts = epoch_to_echs_instant(t->t_sta.tv_sec);
+		echs_instant_t te = epoch_to_echs_instant(t->t_end.tv_sec);
+
+		n = strlenof("DTSTAMP:");
+		n += dt_strf_ical(stmp2 + n, sizeof(stmp2) - n, te);
+		stmp2[n++] = '\n';
+		fdwrite(stmp2, n);
+
+		n = strlenof("DTSTART:");
+		n += dt_strf_ical(stmp1 + n, sizeof(stmp2) - n, ts);
+		stmp1[n++] = '\n';
+		fdwrite(stmp1, n);
+	}
+
+	with (size_t cmdz = strlen(t->cmd)) {
+		static char fld[] = "SUMMARY:";
+		char sum[cmdz + strlenof(fld) + 1U];
+		size_t si;
+
+		si = xstrlncpy(sum, sizeof(sum), fld, strlenof(fld));
+		si += xstrlncpy(sum + si, sizeof(sum) - si, t->cmd, cmdz);
+		sum[si++] = '\n';
+		fdwrite(sum, si);
+	}
+
+	if (WIFEXITED(t->xc)) {
+		fdprintf("\
+X-EXIT-STATUS:%d\n", WEXITSTATUS(t->xc));
+	} else if (WIFSIGNALED(t->xc)) {
+		int sig = WTERMSIG(t->xc);
+		fdprintf("\
+X-EXIT-STATUS:%d\n\
+X-SIGNAL:%d\n\
+X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
+	}
+
+	if (t->xc >= 0) {
+		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
+		struct tv_dur_s user =
+			tv_dur((struct timeval){0}, t->rus.ru_utime);
+		struct tv_dur_s sys =
+			tv_dur((struct timeval){0}, t->rus.ru_stime);
+		double cpu =
+			((double)(user.s + sys.s) +
+			 (double)(user.u + sys.u) * 1.e-6) /
+			((double)real.s + (double)real.n * 1.e-9) * 100.;
+		int s = WIFEXITED(t->xc)
+			? WEXITSTATUS(t->xc)
+			: WIFSIGNALED(t->xc)
+			? WTERMSIG(t->xc) ^ 128
+			: -1;
+
+		fdprintf("\
+X-USER-TIME:%ld.%06lis\n\
+X-SYSTEM-TIME:%ld.%06lis\n\
+X-REAL-TIME:%ld.%09lis\n", user.s, user.u, sys.s, sys.u, real.s, real.n);
+		fdprintf("\
+X-CPU-USAGE:%.2f%%\n", cpu);
+		fdprintf("\
+X-MEM-USAGE:%ldkB\n", t->rus.ru_maxrss);
+
+		fdprintf("\
+DESCRIPTION:$?=%d  %ldkB mem\\n\n\
+ %ld.%06lis user  %ld.%06lis sys  %.2f%% cpu  %ld.%09lis real\n",
+			 s, t->rus.ru_maxrss,
+			 user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
+	} else {
+		static const char nr[] = "\
+DESCRIPTION:not run\n";
+		fdwrite(nr, strlenof(nr));
+	}
+
+	fdwrite(jftr, strlenof(jftr));
+	fdflush();
+	fdunlck(STDOUT_FILENO);
+	return 0;
+}
+
+static int
 mail_warn(void)
 {
 /* mail some error about task not being run */
@@ -887,8 +1010,7 @@ and hence will not be run.\n\
 
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
-		mfd = STDOUT_FILENO;
-		goto mail;
+		return 0;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", STRERR);
@@ -919,14 +1041,13 @@ cannot spawn `sendmail': %s", STRERR);
 
 	if (chld > 0) {
 		char tstmp[32U];
-		struct timespec now;
+		time_t now;
 
-	mail:
 		/* get ourselves a time stamp */
-		clock_gettime(CLOCK_REALTIME, &now);
+		now = time(NULL);
 
 		/* now it's time to send the actual mail */
-		strfts(tstmp, sizeof(tstmp), now);
+		dt_strf(tstmp, sizeof(tstmp), epoch_to_echs_instant(now));
 
 		fdbang(mfd);
 		if (argi->mailfrom_arg) {
@@ -1125,6 +1246,10 @@ cannot set timeout, job execution will be unbounded");
 		}
 		/* no disruptions please */
 		block_sigs();
+		/* write out VJOURNAL */
+		if (argi->vjournal_flag) {
+			jlog_task(&t);
+		}
 		/* brag about our findings */
 		if (mail_task(&t) < 0) {
 			rc = 127;
@@ -1138,6 +1263,16 @@ cannot set timeout, job execution will be unbounded");
 		free_task(&t);
 	} else {
 		/* jsut mail a warning and come back */
+		if (argi->vjournal_flag) {
+			struct echs_task_s t = {
+				.cmd = argi->command_arg,
+				.xc = -1
+			};
+			if (time(&t.t_sta.tv_sec) > 0) {
+				t.t_end.tv_sec = t.t_sta.tv_sec;
+			}
+			jlog_task(&t);
+		}
 		if (mail_warn() < 0) {
 			rc = 127;
 			goto clean_up;

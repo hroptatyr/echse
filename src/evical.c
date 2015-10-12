@@ -1489,23 +1489,15 @@ send_ical_hdr(int whither)
 
 	fdwrite(beg, strlenof(beg));
 	if (UNLIKELY(now <= 0)) {
-		struct tm tm;
 		echs_instant_t nowi;
 
-		if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
+		if (UNLIKELY(time(&now) <= 0)) {
 			/* screw up the singleton */
 			now = 0;
 			return;
 		}
 		/* otherwise fill in now and materialise */
-		nowi.y = tm.tm_year + 1900,
-			nowi.m = tm.tm_mon + 1,
-			nowi.d = tm.tm_mday,
-			nowi.H = tm.tm_hour,
-			nowi.M = tm.tm_min,
-			nowi.S = tm.tm_sec,
-			nowi.ms = ECHS_ALL_SEC;
-
+		nowi = epoch_to_echs_instant(time(&now));
 		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
 		stmp[ztmp++] = '\n';
 	}

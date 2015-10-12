@@ -104,6 +104,7 @@ echsx_LDFLAGS = $(AM_LDFLAGS)
 echsx_LDFLAGS += $(rt_LIBS)
 echsx_CPPFLAGS += $(ev_CFLAGS)
 echsx_LDFLAGS += $(ev_LIBS)
+echsx_LDADD = libechse.la
 BUILT_SOURCES += echsx.yucc
 endif  HAVE_RT_FUNS
 

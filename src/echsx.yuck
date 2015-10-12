@@ -7,6 +7,7 @@ Execute job.
   -i, --stdin=FILE      Redirect FILE to job's stdin.
   -o, --stdout=FILE     Redirect job's stdout to FILE.
   -e, --stderr=FILE     Redirect job's stderr to FILE.
+  -v, --vjournal        Output job summary as VJOURNAL entry.
   --mailout             Send job's stdout by mail.
   --mailerr             Send job's stderr by mail.
   --mailfrom=ADDR       When sending mail use ADDR as from address.
