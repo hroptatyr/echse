@@ -14,6 +14,9 @@ SUFFIXES =
 man1_MANS =
 man1_MANS += $(built_mans)
 man1_MANS += echse.man
+man1_MANS += echsq.man
+man1_MANS += echsd.man
+man1_MANS += echsx.man
 
 BUILT_SOURCES += $(built_mans)
 EXTRA_DIST += author.h2m
