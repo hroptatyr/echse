@@ -729,6 +729,9 @@ cannot initialise file actions: %s", STRERR);
 		return -1;
 	}
 
+	/* initialise the default loop */
+	EV_P = ev_default_loop(EVFLAG_AUTO);
+
 	/* fiddle with the child's descriptors */
 	rc += posix_spawn_file_actions_adddup2(&fa, t->ifd, STDIN_FILENO);
 	rc += posix_spawn_file_actions_adddup2(&fa, t->ofd, STDOUT_FILENO);
@@ -763,7 +766,6 @@ cannot initialise file actions: %s", STRERR);
 
 	/* let's be quick and set up an event loop */
 	if (chld > 0) {
-		EV_P = ev_default_loop(EVFLAG_AUTO);
 		ev_child c;
 
 		ev_child_init(&c, chld_cb, chld, false);
@@ -794,8 +796,10 @@ cannot initialise file actions: %s", STRERR);
 		ev_loop(EV_A_ 0);
 
 		ev_break(EV_A_ EVBREAK_ALL);
-		ev_loop_destroy(EV_A);
 	}
+
+	/* make sure we free assoc'd resources */
+	ev_loop_destroy(EV_A);
 
 	/* close the rest */
 	if (t->opip >= 0 || t->epip >= 0) {
