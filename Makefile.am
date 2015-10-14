@@ -19,6 +19,7 @@ SUBDIRS += info
 SUBDIRS += test
 
 EXTRA_DIST += README.md
+EXTRA_DIST += INSTALL.md
 
 DISTCLEANFILES += version.mk
 DISTCLEANFILES += .version
