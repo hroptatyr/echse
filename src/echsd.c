@@ -2553,7 +2553,6 @@ main(int argc, char *argv[])
 	}
 
 	/* who are we? */
-	meself.pid = getpid();
 	meself.uid = geteuid();
 	meself.gid = getegid();
 
@@ -2594,7 +2593,7 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (argi->dry_run_flag) {
+	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 		mockp = true;
 	} else if (daemonise() < 0) {
@@ -2606,10 +2605,34 @@ main(int argc, char *argv[])
 	/* start them log files */
 	echs_openlog();
 
+	/* we need to get to know ourself  */
+	if ((meself.pid = getpid()) < (pid_t)0) {
+		ECHS_ERR_LOG("cannot obtain current pid %d", meself.pid);
+		rc = 2;
+		goto clo;
+	}
+
 	/* obtain our context */
 	if (UNLIKELY((ctx = make_echsd()) == NULL)) {
 		ECHS_ERR_LOG("cannot instantiate echsd context");
 		goto clo;
+	}
+
+	/* write pid file if requested */
+	if (argi->pidfile_arg) {
+		const int fl = O_CREAT | O_TRUNC | O_WRONLY;
+		const char *pfn = argi->pidfile_arg;
+		int pfd;
+
+		if (UNLIKELY((pfd = open(pfn, fl, 0666)) < 0)) {
+			/* right, so this fails and we quit? */
+			ECHS_ERR_LOG("cannot write pid file `%s'", pfn);
+			rc = 1;
+			goto fre;
+		}
+		/* otherwise */
+		dprintf(pfd, "%d\n", meself.pid);
+		close(pfd);
 	}
 
 	/* inject the echsd socket */
@@ -2628,8 +2651,13 @@ main(int argc, char *argv[])
 		block_sigs();
 	}
 
+fre:
 	/* free context and associated resources */
 	free_echsd(ctx);
+	/* remove pidfile */
+	if (argi->pidfile_arg) {
+		(void)unlink(argi->pidfile_arg);
+	}
 
 clo:
 	/* stop them log files */
