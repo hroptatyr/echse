@@ -124,18 +124,16 @@ start_server() {
         if [ -z "$DAEMONUSER" ] ; then
             start-stop-daemon --start --quiet \
                         --exec $DAEMON \
-                        -- $DAEMON_OPTS
+                        -- $DAEMON_OPTS --pidfile $PIDFILE
             errcode=$?
         else
 # if we are using a daemonuser then change the user id
             start-stop-daemon --start --quiet \
                         --chuid $DAEMONUSER \
                         --exec $DAEMON \
-                        -- $DAEMON_OPTS
+                        -- $DAEMON_OPTS --pidfile $PIDFILE
             errcode=$?
         fi
-        # Write the pid file using the process id from virtuoso.lck
-        sed 's/VIRT_PID=//' $DBPATH/$SHORTNAME.lck > /var/run/$NAME.pid
         return $errcode
 }
 
