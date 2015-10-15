@@ -2594,7 +2594,7 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (argi->dry_run_flag) {
+	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
 		mockp = true;
 	} else if (daemonise() < 0) {
