@@ -849,6 +849,10 @@ mail_task(echs_task_t t)
 	if (argi->mailfrom_arg == NULL || !argi->mailto_nargs) {
 		/* no mail */
 		return 0;
+	} else if (!argi->mailout_flag && !argi->mailerr_flag &&
+		   !argi->mailrun_flag) {
+		/* they really don't want us to send mail do they */
+		return 0;
 	} else if (pipe(mpip) < 0) {
 		ECHS_ERR_LOG("\
 cannot set up pipe to mailer: %s", STRERR);
