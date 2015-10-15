@@ -923,6 +923,7 @@ run_task(_task_t t, bool no_run)
 		SW_MFROM, STR_MFROM,
 		SW_MOUT,
 		SW_MERR,
+		SW_MRUN,
 		SW_STDIN, STR_STDIN,
 		SW_STDOUT, STR_STDOUT,
 		SW_STDERR, STR_STDERR,
@@ -942,6 +943,7 @@ run_task(_task_t t, bool no_run)
 		[SW_MFROM] = "--mailfrom", mfrom,
 		[SW_MOUT] = "--mailout",
 		[SW_MERR] = "--mailerr",
+		[SW_MRUN] = "--mailrun",
 		[SW_STDIN] = "--stdin", NULL,
 		[SW_STDOUT] = "--stdout", NULL,
 		[SW_STDERR] = "--stderr", NULL,
@@ -1011,6 +1013,9 @@ run_task(_task_t t, bool no_run)
 		}
 		if (t->t->mailerr) {
 			args[i++] = "--mailerr";
+		}
+		if (t->t->mailrun) {
+			args[i++] = "--mailrun";
 		}
 		if (t->t->in) {
 			args[i++] = args[18];
