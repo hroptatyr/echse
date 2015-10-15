@@ -854,6 +854,23 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		}
 		break;
 
+	case FLD_MRUN:
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailrun = 0U;
+				ve->t.mrunset = 1U;
+				break;
+			default:
+				ve->t.mailrun = 1U;
+				ve->t.mrunset = 1U;
+				break;
+			}
+		}
+		break;
+
 	case FLD_SHELL:
 		if (ve->t.run_as.sh != NULL) {
 			/* only the first shell wins */
@@ -1464,6 +1481,9 @@ send_task(int whither, echs_task_t t)
 	}
 	if (t->umsk <= 0777) {
 		fdprintf("X-ECHS-UMASK:0%o\n", t->umsk);
+	}
+	if (t->mrunset) {
+		fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->mailrun);
 	}
 	if (t->moutset) {
 		fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);

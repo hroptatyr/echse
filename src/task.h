@@ -86,8 +86,10 @@ struct echs_task_s {
 	unsigned int moutset:1U;
 	unsigned int mailerr:1U;
 	unsigned int merrset:1U;
+	unsigned int mailrun:1U;
+	unsigned int mrunset:1U;
 	/* pad to next byte */
-	unsigned int:4U;
+	unsigned int:2U;
 
 	/* maximum number of simultaneous runs, upped by 1, i.e.
 	 * 0 means -1 means infinite, 1 means 0 means never run
