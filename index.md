@@ -96,7 +96,7 @@ X-ECHS-MAIL-ERR
 
 X-ECHS-MAIL-RUN
 : If set to non-0 send a mail with the status information, this flag is
-: implied when X-ECHS-MAIL-OUT or X-ECHS-MAIL-ERR is set.
+  implied when X-ECHS-MAIL-OUT or X-ECHS-MAIL-ERR is set.
 
 X-ECHS-MAX-SIMUL
 : A job is only run this many times simultaneously.
