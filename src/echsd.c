@@ -397,9 +397,11 @@ get_queudir(void)
 			break;
 		}
 
-		di = xstrlcpy(d, spodir, sizeof(d));
+		di = xstrlncpy(d, sizeof(d), spodir, strlenof(spodir));
 		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir + 1U, strlenof(appdir) - 1U);
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* bollocks */
@@ -426,7 +428,9 @@ get_queudir(void)
 		}
 		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
 		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir, strlenof(appdir));
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
 			break;
@@ -464,9 +468,11 @@ get_sockdir(void)
 			return NULL;
 		}
 
-		di = xstrlcpy(d, rundir, sizeof(d));
+		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
 		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir + 1U, strlenof(appdir) - 1U);
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* it's just horseshit */
@@ -475,7 +481,7 @@ get_sockdir(void)
 		/* we consider our job done */
 		return d;
 	default:
-		di = xstrlcpy(d, rundir, sizeof(d));
+		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
 		d[di++] = '/';
 		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
 		if (stat(d, &st) < 0 || !S_ISDIR(st.st_mode)) {
@@ -484,7 +490,9 @@ get_sockdir(void)
 			goto tmpdir;
 		}
 		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir + 1U, strlenof(appdir) - 1U);
 		/* now mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
@@ -495,7 +503,9 @@ get_sockdir(void)
 
 	tmpdir:
 		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir + 1U, strlenof(appdir) - 1U);
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
 			break;
