@@ -115,6 +115,7 @@ echsd_SOURCES = echsd.c echsd.yuck
 echsd_SOURCES += logger.c logger.h
 echsd_SOURCES += nifty.h
 echsd_SOURCES += nedtrie.h
+echsd_SOURCES += echsd.init
 echsd_CPPFLAGS = $(AM_CPPFLAGS)
 echsd_LDFLAGS = $(AM_LDFLAGS)
 echsd_CPPFLAGS += $(ev_CFLAGS)
