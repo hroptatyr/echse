@@ -2,5 +2,4 @@ Usage: echsd
 
 Run the echse daemon.
 
-  -n, --dry-run         Run in foreground and don't actually
-                        execute anything.
+  -n, --dry-run         Run in foreground.
