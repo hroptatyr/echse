@@ -1018,15 +1018,15 @@ run_task(_task_t t, bool no_run)
 			args[i++] = "--mailrun";
 		}
 		if (t->t->in) {
-			args[i++] = args[18];
+			args[i++] = args[SW_STDIN];
 			args[i++] = deconst(t->t->in);
 		}
 		if (t->t->out) {
-			args[i++] = args[20];
+			args[i++] = args[SW_STDOUT];
 			args[i++] = deconst(t->t->out);
 		}
 		if (t->t->err) {
-			args[i++] = args[22];
+			args[i++] = args[SW_STDERR];
 			args[i++] = deconst(t->t->err);
 		}
 		for (size_t j = 0U; j < natt; j++) {
