@@ -901,6 +901,86 @@ free_task_ht(void)
 	return;
 }
 
+static ssize_t
+vtodoify(int ofd, _task_t t)
+{
+	static const char vtod_hdr[] = "\
+BEGIN:VTODO\n";
+	static const char vtod_ftr[] = "\
+END:VTODO\n";
+	ssize_t nwr = 0;
+
+	fdbang(ofd);
+	/* start off with VTODO's header */
+	nwr += fdwrite(vtod_hdr, strlenof(vtod_hdr));
+
+	nwr += fdprintf("UID:%s\n", obint_name(t->t->oid));
+	nwr += fdprintf("SUMMARY:%s\n", t->t->cmd);
+
+	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
+		if (!run_as.u) {
+			run_as.u = t->dflt_cred.u;
+		}
+		if (!run_as.g) {
+			run_as.g = t->dflt_cred.g;
+		}
+		if (!run_as.wd) {
+			run_as.wd = t->dflt_cred.wd;
+		}
+		if (!run_as.sh) {
+			run_as.sh = t->dflt_cred.sh;
+		}
+
+		fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u);
+		fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g);
+		fdprintf("X-ECHS-SHELL:%s\n", run_as.sh);
+		fdprintf("LOCATION:%s\n", run_as.wd);
+	}
+
+	with (echs_idiff_t d = t->dur) {
+		const int s = d.d / 1000U + !!(d.d % 1000U);
+
+		fdprintf("DURATION:%d\n", s);
+	}
+	with (unsigned int um = 0066U) {
+		if (t->t->umsk < 0777U) {
+			um = t->t->umsk;
+		}
+		fdprintf("X-ECHS-UMASK:0%o\n", um);
+	}
+
+	fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->t->mailrun);
+	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->t->mailout);
+	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->t->mailerr);
+	if (t->t->in) {
+		fdprintf("X-ECHS-IFILE:%s\n", t->t->in);
+	}
+	if (t->t->out) {
+		fdprintf("X-ECHS-OFILE:%s\n", t->t->out);
+	}
+	if (t->t->err) {
+		fdprintf("X-ECHS-EFILE:%s\n", t->t->err);
+	}
+	if (t->t->org) {
+		fdprintf("ORGANIZER:%s\n", t->t->org);
+	} else if (hnamez) {
+		/* singleton, extend mailfrom by +HOSTNAME */
+		fdprintf("ORGANIZER:echse+%.*s\n", (int)hnamez, hname);
+	} else {
+		static const char eorg[] = "ORGANIZER:echse\n";
+		fdwrite(eorg, strlenof(eorg));
+	}
+	for (size_t j = 0U, natt = t->t->att ? t->t->att->nl : 0U;
+	     j < natt; j++) {
+		fdprintf("ATTENDEE:%s\n", t->t->att->l[j]);
+	}
+
+	/* and finish with VTODO's footer followed by a nice flush */
+	nwr += fdwrite(vtod_ftr, strlenof(vtod_ftr));
+	fdflush();
+	return nwr;
+}
+
 static bool mockp;
 static pid_t
 run_task(_task_t t, bool no_run)
@@ -2073,6 +2153,9 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	 * if the maximum is running, defer the execution of this task */
 	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
 		pid_t p;
+
+		/* vtodoify for the fun */
+		vtodoify(STDERR_FILENO, t);
 
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
