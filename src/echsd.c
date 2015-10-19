@@ -985,165 +985,75 @@ static pid_t
 run_task(_task_t t, bool no_run)
 {
 /* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U], tmo[16U], umsk[16U];
-	static char mfrom[64U] = "echse";
-	enum {
-		TOOL,
-		SW_DRY_RUN,
-		SW_JLOG,
-		SW_CMD, STR_CMD,
-		SW_TID, STR_TID,
-		SW_UID, STR_UID,
-		SW_GID, STR_GID,
-		SW_CWD, STR_CWD,
-		SW_SH, STR_SH,
-		SW_UMASK, STR_UMASK,
-		SW_TIMEO, STR_TIMEO,
-		SW_MFROM, STR_MFROM,
-		SW_MOUT,
-		SW_MERR,
-		SW_MRUN,
-		SW_STDIN, STR_STDIN,
-		SW_STDOUT, STR_STDOUT,
-		SW_STDERR, STR_STDERR,
-	};
-	static char *args_proto[] = {
-		[TOOL] = "echsx",
-		[SW_DRY_RUN] = "-n",
-		[SW_JLOG] = "-v",
-		[SW_CMD] = "-c", NULL,
-		[SW_TID] = "--tid", NULL,
-		[SW_UID] = "--uid", uid,
-		[SW_GID] = "--gid", gid,
-		[SW_CWD] = "--cwd", NULL,
-		[SW_SH] = "--shell", NULL,
-		[SW_UMASK] = "--umask", umsk,
-		[SW_TIMEO] = "--timeout", tmo,
-		[SW_MFROM] = "--mailfrom", mfrom,
-		[SW_MOUT] = "--mailout",
-		[SW_MERR] = "--mailerr",
-		[SW_MRUN] = "--mailrun",
-		[SW_STDIN] = "--stdin", NULL,
-		[SW_STDOUT] = "--stdout", NULL,
-		[SW_STDERR] = "--stderr", NULL,
+	static char *args[] = {
+		"echsx",
+		/* we want a vjournal log, defo defo */
+		"-v",
 		NULL
 	};
-	/* use a VLA for the real args */
-	const size_t natt = t->t->att ? t->t->att->nl : 0U;
-	char *args[countof(args_proto) + 2U * natt];
 	char *const *env = deconst(t->t->env);
+	/* echsx's stdin */
+	int xin[2U];
 	/* for the journal */
-	posix_spawn_file_actions_t fa, *_fap = NULL;
+	posix_spawn_file_actions_t fa;
 	char vjfn[PATH_MAX];
 	int vjfd;
 	off_t vjof;
 	/* the actual process */
 	pid_t r;
 
-	/* set up the real args */
-	memcpy(args, args_proto, sizeof(args_proto));
-	if (no_run) {
-		args[SW_DRY_RUN] = "--no-run";
-	}
-	args[STR_CMD] = deconst(t->t->cmd);
-	args[STR_TID] = deconst(obint_name(t->t->oid));
-	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
-		if (!run_as.u) {
-			run_as.u = t->dflt_cred.u;
-		}
-		if (!run_as.g) {
-			run_as.g = t->dflt_cred.g;
-		}
-		snprintf(uid, sizeof(uid), "%u", (uid_t)run_as.u);
-		snprintf(gid, sizeof(gid), "%u", (gid_t)run_as.g);
-
-		if (!run_as.wd) {
-			run_as.wd = t->dflt_cred.wd;
-		}
-		if (!run_as.sh) {
-			run_as.sh = t->dflt_cred.sh;
-		}
-		args[STR_CWD] = deconst(run_as.wd);
-		args[STR_SH] = deconst(run_as.sh);
-	}
-	with (echs_idiff_t d = t->dur) {
-		const int s = d.d / 1000U + !!(d.d % 1000U);
-
-		snprintf(tmo, sizeof(tmo), "%d", s);
-	}
-	with (unsigned int um = 0066U) {
-		if (t->t->umsk < 0777U) {
-			um = t->t->umsk;
-		}
-		snprintf(umsk, sizeof(umsk), "0%o", um);
+	/* set up pipe for echsx(1) */
+	if (UNLIKELY(pipe(xin) < 0)) {
+		ECHS_ERR_LOG("cannot set up pipe to echsx: %s", STRERR);
+		return -1;
 	}
 
-	if (t->t->org) {
-		args[STR_MFROM] = deconst(t->t->org);
-	} else if (!mfrom[strlenof("echse")] && hnamez) {
-		/* singleton, extend mailfrom by +HOSTNAME */
-		size_t hp = strlenof("echse");
-		mfrom[hp++] = '+';
-		xstrlncpy(mfrom + hp, sizeof(mfrom) - hp, hname, hnamez);
-	}
-	with (size_t i = STR_MFROM + 1U) {
-		if (t->t->mailout) {
-			args[i++] = "--mailout";
-		}
-		if (t->t->mailerr) {
-			args[i++] = "--mailerr";
-		}
-		if (t->t->mailrun) {
-			args[i++] = "--mailrun";
-		}
-		if (t->t->in) {
-			args[i++] = args[SW_STDIN];
-			args[i++] = deconst(t->t->in);
-		}
-		if (t->t->out) {
-			args[i++] = args[SW_STDOUT];
-			args[i++] = deconst(t->t->out);
-		}
-		if (t->t->err) {
-			args[i++] = args[SW_STDERR];
-			args[i++] = deconst(t->t->err);
-		}
-		for (size_t j = 0U; j < natt; j++) {
-			args[i++] = "--mailto";
-			args[i++] = t->t->att->l[j];
-		}
-		/* finalise args array */
-		args[i++] = NULL;
-	}
-
-	/* finally fork out our child */
+	/* prepare the forking */
 	if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
 		/* shit, what are we gonna do?*/
-		;
-	} else if (snprintf(vjfn, sizeof(vjfn),
+		ECHS_ERR_LOG("cannot prepare forking to echsx: %s", STRERR);
+		return -1;
+	}
+
+	/* prep the IPC with echsx */
+	posix_spawn_file_actions_adddup2(&fa, xin[0U], STDIN_FILENO);
+	posix_spawn_file_actions_addclose(&fa, xin[0U]);
+	posix_spawn_file_actions_addclose(&fa, xin[1U]);
+
+	/* get the journalling on the way */
+	if (snprintf(vjfn, sizeof(vjfn),
 			    "echsj_%u.ics", t->dflt_cred.u) < 0) {
 		/* couldn't care less */
-		;
+		vjfd = -1;
 	} else if ((vjfd = openat(qdirfd, vjfn, O_RDWR | O_CREAT, 0600)) < 0) {
 		/* brilliant */
 		;
 	} else if ((vjof = lseek(vjfd, 0, SEEK_END)) < 0) {
 		/* make sure we don't shed a tear over this one */
 		close(vjfd);
+		vjfd = -1;
 	} else {
 		/* all's well in either case */
 		posix_spawn_file_actions_adddup2(&fa, vjfd, STDOUT_FILENO);
 		posix_spawn_file_actions_addclose(&fa, vjfd);
-		_fap = &fa;
 	}
-	if (UNLIKELY(posix_spawn(&r, echsx, _fap, NULL, args, env) < 0)) {
+
+	/* finally fork out our child */
+	if (UNLIKELY(posix_spawn(&r, echsx, &fa, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		r = -1;
 	}
-	if (LIKELY(_fap != NULL)) {
+	/* free spawn resources */
+	posix_spawn_file_actions_destroy(&fa);
+
+	if (LIKELY(!(vjfd < 0))) {
 		close(vjfd);
-		posix_spawn_file_actions_destroy(_fap);
 	}
+	/* close read side of the pipe to echsx(1) */
+	close(xin[0U]);
+
+	/* and splice our VTODO onto xin[1U] */
+	(void)vtodoify(xin[1U], t);
 	return r;
 }
 
@@ -2142,9 +2052,6 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	 * if the maximum is running, defer the execution of this task */
 	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
 		pid_t p;
-
-		/* vtodoify for the fun */
-		vtodoify(STDERR_FILENO, t);
 
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
