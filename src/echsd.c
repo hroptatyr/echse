@@ -981,7 +981,6 @@ END:VTODO\n";
 	return nwr;
 }
 
-static bool mockp;
 static pid_t
 run_task(_task_t t, bool no_run)
 {
@@ -1118,17 +1117,7 @@ run_task(_task_t t, bool no_run)
 	}
 
 	/* finally fork out our child */
-	if (UNLIKELY(mockp)) {
-		r = -1;
-		fputs(echsx, stdout);
-		for (const char *const *ap = args + 1U; *ap; ap++) {
-			fputc(' ', stdout);
-			fputc('\'', stdout);
-			fputs(*ap, stdout);
-			fputc('\'', stdout);
-		}
-		fputc('\n', stdout);
-	} else if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
+	if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
 		/* shit, what are we gonna do?*/
 		;
 	} else if (snprintf(vjfn, sizeof(vjfn),
@@ -2678,7 +2667,6 @@ main(int argc, char *argv[])
 
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
-		mockp = true;
 	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;
