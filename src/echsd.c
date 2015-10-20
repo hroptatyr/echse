@@ -901,21 +901,42 @@ free_task_ht(void)
 	return;
 }
 
-static ssize_t
+static int
 vtodoify(int ofd, _task_t t)
 {
+	static const char vcal_hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n";
+	static const char vcal_ftr[] = "\
+END:VCALENDAR\n\
+";
 	static const char vtod_hdr[] = "\
 BEGIN:VTODO\n";
 	static const char vtod_ftr[] = "\
 END:VTODO\n";
-	ssize_t nwr = 0;
+	int rc = 0;
 
+	/* bang and print VCAL header */
 	fdbang(ofd);
-	/* start off with VTODO's header */
-	nwr += fdwrite(vtod_hdr, strlenof(vtod_hdr));
+	if (UNLIKELY(fdwrite(vcal_hdr, strlenof(vcal_hdr)) < 0)) {
+		rc--;
+		goto out;
+	}
 
-	nwr += fdprintf("UID:%s\n", obint_name(t->t->oid));
-	nwr += fdprintf("SUMMARY:%s\n", t->t->cmd);
+	/* start off with VTODO's header */
+	if (UNLIKELY(fdwrite(vtod_hdr, strlenof(vtod_hdr)) < 0)) {
+		rc--;
+		goto out;
+	}
+
+
+	rc -= fdprintf("UID:%s\n", obint_name(t->t->oid)) < 0;
+	rc -= fdprintf("SUMMARY:%s\n", t->t->cmd) < 0;
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
 
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
@@ -931,54 +952,71 @@ END:VTODO\n";
 			run_as.sh = t->dflt_cred.sh;
 		}
 
-		fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u);
-		fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g);
-		fdprintf("X-ECHS-SHELL:%s\n", run_as.sh);
-		fdprintf("LOCATION:%s\n", run_as.wd);
+		rc -= fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u) < 0;
+		rc -= fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g) < 0;
+		rc -= fdprintf("X-ECHS-SHELL:%s\n", run_as.sh) < 0;
+		rc -= fdprintf("LOCATION:%s\n", run_as.wd) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
 	with (echs_idiff_t d = t->dur) {
 		const int s = d.d / 1000U + !!(d.d % 1000U);
 
-		fdprintf("DURATION:%d\n", s);
+		rc -= fdprintf("DURATION:%d\n", s) < 0;
 	}
 	with (unsigned int um = 0066U) {
 		if (t->t->umsk < 0777U) {
 			um = t->t->umsk;
 		}
-		fdprintf("X-ECHS-UMASK:0%o\n", um);
+		rc -= fdprintf("X-ECHS-UMASK:0%o\n", um) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
-	fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->t->mailrun);
-	fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->t->mailout);
-	fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->t->mailerr);
+	rc -= fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->t->mailrun) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->t->mailout) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->t->mailerr) < 0;
 	if (t->t->in) {
-		fdprintf("X-ECHS-IFILE:%s\n", t->t->in);
+		rc -= fdprintf("X-ECHS-IFILE:%s\n", t->t->in) < 0;
 	}
 	if (t->t->out) {
-		fdprintf("X-ECHS-OFILE:%s\n", t->t->out);
+		rc -= fdprintf("X-ECHS-OFILE:%s\n", t->t->out) < 0;
 	}
 	if (t->t->err) {
-		fdprintf("X-ECHS-EFILE:%s\n", t->t->err);
+		rc -= fdprintf("X-ECHS-EFILE:%s\n", t->t->err) < 0;
 	}
 	if (t->t->org) {
-		fdprintf("ORGANIZER:%s\n", t->t->org);
+		rc -= fdprintf("ORGANIZER:%s\n", t->t->org) < 0;
 	} else if (hnamez) {
 		/* singleton, extend mailfrom by +HOSTNAME */
-		fdprintf("ORGANIZER:echse+%.*s\n", (int)hnamez, hname);
+		const int hnamei = hnamez;
+		rc -= fdprintf("ORGANIZER:echse+%.*s\n", hnamei, hname) < 0;
 	} else {
 		static const char eorg[] = "ORGANIZER:echse\n";
-		fdwrite(eorg, strlenof(eorg));
+		rc -= fdwrite(eorg, strlenof(eorg)) < 0;
 	}
 	for (size_t j = 0U, natt = t->t->att ? t->t->att->nl : 0U;
 	     j < natt; j++) {
-		fdprintf("ATTENDEE:%s\n", t->t->att->l[j]);
+		rc -= fdprintf("ATTENDEE:%s\n", t->t->att->l[j]) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
 	/* and finish with VTODO's footer followed by a nice flush */
-	nwr += fdwrite(vtod_ftr, strlenof(vtod_ftr));
-	fdflush();
-	return nwr;
+	if (UNLIKELY(fdwrite(vtod_ftr, strlenof(vtod_ftr)) < 0)) {
+		rc--;
+		goto out;
+	} else if (UNLIKELY(fdwrite(vcal_ftr, strlenof(vcal_ftr)) < 0)) {
+		rc--;
+		goto out;
+	}
+	rc -= fdflush() < 0;
+out:
+	return rc;
 }
 
 static pid_t
