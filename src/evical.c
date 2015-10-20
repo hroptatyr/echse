@@ -1310,7 +1310,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		case FLD_END:
 			/* yep, that might be legit */
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
-			    comp->comp != COMP_VEVT) {
+			    !(comp->comp == COMP_VEVT ||
+			      comp->comp == COMP_VTOD)) {
 				/* nope it wasn't legit */
 				p->st = ST_UNK;
 				res = ICAL_EOP;
