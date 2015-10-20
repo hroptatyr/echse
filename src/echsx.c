@@ -108,9 +108,6 @@ struct echsx_task_s {
 	int teeo;
 	int teee;
 
-	/* task uid */
-	const char *tid;
-
 	/* mail file name and whether to rm the mail file */
 	const char *mfn;
 	unsigned int mrm:1U;
@@ -944,11 +941,12 @@ cannot obtain lock", STRERR);
 		fdwrite(stmp1, n);
 	}
 
-	if (LIKELY(t->tid != NULL)) {
+	if (LIKELY(t->t->oid)) {
 		static const char fld[] = "UID:";
+		const char *tid = obint_name(t->t->oid);
 
 		fdwrite(fld, strlenof(fld));
-		fdwrite(t->tid, strlen(t->tid));
+		fdwrite(tid, strlen(tid));
 		fdputc('\n');
 	}
 
@@ -1203,7 +1201,6 @@ cannot set timeout, job execution will be unbounded");
 		block_sigs();
 		/* write out VJOURNAL */
 		if (argi->vjournal_flag) {
-			xt.tid = obint_name(t->oid);
 			jlog_task(&xt);
 		}
 		/* brag about our findings */
