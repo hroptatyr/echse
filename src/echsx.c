@@ -1265,13 +1265,22 @@ main(int argc, char *argv[])
 				if (UNLIKELY(ins.v != INSVERB_SCHE)) {
 					break;
 				} else if (UNLIKELY(ins.t == NULL)) {
+					ECHS_ERR_LOG("\
+cannot execute: no instructions given");
 					continue;
 				} else if (UNLIKELY(!ins.t->oid)) {
-					free_echs_task(ins.t);
-					continue;
+					ECHS_ERR_LOG("\
+cannot execute: no uid present");
+					goto free;
+				} else if (ins.t->strm != NULL) {
+					/* huh? recurring shit? */
+					ECHS_ERR_LOG("\
+cannot execute: recurring instructions");
+					goto free;
 				}
 				/* otherwise ins.t is a task and good to go */
 				echsx(ins.t);
+			free:
 				free_echs_task(ins.t);
 			} while (1);
 			if (LIKELY(nrd > 0)) {
