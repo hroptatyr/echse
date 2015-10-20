@@ -1,6 +1,7 @@
 Usage: echsx
 
-Execute job.
+Execute jobs from VTODO entries on stdin.
 
   -d, --daemon          Run in daemon mode.
   -v, --vjournal        Output job summary as VJOURNAL entry.
+  -n, --no-run          Do not run commands in VTODO.

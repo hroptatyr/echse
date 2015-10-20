@@ -1118,6 +1118,16 @@ cannot set user id to %lu: %s", u, STRERR);
 		}
 	}
 
+	/* are we supposed to run? */
+	if (argi->no_run_flag) {
+		/* nope, apparently not */
+		static const char msg[] = "\
+The scheduled task reached its maximum number of simultaneous runs.";
+		xt.errmsg = msg;
+		xt.errmsz = strlenof(msg);
+		goto fatal;
+	}
+
 	/* check the command string */
 	if (t->cmd == NULL) {
 		static const char msg[] = "\
