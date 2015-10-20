@@ -1092,6 +1092,8 @@ run_task(_task_t t, bool no_run)
 
 	/* and splice our VTODO onto xin[1U] */
 	(void)vtodoify(xin[1U], t);
+	/* we're finished aren't we? */
+	close(xin[1U]);
 	return r;
 }
 
