@@ -108,6 +108,10 @@ struct echsx_task_s {
 	int teeo;
 	int teee;
 
+	/* error message */
+	const char *errmsg;
+	size_t errmsz;
+
 	/* mail file name and whether to rm the mail file */
 	const char *mfn;
 	unsigned int mrm:1U;
@@ -287,14 +291,37 @@ mail_hdrs(int tgtfd, echsx_task_t t)
 	if (t->t->org) {
 		fdprintf("From: %s\n", t->t->org);
 	}
-	for (char *const *atp = t->t->att ? t->t->att->l : NULL; atp; atp++) {
-		fdprintf("To: %s\n", *atp);
+	if_with (struct strlst_s *att = t->t->att, att) {
+		char *const *atp;
+
+		if (!(atp = att->l)) {
+			break;
+		}
+		/* otherwise compose To header */
+		fdwrite("To: ", strlenof("To: "));
+		fdwrite(*atp, strlen(*atp));
+		for (atp++; atp; atp++) {
+			fdputc(',');
+			fdputc(' ');
+			fdwrite(*atp, strlen(*atp));
+		}
+		fdputc('\n');
 	}
 	if (t->t->org) {
 		fdprintf("Content-Type: text/plain\n");
 		fdprintf("User-Agent: " USER_AGENT "\n");
 	}
-	fdprintf("Subject: %s\n", t->t->cmd);
+	/* write subject, if there was an error indicate so */
+	fdwrite("Subject: ", strlenof("Subject: "));
+	if (t->errmsg) {
+		fdwrite("[NOT RUN] ", strlenof("[NOT RUN] "));
+	}
+	if (t->t->cmd) {
+		fdwrite(t->t->cmd, strlen(t->t->cmd));
+	} else {
+		fdwrite("no command given", strlenof("no command given"));
+	}
+	fdputc('\n');
 
 	if (WIFEXITED(t->xc)) {
 		fdprintf("\
@@ -849,7 +876,8 @@ mail_task(echsx_task_t t)
 	if (t->t->org == NULL || t->t->att == NULL || !t->t->att->nl) {
 		/* no mail */
 		return 0;
-	} else if (!t->t->mailout && !t->t->mailerr && !t->t->mailrun) {
+	} else if (!t->t->mailout && !t->t->mailerr &&
+		   !t->t->mailrun && t->errmsg == NULL) {
 		/* they really don't want us to send mail do they */
 		return 0;
 	} else if (pipe(mpip) < 0) {
@@ -867,6 +895,8 @@ cannot initialise file actions: %s", STRERR);
 		/* we're all set for the big forking */
 		posix_spawn_file_actions_adddup2(&fa, mpip[0U], STDIN_FILENO);
 		posix_spawn_file_actions_addclose(&fa, mpip[0U]);
+		posix_spawn_file_actions_addclose(&fa, STDOUT_FILENO);
+		posix_spawn_file_actions_addclose(&fa, STDERR_FILENO);
 
 		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
 			ECHS_ERR_LOG("\
@@ -881,11 +911,22 @@ cannot spawn `sendmail': %s", STRERR);
 	close(mpip[0U]);
 
 	if (chld > 0) {
+		int fd;
+
 		/* now it's time to send the actual mail */
 		mail_hdrs(mfd, t);
 
-		/* joint file */
-		if_with (int fd, (fd = open(t->mfn, O_RDONLY)) >= 0) {
+		if (t->errmsg) {
+			/* error message only */
+			fdwrite(t->errmsg, t->errmsz);
+			fdputc('\n');
+		} else if (t->mfn == NULL) {
+			/* no mail file no splicing, simples */
+			;
+		} else if ((fd = open(t->mfn, O_RDONLY)) < 0) {
+			/* tell user we fucked his mail file */
+			fdprintf("Error: cannot open mail file `%s'\n", t->mfn);
+		} else {
 			xsplice(mfd, fd);
 			close(fd);
 		}
@@ -1014,102 +1055,6 @@ DESCRIPTION:not run\n";
 	return 0;
 }
 
-#if 0
-static int
-mail_warn(echs_task_t t)
-{
-/* mail some error about task not being run */
-	static const char mailcmd[] = "/usr/sbin/sendmail";
-	static const char wtxt[] = "\
-The scheduled task reached its maximum number of simultaneous tasks\n\
-and hence will not be run.\n\
-";
-	int mpip[2] = {-1, -1};
-	posix_spawn_file_actions_t fa;
-	int mfd = -1;
-	int rc = 0;
-
-	if (t->org == NULL || t->att == NULL || !t->att->nl) {
-		/* no mail */
-		return 0;
-	} else if (pipe(mpip) < 0) {
-		ECHS_ERR_LOG("\
-cannot set up pipe to mailer: %s", STRERR);
-		return -1;
-	}
-
-	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
-	if (posix_spawn_file_actions_init(&fa) < 0) {
-		ECHS_ERR_LOG("\
-cannot initialise file actions: %s", STRERR);
-		rc = -1;
-	} else {
-		/* we're all set for the big forking */
-		posix_spawn_file_actions_adddup2(&fa, mpip[0U], STDIN_FILENO);
-		posix_spawn_file_actions_addclose(&fa, mpip[0U]);
-
-		if (posix_spawn(&chld, mailcmd, &fa, NULL, _mcmd, NULL) < 0) {
-			ECHS_ERR_LOG("\
-cannot spawn `sendmail': %s", STRERR);
-			rc = -1;
-		}
-
-		/* parent */
-		posix_spawn_file_actions_destroy(&fa);
-	}
-	/* we're not interested in the read end of the descriptor */
-	close(mpip[0U]);
-
-	if (chld > 0) {
-		char tstmp[32U];
-		time_t now;
-
-		/* get ourselves a time stamp */
-		now = time(NULL);
-
-		/* now it's time to send the actual mail */
-		dt_strf(tstmp, sizeof(tstmp), epoch_to_echs_instant(now));
-
-		fdbang(mfd);
-		if (t->org) {
-			fdprintf("From: %s\n", t->org);
-		}
-		for (size_t i = 0U; i < argi->mailto_nargs; i++) {
-			fdprintf("To: %s\n", argi->mailto_args[i]);
-		}
-		if (argi->mailfrom_arg) {
-			fdprintf("Content-Type: text/plain\n");
-			fdprintf("User-Agent: " USER_AGENT "\n");
-		}
-		fdprintf("Subject: [NOT-RUN] %s\n", argi->command_arg);
-
-		fdprintf("\
-X-Job-Start: %s\n\
-X-Job-End: %s\n",
-			 tstmp, tstmp);
-		fdputc('\n');
-		fdflush();
-
-		write(mfd, wtxt, strlenof(wtxt));
-	}
-
-	/* send off the mail by closing the in-pipe */
-	close(mfd);
-
-	if (chld > 0) {
-		int mailrc;
-
-		while (waitpid(chld, &mailrc, 0) != chld);
-		if (mailrc) {
-			rc = -1;
-		}
-	}
-	/* we're not monitoring anything anymore */
-	chld = 0;
-	return rc;
-}
-#endif
-
 static void
 free_task(echsx_task_t t)
 {
@@ -1131,6 +1076,8 @@ static yuck_t argi[1U];
 static int
 echsx(echs_task_t t)
 {
+	char _err[1024U];
+	struct echsx_task_s xt = {t};
 	mode_t umsk_old = 0777U;
 	int rc = 0;
 
@@ -1141,9 +1088,16 @@ echsx(echs_task_t t)
 		errno = ERANGE;
 		if (g > (gid_t)~0UL ||
 		    setgid((gid_t)g) < 0) {
-			ECHS_ERR_LOG("\
-cannot set group id to %ld: %s", g, STRERR);
-			return -1;
+			int z = snprintf(_err, sizeof(_err), "\
+cannot set group id to %lu: %s", g, STRERR);
+
+			if (z < 0) {
+				/* you've got to be kidding :O */
+				return -1;
+			}
+			xt.errmsg = _err;
+			xt.errmsz = z;
+			goto fatal;
 		}
 	}
 	if (t->run_as.u) {
@@ -1152,16 +1106,25 @@ cannot set group id to %ld: %s", g, STRERR);
 		errno = ERANGE;
 		if (u > (uid_t)~0UL ||
 		    setuid((uid_t)u) < 0) {
-			ECHS_ERR_LOG("\
-cannot set user id to %ld: %s", u, STRERR);
-			return -1;
+			int z = snprintf(_err, sizeof(_err), "\
+cannot set user id to %lu: %s", u, STRERR);
+			if (z < 0) {
+				/* you've got to be kidding :O */
+				return -1;
+			}
+			xt.errmsg = _err;
+			xt.errmsz = z;
+			goto fatal;
 		}
 	}
 
 	/* check the command string */
 	if (t->cmd == NULL) {
-		ECHS_ERR_LOG("no command string given");
-		return -1;
+		static const char msg[] = "\
+No command has been specified.";
+		xt.errmsg = msg;
+		xt.errmsz = strlenof(msg);
+		goto fatal;
 	}
 
 	/* set up timeout */
@@ -1183,42 +1146,52 @@ cannot set timeout, job execution will be unbounded");
 		(void)umask(umsk_old);
 	}
 
-	with (struct echsx_task_s xt = {t}) {
-		/* prepare */
-		if (prep_task(&xt) < 0) {
-			rc = 127;
-			goto clean_up;
-		}
-		/* set our sigs loose */
-		unblock_sigs();
-		/* and here we go */
-		if (run_task(&xt) < 0) {
-			/* bollocks */
-			rc = 127;
-			goto clean_up;
-		}
-		/* no disruptions please */
-		block_sigs();
-		/* write out VJOURNAL */
-		if (argi->vjournal_flag) {
-			jlog_task(&xt);
-		}
-		/* brag about our findings */
-		if (mail_task(&xt) < 0) {
-			rc = 127;
-			goto clean_up;
-		}
-
-		/* finally, inherit task's return code */
-		rc = WEXITSTATUS(xt.xc);
-
-	clean_up:
-		free_task(&xt);
+	/* prepare */
+	if (prep_task(&xt) < 0) {
+		rc = 127;
+		goto clean_up;
 	}
+	/* set our sigs loose */
+	unblock_sigs();
+	/* and here we go */
+	if (run_task(&xt) < 0) {
+		/* bollocks */
+		rc = 127;
+		goto clean_up;
+	}
+	/* no disruptions please */
+	block_sigs();
+	/* write out VJOURNAL */
+	if (argi->vjournal_flag) {
+		jlog_task(&xt);
+	}
+	/* brag about our findings */
+	if (mail_task(&xt) < 0) {
+		rc = 127;
+		goto clean_up;
+	}
+
+	/* finally, inherit task's return code */
+	rc = WEXITSTATUS(xt.xc);
+
+clean_up:
+	free_task(&xt);
 
 	/* reset umask */
 	(void)umask(umsk_old);
 	return rc;
+
+fatal:
+	if (time(&xt.t_sta.tv_sec) > 0) {
+		xt.t_end.tv_sec = xt.t_sta.tv_sec;
+	}
+	ECHS_ERR_LOG("%s", xt.errmsg);
+	/* make sure this will result in a mail */
+	if (argi->vjournal_flag) {
+		jlog_task(&xt);
+	}
+	mail_task(&xt);
+	return -1;
 }
 
 static int
@@ -1318,28 +1291,6 @@ out:
 	close(STDIN_FILENO);
 	yuck_free(argi);
 	return rc;
-#if 0
-	/* main `loop' */
-	if (!argi->no_run_flag) {
-	} else {
-		/* jsut mail a warning and come back */
-		if (argi->vjournal_flag) {
-			struct echsx_task_s t = {
-				.cmd = argi->command_arg,
-				.tid = argi->tid_arg,
-				.xc = -1
-			};
-			if (time(&t.t_sta.tv_sec) > 0) {
-				t.t_end.tv_sec = t.t_sta.tv_sec;
-			}
-			jlog_task(&t);
-		}
-		if (mail_warn() < 0) {
-			rc = 127;
-			goto clean_up;
-		}
-	}
-#endif
 }
 
 /* echsx.c ends here */
