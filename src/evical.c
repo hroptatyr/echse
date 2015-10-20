@@ -1050,8 +1050,8 @@ struct ical_parser_s {
 	enum {
 		ST_UNK,
 		ST_VCAL,
-		ST_VEVENT,
-		ST_VOTHER,
+		ST_VTOD,
+		ST_VOTH,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -1176,7 +1176,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			/* oh oh oh, looks promising innit? */
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
 			    comp->comp != COMP_VCAL) {
-				p->st = ST_VOTHER;
+				p->st = ST_VOTH;
 			} else {
 				/* rinse our bucket */
 				memset(&p->globve, 0, sizeof(p->globve));
@@ -1188,7 +1188,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		break;
 
 	default:
-	case ST_VOTHER:
+	case ST_VOTH:
 		switch (c->fld) {
 			const struct ical_comp_cell_s *comp;
 
@@ -1204,7 +1204,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
 			    comp->comp != COMP_VCAL) {
 				/* just down the depth tracker */
-				if (p->st-- == ST_VOTHER) {
+				if (p->st-- == ST_VOTH) {
 					/* and fall back to VCAL */
 					p->st = ST_VCAL;
 				}
@@ -1240,13 +1240,14 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					break;
 				} else if (c->fld == FLD_BEGIN) {
 					/* ah something else is starting */
-					p->st = ST_VOTHER;
+					p->st = ST_VOTH;
 					break;
 				}
 				/* not reached */
 			}
 			switch (comp->comp) {
 			case COMP_VEVT:
+			case COMP_VTOD:
 				if (LIKELY(c->fld == FLD_BEGIN)) {
 					/* FINALLY a vevent thing */
 					/* rinse our bucket */
@@ -1254,7 +1255,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					/* copy global task properties */
 					p->ve.t = p->globve.t;
 					/* and set state to vevent */
-					p->st = ST_VEVENT;
+					p->st = ST_VTOD;
 					break;
 				}
 				/* otherwise we've ended a VEVENT whilst
@@ -1282,7 +1283,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		}
 		break;
 
-	case ST_VEVENT:
+	case ST_VTOD:
 		/* check for globals */
 		switch (c->fld) {
 			const struct ical_comp_cell_s *comp;
@@ -1424,7 +1425,7 @@ _ical_fini(struct ical_parser_s p[static 1U])
  * need cleaning up as well, otherwise assume our
  * ctors (make_evrrul(), etc.) free unneeded resources */
 
-	if (UNLIKELY(p->st == ST_VEVENT)) {
+	if (UNLIKELY(p->st == ST_VTOD)) {
 		free_ical_vevent(&p->ve);
 	}
 	/* free the globve */
