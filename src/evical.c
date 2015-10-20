@@ -691,12 +691,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
+	case FLD_DUE:
+	case FLD_COMPL:
 		with (echs_instant_t i = snarf_dt(eof, vp, ep)) {
 			switch (fld) {
 			case FLD_DTSTART:
+			case FLD_COMPL:
 				ve->e.from = i;
 				break;
 			case FLD_DTEND:
+			case FLD_DUE:
 				ve->till = i;
 				break;
 			}
