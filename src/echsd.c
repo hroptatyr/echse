@@ -1020,13 +1020,15 @@ out:
 }
 
 static pid_t
-run_task(_task_t t, bool no_run)
+run_task(_task_t t)
 {
 /* assumes ev_loop_fork() has been called */
 	static char *args[] = {
 		"echsx",
 		/* we want a vjournal log, defo defo */
 		"-v",
+		/* we maybe want to indicate a --no-run */
+		NULL,
 		NULL
 	};
 	char *const *env = deconst(t->t->env);
@@ -1051,6 +1053,10 @@ run_task(_task_t t, bool no_run)
 		/* shit, what are we gonna do?*/
 		ECHS_ERR_LOG("cannot prepare forking to echsx: %s", STRERR);
 		return -1;
+	}
+
+	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
+		args[2U] = "-nd";
 	}
 
 	/* prep the IPC with echsx */
@@ -2096,7 +2102,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		if (LIKELY((p = run_task(t, false)) > 0)) {
+		if (LIKELY((p = run_task(t)) > 0)) {
 			ev_child *c = make_chld();
 
 			/* consider us running already */
@@ -2112,7 +2118,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	} else {
 		/* ooooh, we can't run, call run task with the warning
 		 * flag and use fire and forget */
-		(void)run_task(t, true);
+		(void)run_task(t);
 	}
 
 	/* prepare for rescheduling */
