@@ -55,6 +55,23 @@ typedef struct {
 	const char *sh;
 } cred_t;
 
+/**
+ * Task structure, this is one of the two work horse structures in echse.
+ *
+ * This structure can capture and represent
+ * - a VTODO/VEVENT recurrence (orders)
+ * - a VTODO execution
+ * - a VTODO/VJOURNAL report
+ *
+ * Recurring VTODOs or VEVENTs are determined by having a DTSTART
+ * in the ical representation whereas executional VTODOs mustn't
+ * have that but can of course have a DUE date or a DURATION.
+ *
+ * Recurring VTODOs can be determined by non-NULL STRM,
+ * whereas non-recurring VTODOs have the VTOD_TYP slot set to non-0.
+ *
+ * Conversely, we serialise recurring VTODOs as VEVENTs and executional
+ * VTODOs as VTODO. */
 struct echs_task_s {
 	echs_toid_t oid;
 
@@ -96,10 +113,25 @@ struct echs_task_s {
 	 * 2 means 1 means don't run concurrently, etc. */
 	unsigned int max_simul:6U;
 	/* more padding */
-	unsigned int:2U;
+	enum {
+		VTOD_TYP_UNK,
+		VTOD_TYP_TIMEOUT,
+		VTOD_TYP_DUE,
+		VTOD_TYP_RECUR,
+	} vtod_typ:2U;
 
 	/* just an ordinary umask value as supported by umask(1) */
 	unsigned int umsk:10U;
+	/* padding */
+	unsigned int:6U;
+
+	/* due date or timeout value if this is a (non-recurring) VTODO
+	 * (i.e. the STRM slot will be NULL)
+	 * which one it is is determined by VTOD_TYP above */
+	union {
+		echs_idiff_t timeout;
+		echs_instant_t due;
+	};
 };
 
 
