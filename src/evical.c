@@ -104,10 +104,18 @@ struct urlst_s {
 	size_t zu;
 };
 
+/* this one can capture
+ * - vtodo recurrences (orders)
+ * - vtodo executions
+ * - vtodo reports */
 struct ical_vevent_s {
-	echs_event_t e;
-	/* ancilliary stuff */
+	echs_instant_t from;
 	echs_instant_t till;
+	echs_instant_t comp;
+	echs_instant_t due;
+	echs_idiff_t dur;
+
+	echs_state_t sts;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -696,12 +704,16 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		with (echs_instant_t i = snarf_dt(eof, vp, ep)) {
 			switch (fld) {
 			case FLD_DTSTART:
+				ve->from = i;
+				break;
 			case FLD_COMPL:
-				ve->e.from = i;
+				ve->comp = i;
 				break;
 			case FLD_DTEND:
-			case FLD_DUE:
 				ve->till = i;
+				break;
+			case FLD_DUE:
+				ve->due = i;
 				break;
 			}
 		}
@@ -710,7 +722,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		with (echs_idiff_t i = idiff_strp(vp, &on, ep - vp)) {
 			if (on >= ep) {
 				/* keep track of it and do the maths later */
-				ve->e.dur = i;
+				ve->dur = i;
 			}
 		}
 		break;
@@ -765,7 +777,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			if (!(st = add_state(vp, eos - vp))) {
 				continue;
 			}
-			ve->e.sts = stset_add_state(ve->e.sts, st);
+			ve->sts = stset_add_state(ve->sts, st);
 		}
 		break;
 	case FLD_MFILE:
@@ -773,7 +785,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 	case FLD_UID:
-		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
+		ve->t.oid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
 		if (ve->t.cmd != NULL) {
@@ -955,13 +967,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = dt_strp(vp, NULL, 0U);
+		ve->from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
-			ve->e.dur = (echs_idiff_t){.d = INT64_MAX};
+			ve->till = echs_max_instant();
 		} else {
 			/* they're just cancelling this one instance */
-			ve->e.dur = echs_nul_idiff();
+			ve->till = echs_nul_instant();
 		}
 		break;
 	}
@@ -1250,8 +1262,11 @@ _ical_proc(struct ical_parser_s p[static 1U])
 				/* not reached */
 			}
 			switch (comp->comp) {
-			case COMP_VEVT:
 			case COMP_VTOD:
+				if (LIKELY(c->fld == FLD_BEGIN)) {
+					p->ve.t.vtod_typ = VTOD_TYP_RECUR;
+				}
+			case COMP_VEVT:
 				if (LIKELY(c->fld == FLD_BEGIN)) {
 					/* FINALLY a vevent thing */
 					/* rinse our bucket */
@@ -2299,7 +2314,7 @@ make_task(struct ical_vevent_s *ve)
 
 	/* generate a uid on the fly */
 	if (UNLIKELY(!ve->t.oid)) {
-		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
+		ve->t.oid = echs_toid_gen(&ve->t);
 	}
 	/* off-by-one correction of owner, this is to indicate
 	 * an unset owner by the value of -1 */
@@ -2311,24 +2326,45 @@ make_task(struct ical_vevent_s *ve)
 	 * an unset max_simul by the value of -1 */
 	ve->t.max_simul--;
 
-	with (echs_instant_t i = echs_instant_to_utc(ve->e.from)) {
+	with (echs_instant_t i = echs_instant_to_utc(ve->from)) {
 		ve->till = echs_instant_to_utc(ve->till);
 		/* transform e.from + e.till into e.dur */
-		if (echs_nul_idiff_p(ve->e.dur) &&
+		if (echs_nul_idiff_p(ve->dur) &&
 		    echs_instant_lt_p(i, ve->till)) {
 			/* turn absolute till into duration */
-			ve->e.dur = echs_instant_diff(ve->till, i);
-		} else if (ve->e.dur.d < 0) {
+			ve->dur = echs_instant_diff(ve->till, i);
+		} else if (ve->dur.d < 0) {
 			/* negative durations are bullshit */
-			ve->e.dur = echs_nul_idiff();
+			ve->dur = echs_nul_idiff();
 		}
 	}
 
-	if (!ve->rrul.nr && !ve->rdat.ndt) {
-		/* not an rrule but a normal vevent */
+	if (!echs_nul_instant_p(ve->comp)) {
+		/* this one's a reporting vtodo/vjournal */
+		s = NULL;
 
+	} else if (echs_nul_instant_p(ve->from)) {
+		/* oooh must be one of them execution vtodos */
+		s = NULL;
+
+		if (!echs_nul_idiff_p(ve->dur)) {
+			ve->t.timeout = ve->dur;
+			ve->t.vtod_typ = VTOD_TYP_TIMEOUT;
+		} else if (!echs_nul_instant_p(ve->due)) {
+			ve->t.due = ve->due;
+			ve->t.vtod_typ = VTOD_TYP_DUE;
+		}
+	} else if (!ve->rrul.nr && !ve->rdat.ndt) {
+		/* not an rrule but a normal vevent */
 		/* free all the bits and bobs that
 		 * might have been added */
+		echs_event_t e = {
+			.from = ve->from,
+			.dur = ve->dur,
+			.oid = ve->t.oid,
+			.sts = ve->sts,
+		};
+
 		if (ve->xrul.nr) {
 			free(ve->xrul.r);
 		}
@@ -2340,9 +2376,15 @@ make_task(struct ical_vevent_s *ve)
 		}
 		assert(ve->rrul.r == NULL);
 		assert(ve->rdat.dt == NULL);
-		s = __make_evvevt(ve->e);
+		s = __make_evvevt(e);
 	} else {
 		/* it's an rrule */
+		echs_event_t e = {
+			.from = ve->from,
+			.dur = ve->dur,
+			.oid = ve->t.oid,
+			.sts = ve->sts,
+		};
 		/* rrule stream (struct evrrul_s* really) */
 		echs_evstrm_t sr;
 		/* exception stream */
@@ -2351,8 +2393,8 @@ make_task(struct ical_vevent_s *ve)
 		/* get a proto exrule stream, composed of all exrules
 		 * in a nicely evmux'd stream */
 		with (echs_evstrm_t xr, x1) {
-			xr = __make_evrrul(ve->e, ve->xrul.r, ve->xrul.nr);
-			x1 = __make_evrdat(ve->e, ve->xdat.dt, ve->xdat.ndt);
+			xr = __make_evrrul(e, ve->xrul.r, ve->xrul.nr);
+			x1 = __make_evrdat(e, ve->xdat.dt, ve->xdat.ndt);
 
 			if (xr != NULL && x1 != NULL) {
 				/* mux them into one */
@@ -2365,8 +2407,8 @@ make_task(struct ical_vevent_s *ve)
 		}
 
 		with (echs_evstrm_t rr, r1) {
-			rr = __make_evrrul(ve->e, ve->rrul.r, ve->rrul.nr);
-			r1 = __make_evrdat(ve->e, ve->rdat.dt, ve->rdat.ndt);
+			rr = __make_evrrul(e, ve->rrul.r, ve->rrul.nr);
+			r1 = __make_evrdat(e, ve->rdat.dt, ve->rdat.ndt);
 
 			if (rr != NULL && r1 != NULL) {
 				/* mux them into one */
@@ -2459,7 +2501,7 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_CANCEL:
 			i.v = INSVERB_UNSC;
 			i.o = ve->t.oid;
-			i.rng = echs_event_range(ve->e);
+			i.rng = (echs_range_t){ve->from, ve->till};
 			break;
 		default:
 		case METH_ADD:
