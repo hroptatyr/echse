@@ -60,6 +60,7 @@
 #endif	/* HAVE_NET_PROTO_UIPC_H */
 #include <ev.h>
 #include <assert.h>
+#include <inttypes.h>
 #include "dt-strpf.h"
 #include "logger.h"
 #include "nifty.h"
@@ -1138,15 +1139,46 @@ No command has been specified.";
 	}
 
 	/* set up timeout */
-	if (t->strm != NULL) {
-		echs_event_t e = echs_evstrm_next(t->strm);
+	switch (t->vtod_typ) {
+		unsigned int timeo;
 
-		if (e.dur.d < 0) {
-			ECHS_ERR_LOG("timeout out of range");
-		} else if (set_timeout((unsigned int)e.dur.d) < 0) {
-			ECHS_ERR_LOG("\
-cannot set timeout, job execution will be unbounded");
+	case VTOD_TYP_TIMEOUT:
+		if (UNLIKELY(t->timeout.d < 0)) {
+			int z = snprintf(_err, sizeof(_err), "\
+Value for timeout (%" PRIi64 ") is out of range.", t->timeout.d);
+			xt.errmsg = _err;
+			xt.errmsz = z;
+			goto fatal;
 		}
+		/* otherwise */
+		timeo = t->timeout.d;
+		goto timeo;
+
+	case VTOD_TYP_DUE: {
+		time_t due = echs_instant_to_epoch(t->due);
+		time_t now = 0;
+
+		if (UNLIKELY(time(&now) == (time_t)-1 || now >= due)) {
+			/* brilliant, what exactly do we do with
+			 * an overdue thing? */
+			static const char msg[] = "\
+Task is past its due time, not executing.";
+			xt.errmsg = msg;
+			xt.errmsz = strlenof(msg);
+			goto fatal;
+		}
+		/* otherwise */
+		timeo = due - now;
+		goto timeo;
+	}
+	timeo:
+		if (UNLIKELY(set_timeout(timeo) < 0)) {
+			ECHS_NOTI_LOG("\
+void timeout value, job execution will be unbounded");
+		}
+		/*@fallthrough@*/
+	default:
+		break;
 	}
 
 	/* umask fiddling */
