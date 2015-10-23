@@ -301,7 +301,7 @@ mail_hdrs(int tgtfd, echsx_task_t t)
 		/* otherwise compose To header */
 		fdwrite("To: ", strlenof("To: "));
 		fdwrite(*atp, strlen(*atp));
-		for (atp++; atp; atp++) {
+		for (atp++; *atp; atp++) {
 			fdputc(',');
 			fdputc(' ');
 			fdwrite(*atp, strlen(*atp));
