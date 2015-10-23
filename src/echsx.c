@@ -1304,11 +1304,6 @@ cannot execute: no instructions given");
 					ECHS_ERR_LOG("\
 cannot execute: no uid present");
 					goto free;
-				} else if (ins.t->strm != NULL) {
-					/* huh? recurring shit? */
-					ECHS_ERR_LOG("\
-cannot execute: recurring instructions");
-					goto free;
 				}
 				/* otherwise ins.t is a task and good to go */
 				echsx(ins.t);
