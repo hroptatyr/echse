@@ -324,6 +324,13 @@ mail_hdrs(int tgtfd, echsx_task_t t)
 	}
 	fdputc('\n');
 
+	if (t->errmsg || t->t->cmd == NULL) {
+		/* we don't need any of the stuff below because
+		 * it makes no sense when the job has never actually
+		 * been started, or does it? */
+		goto flsh;
+	}
+
 	if (WIFEXITED(t->xc)) {
 		fdprintf("\
 X-Exit-Status: %d\n", WEXITSTATUS(t->xc));
@@ -341,6 +348,8 @@ X-Job-End: %s\n",
 X-Job-Time: %ld.%06lis user  %ld.%06lis system  %.2f%% cpu  %ld.%09li total\n",
 		       user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
 	fdprintf("X-Job-Memory: %ldkB\n", t->rus.ru_maxrss);
+
+flsh:
 	fdputc('\n');
 	fdflush();
 	return 0;
