@@ -1519,18 +1519,25 @@ send_task(int whither, echs_task_t t)
 }
 
 static void
-send_ical_hdr(int whither)
+send_ical_hdr(int whither, bool vtodop)
 {
-	static const char beg[] = "BEGIN:VEVENT\n";
+	static const char bege[] = "BEGIN:VEVENT\n";
+	static const char begt[] = "BEGIN:VTODO\n";
 	static char stmp[32U] = "DTSTAMP:";
 	static size_t ztmp = strlenof("DTSTAMP:");
 	/* singleton, there's only one now */
 	static time_t now;
+	const char *beg = bege;
+	size_t nbeg = strlenof(bege);
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
 
-	fdwrite(beg, strlenof(beg));
+	if (vtodop) {
+		beg = begt;
+		nbeg = strlenof(begt);
+	}
+	fdwrite(beg, nbeg);
 	if (UNLIKELY(now <= 0)) {
 		echs_instant_t nowi;
 
@@ -1549,13 +1556,21 @@ send_ical_hdr(int whither)
 }
 
 static void
-send_ical_ftr(int whither)
+send_ical_ftr(int whither, bool vtodp)
 {
-	static const char end[] = "END:VEVENT\n";
+	static const char ende[] = "END:VEVENT\n";
+	static const char endt[] = "END:VTODO\n";
+	const char *end = ende;
+	size_t nend = strlenof(ende);
+
+	if (vtodp) {
+		end = endt;
+		nend = strlenof(endt);
+	}
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
-	fdwrite(end, strlenof(end));
+	fdwrite(end, nend);
 	/* that's the last thing in line, just send it off */
 	fdflush();
 	return;
@@ -2261,10 +2276,10 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	send_ical_hdr(STDOUT_FILENO);
+	send_ical_hdr(STDOUT_FILENO, t->vtod_typ);
 	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
-	send_ical_ftr(STDOUT_FILENO);
+	send_ical_ftr(STDOUT_FILENO, t->vtod_typ);
 	return;
 }
 
@@ -2535,16 +2550,18 @@ echs_task_icalify(int whither, echs_task_t t)
 
 	if (UNLIKELY((s = t->strm) == NULL)) {
 		/* do fuckall */
-		return;
+		;
 	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s)))) {
 		/* doesn't make sense to put this guy on the wire does it */
 		return;
 	}
 
-	send_ical_hdr(whither);
+	send_ical_hdr(whither, t->vtod_typ);
 	send_task(whither, t);
-	echs_evstrm_seria(whither, s);
-	send_ical_ftr(whither);
+	if (s) {
+		echs_evstrm_seria(whither, s);
+	}
+	send_ical_ftr(whither, t->vtod_typ);
 	return;
 }
 
