@@ -915,6 +915,7 @@ cannot spawn `sendmail': %s", STRERR);
 		int fd;
 
 		/* now it's time to send the actual mail */
+		fdbang(mfd);
 		mail_hdrs(mfd, t);
 
 		if (t->errmsg) {
@@ -931,6 +932,9 @@ cannot spawn `sendmail': %s", STRERR);
 			xsplice(mfd, fd);
 			close(fd);
 		}
+
+		/* that's all from us */
+		fdflush();
 	}
 
 	/* send off the mail by closing the in-pipe */
