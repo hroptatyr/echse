@@ -901,73 +901,43 @@ free_task_ht(void)
 	return;
 }
 
-static bool mockp;
-static pid_t
-run_task(_task_t t, bool no_run)
+static int
+vtodoify(int ofd, _task_t t)
 {
-/* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U], tmo[16U], umsk[16U];
-	static char mfrom[64U] = "echse";
-	enum {
-		TOOL,
-		SW_DRY_RUN,
-		SW_JLOG,
-		SW_CMD, STR_CMD,
-		SW_TID, STR_TID,
-		SW_UID, STR_UID,
-		SW_GID, STR_GID,
-		SW_CWD, STR_CWD,
-		SW_SH, STR_SH,
-		SW_UMASK, STR_UMASK,
-		SW_TIMEO, STR_TIMEO,
-		SW_MFROM, STR_MFROM,
-		SW_MOUT,
-		SW_MERR,
-		SW_MRUN,
-		SW_STDIN, STR_STDIN,
-		SW_STDOUT, STR_STDOUT,
-		SW_STDERR, STR_STDERR,
-	};
-	static char *args_proto[] = {
-		[TOOL] = "echsx",
-		[SW_DRY_RUN] = "-n",
-		[SW_JLOG] = "-v",
-		[SW_CMD] = "-c", NULL,
-		[SW_TID] = "--tid", NULL,
-		[SW_UID] = "--uid", uid,
-		[SW_GID] = "--gid", gid,
-		[SW_CWD] = "--cwd", NULL,
-		[SW_SH] = "--shell", NULL,
-		[SW_UMASK] = "--umask", umsk,
-		[SW_TIMEO] = "--timeout", tmo,
-		[SW_MFROM] = "--mailfrom", mfrom,
-		[SW_MOUT] = "--mailout",
-		[SW_MERR] = "--mailerr",
-		[SW_MRUN] = "--mailrun",
-		[SW_STDIN] = "--stdin", NULL,
-		[SW_STDOUT] = "--stdout", NULL,
-		[SW_STDERR] = "--stderr", NULL,
-		NULL
-	};
-	/* use a VLA for the real args */
-	const size_t natt = t->t->att ? t->t->att->nl : 0U;
-	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->t->env);
-	/* for the journal */
-	posix_spawn_file_actions_t fa, *_fap = NULL;
-	char vjfn[PATH_MAX];
-	int vjfd;
-	off_t vjof;
-	/* the actual process */
-	pid_t r;
+	static const char vcal_hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n";
+	static const char vcal_ftr[] = "\
+END:VCALENDAR\n\
+";
+	static const char vtod_hdr[] = "\
+BEGIN:VTODO\n";
+	static const char vtod_ftr[] = "\
+END:VTODO\n";
+	int rc = 0;
 
-	/* set up the real args */
-	memcpy(args, args_proto, sizeof(args_proto));
-	if (no_run) {
-		args[SW_DRY_RUN] = "--no-run";
+	/* bang and print VCAL header */
+	fdbang(ofd);
+	if (UNLIKELY(fdwrite(vcal_hdr, strlenof(vcal_hdr)) < 0)) {
+		rc--;
+		goto out;
 	}
-	args[STR_CMD] = deconst(t->t->cmd);
-	args[STR_TID] = deconst(obint_name(t->t->oid));
+
+	/* start off with VTODO's header */
+	if (UNLIKELY(fdwrite(vtod_hdr, strlenof(vtod_hdr)) < 0)) {
+		rc--;
+		goto out;
+	}
+
+
+	rc -= fdprintf("UID:%s\n", obint_name(t->t->oid)) < 0;
+	rc -= fdprintf("SUMMARY:%s\n", t->t->cmd) < 0;
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
+
 	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
 		if (!run_as.u) {
 			run_as.u = t->dflt_cred.u;
@@ -975,106 +945,161 @@ run_task(_task_t t, bool no_run)
 		if (!run_as.g) {
 			run_as.g = t->dflt_cred.g;
 		}
-		snprintf(uid, sizeof(uid), "%u", (uid_t)run_as.u);
-		snprintf(gid, sizeof(gid), "%u", (gid_t)run_as.g);
-
 		if (!run_as.wd) {
 			run_as.wd = t->dflt_cred.wd;
 		}
 		if (!run_as.sh) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[STR_CWD] = deconst(run_as.wd);
-		args[STR_SH] = deconst(run_as.sh);
+
+		rc -= fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u) < 0;
+		rc -= fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g) < 0;
+		rc -= fdprintf("X-ECHS-SHELL:%s\n", run_as.sh) < 0;
+		rc -= fdprintf("LOCATION:%s\n", run_as.wd) < 0;
 	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
+
 	with (echs_idiff_t d = t->dur) {
 		const int s = d.d / 1000U + !!(d.d % 1000U);
 
-		snprintf(tmo, sizeof(tmo), "%d", s);
+		rc -= fdprintf("DURATION:%d\n", s) < 0;
 	}
 	with (unsigned int um = 0066U) {
 		if (t->t->umsk < 0777U) {
 			um = t->t->umsk;
 		}
-		snprintf(umsk, sizeof(umsk), "0%o", um);
+		rc -= fdprintf("X-ECHS-UMASK:0%o\n", um) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
+	rc -= fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->t->mailrun) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->t->mailout) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->t->mailerr) < 0;
+	if (t->t->in) {
+		rc -= fdprintf("X-ECHS-IFILE:%s\n", t->t->in) < 0;
+	}
+	if (t->t->out) {
+		rc -= fdprintf("X-ECHS-OFILE:%s\n", t->t->out) < 0;
+	}
+	if (t->t->err) {
+		rc -= fdprintf("X-ECHS-EFILE:%s\n", t->t->err) < 0;
+	}
 	if (t->t->org) {
-		args[STR_MFROM] = deconst(t->t->org);
-	} else if (!mfrom[strlenof("echse")] && hnamez) {
+		rc -= fdprintf("ORGANIZER:%s\n", t->t->org) < 0;
+	} else if (hnamez) {
 		/* singleton, extend mailfrom by +HOSTNAME */
-		size_t hp = strlenof("echse");
-		mfrom[hp++] = '+';
-		xstrlncpy(mfrom + hp, sizeof(mfrom) - hp, hname, hnamez);
+		const int hnamei = hnamez;
+		rc -= fdprintf("ORGANIZER:echse+%.*s\n", hnamei, hname) < 0;
+	} else {
+		static const char eorg[] = "ORGANIZER:echse\n";
+		rc -= fdwrite(eorg, strlenof(eorg)) < 0;
 	}
-	with (size_t i = STR_MFROM + 1U) {
-		if (t->t->mailout) {
-			args[i++] = "--mailout";
-		}
-		if (t->t->mailerr) {
-			args[i++] = "--mailerr";
-		}
-		if (t->t->mailrun) {
-			args[i++] = "--mailrun";
-		}
-		if (t->t->in) {
-			args[i++] = args[SW_STDIN];
-			args[i++] = deconst(t->t->in);
-		}
-		if (t->t->out) {
-			args[i++] = args[SW_STDOUT];
-			args[i++] = deconst(t->t->out);
-		}
-		if (t->t->err) {
-			args[i++] = args[SW_STDERR];
-			args[i++] = deconst(t->t->err);
-		}
-		for (size_t j = 0U; j < natt; j++) {
-			args[i++] = "--mailto";
-			args[i++] = t->t->att->l[j];
-		}
-		/* finalise args array */
-		args[i++] = NULL;
+	for (size_t j = 0U, natt = t->t->att ? t->t->att->nl : 0U;
+	     j < natt; j++) {
+		rc -= fdprintf("ATTENDEE:%s\n", t->t->att->l[j]) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
-	/* finally fork out our child */
-	if (UNLIKELY(mockp)) {
-		r = -1;
-		fputs(echsx, stdout);
-		for (const char *const *ap = args + 1U; *ap; ap++) {
-			fputc(' ', stdout);
-			fputc('\'', stdout);
-			fputs(*ap, stdout);
-			fputc('\'', stdout);
-		}
-		fputc('\n', stdout);
-	} else if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
+	/* and finish with VTODO's footer followed by a nice flush */
+	if (UNLIKELY(fdwrite(vtod_ftr, strlenof(vtod_ftr)) < 0)) {
+		rc--;
+		goto out;
+	} else if (UNLIKELY(fdwrite(vcal_ftr, strlenof(vcal_ftr)) < 0)) {
+		rc--;
+		goto out;
+	}
+	rc -= fdflush() < 0;
+out:
+	return rc;
+}
+
+static pid_t
+run_task(_task_t t)
+{
+/* assumes ev_loop_fork() has been called */
+	static char *args[] = {
+		"echsx",
+		/* we want a vjournal log, defo defo */
+		"-v",
+		/* we maybe want to indicate a --no-run */
+		NULL,
+		NULL
+	};
+	char *const *env = deconst(t->t->env);
+	/* echsx's stdin */
+	int xin[2U];
+	/* for the journal */
+	posix_spawn_file_actions_t fa;
+	char vjfn[PATH_MAX];
+	int vjfd;
+	off_t vjof;
+	/* the actual process */
+	pid_t r;
+
+	/* set up pipe for echsx(1) */
+	if (UNLIKELY(pipe(xin) < 0)) {
+		ECHS_ERR_LOG("cannot set up pipe to echsx: %s", STRERR);
+		return -1;
+	}
+
+	/* prepare the forking */
+	if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
 		/* shit, what are we gonna do?*/
-		;
-	} else if (snprintf(vjfn, sizeof(vjfn),
+		ECHS_ERR_LOG("cannot prepare forking to echsx: %s", STRERR);
+		return -1;
+	}
+
+	if (t->nsim < (unsigned int)t->t->max_simul - 1U) {
+		args[2U] = "-nd";
+	}
+
+	/* prep the IPC with echsx */
+	posix_spawn_file_actions_adddup2(&fa, xin[0U], STDIN_FILENO);
+	posix_spawn_file_actions_addclose(&fa, xin[0U]);
+	posix_spawn_file_actions_addclose(&fa, xin[1U]);
+
+	/* get the journalling on the way */
+	if (snprintf(vjfn, sizeof(vjfn),
 			    "echsj_%u.ics", t->dflt_cred.u) < 0) {
 		/* couldn't care less */
-		;
+		vjfd = -1;
 	} else if ((vjfd = openat(qdirfd, vjfn, O_RDWR | O_CREAT, 0600)) < 0) {
 		/* brilliant */
 		;
 	} else if ((vjof = lseek(vjfd, 0, SEEK_END)) < 0) {
 		/* make sure we don't shed a tear over this one */
 		close(vjfd);
+		vjfd = -1;
 	} else {
 		/* all's well in either case */
 		posix_spawn_file_actions_adddup2(&fa, vjfd, STDOUT_FILENO);
 		posix_spawn_file_actions_addclose(&fa, vjfd);
-		_fap = &fa;
 	}
-	if (UNLIKELY(posix_spawn(&r, echsx, _fap, NULL, args, env) < 0)) {
+
+	/* finally fork out our child */
+	if (UNLIKELY(posix_spawn(&r, echsx, &fa, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		r = -1;
 	}
-	if (LIKELY(_fap != NULL)) {
+	/* free spawn resources */
+	posix_spawn_file_actions_destroy(&fa);
+
+	if (LIKELY(!(vjfd < 0))) {
 		close(vjfd);
-		posix_spawn_file_actions_destroy(_fap);
 	}
+	/* close read side of the pipe to echsx(1) */
+	close(xin[0U]);
+
+	/* and splice our VTODO onto xin[1U] */
+	(void)vtodoify(xin[1U], t);
+	/* we're finished aren't we? */
+	close(xin[1U]);
 	return r;
 }
 
@@ -2077,7 +2102,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		if (LIKELY((p = run_task(t, false)) > 0)) {
+		if (LIKELY((p = run_task(t)) > 0)) {
 			ev_child *c = make_chld();
 
 			/* consider us running already */
@@ -2093,7 +2118,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	} else {
 		/* ooooh, we can't run, call run task with the warning
 		 * flag and use fire and forget */
-		(void)run_task(t, true);
+		(void)run_task(t);
 	}
 
 	/* prepare for rescheduling */
@@ -2595,7 +2620,6 @@ main(int argc, char *argv[])
 
 	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
-		mockp = true;
 	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;

@@ -1,23 +1,7 @@
 Usage: echsx
 
-Execute job.
+Execute jobs from VTODO entries on stdin.
 
-  -c, --command=STRING  Run command(s) specified in STRING.
-  -n, --foreground      Run in forground mode.
-  -i, --stdin=FILE      Redirect FILE to job's stdin.
-  -o, --stdout=FILE     Redirect job's stdout to FILE.
-  -e, --stderr=FILE     Redirect job's stderr to FILE.
+  -d, --daemon          Run in daemon mode.
   -v, --vjournal        Output job summary as VJOURNAL entry.
-  --mailout             Send job's stdout by mail.
-  --mailerr             Send job's stderr by mail.
-  --mailrun             Send job's status by mail.
-  --mailfrom=ADDR       When sending mail use ADDR as from address.
-  --mailto=ADDR...      Send job's output to ADDRs via mail.
-  --timeout=VALUE       Terminate job after VALUE seconds.
-  --tid=TID             Use task id TID for vjournal log.
-  --uid=UID             Run as user UID.
-  --gid=GID             Run as user GID.
-  --cwd=PATH            Run in PATH.
-  --shell=SH            Run using shell SH.
-  --umask=OCT           Use umask bits as in umask(1).
-  --no-run              Instead of running issue a warning.
+  -n, --no-run          Do not run commands in VTODO.

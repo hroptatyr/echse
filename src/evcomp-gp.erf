@@ -3,6 +3,8 @@ typedef enum {
 	COMP_UNK,
 	COMP_VCAL,
 	COMP_VEVT,
+	COMP_VTOD,
+	COMP_VJRN,
 } ical_comp_t;
 
 %}
@@ -25,3 +27,5 @@ struct ical_comp_cell_s {
 %%
 VCALENDAR, COMP_VCAL
 VEVENT, COMP_VEVT
+VTODO, COMP_VTOD
+VJOURNAL, COMP_VJRN
