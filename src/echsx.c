@@ -965,35 +965,37 @@ cannot spawn `sendmail': %s", STRERR);
 static int
 jlog_task(echsx_task_t t)
 {
-	static const char jhdr[] = "BEGIN:VJOURNAL\n";
-	static const char jftr[] = "END:VJOURNAL\n";
+	static const char jhdr[] = "BEGIN:VTODO\n";
+	static const char jftr[] = "END:VTODO\n";
+	static char stmp[32U] = "CODTSTAMP:";
+	size_t nstmp;
+
+	if (t->t_end.tv_sec <= 0 && time(&t->t_end.tv_sec) == (time_t)-1) {
+		/* shit! */
+		ECHS_ERR_LOG("\
+cannot obtain current time: %s", STRERR);
+		return -1;
+	}
 
 	fdbang(STDOUT_FILENO);
 	if (fdlock(STDOUT_FILENO) < 0) {
 		ECHS_ERR_LOG("\
-cannot obtain lock", STRERR);
+cannot obtain lock: %s", STRERR);
 		return -1;
 	}
 
 	/* introduce ourselves */
 	fdwrite(jhdr, strlenof(jhdr));
-	/* write start/end (and their high-res counterparts?) */
-	if (t->t_sta.tv_sec > 0) {
-		static char stmp1[32U] = "DTSTART:";
-		static char stmp2[32U] = "DTSTAMP:";
+	/* start off with the stamp and uid */
+	with (echs_instant_t te = epoch_to_echs_instant(t->t_end.tv_sec)) {
 		size_t n;
-		echs_instant_t ts = epoch_to_echs_instant(t->t_sta.tv_sec);
-		echs_instant_t te = epoch_to_echs_instant(t->t_end.tv_sec);
 
-		n = strlenof("DTSTAMP:");
-		n += dt_strf_ical(stmp2 + n, sizeof(stmp2) - n, te);
-		stmp2[n++] = '\n';
-		fdwrite(stmp2, n);
-
-		n = strlenof("DTSTART:");
-		n += dt_strf_ical(stmp1 + n, sizeof(stmp2) - n, ts);
-		stmp1[n++] = '\n';
-		fdwrite(stmp1, n);
+		n = strlenof("XXDTSTAMP:");
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, te);
+		stmp[n++] = '\n';
+		fdwrite(stmp + 2U, n - 2U);
+		/* keep track of this for later */
+		nstmp = n;
 	}
 
 	if (LIKELY(t->t->oid)) {
@@ -1005,6 +1007,20 @@ cannot obtain lock", STRERR);
 		fdputc('\n');
 	}
 
+	/* write start/completed (and their high-res counterparts?) */
+	if (t->t_sta.tv_sec > 0) {
+		static char strt[32U] = "DTSTART:";
+		echs_instant_t ts = epoch_to_echs_instant(t->t_sta.tv_sec);
+		size_t n;
+
+		n = strlenof("DTSTART:");
+		n += dt_strf_ical(strt + n, sizeof(strt) - n, ts);
+		strt[n++] = '\n';
+		fdwrite(strt, n);
+	}
+	memcpy(stmp + 2U, "MPLETED:", strlenof("MPLETED:"));
+	fdwrite(stmp, nstmp);
+
 	with (size_t cmdz = strlen(t->t->cmd)) {
 		static char fld[] = "SUMMARY:";
 		char sum[cmdz + strlenof(fld) + 1U];
@@ -1014,6 +1030,21 @@ cannot obtain lock", STRERR);
 		si += xstrlncpy(sum + si, sizeof(sum) - si, t->t->cmd, cmdz);
 		sum[si++] = '\n';
 		fdwrite(sum, si);
+	}
+
+	if (t->errmsg || t->xc < 0) {
+		static const char canc[] = "STATUS:CANCELLED\n";
+		static const char desc[] = "DESCRIPTION:";
+		static const char nrun[] = "not run for reasons unknown";
+		fdwrite(canc, strlenof(canc));
+		fdwrite(desc, strlenof(desc));
+		if (t->errmsg) {
+			fdwrite(t->errmsg, t->errmsz);
+		} else {
+			fdwrite(nrun, strlenof(nrun));
+		}
+		fdputc('\n');
+		goto flsh;
 	}
 
 	if (WIFEXITED(t->xc)) {
@@ -1027,7 +1058,7 @@ X-SIGNAL:%d\n\
 X-SIGNAL-STRING:%s\n", 128 ^ sig, sig, strsignal(sig));
 	}
 
-	if (t->xc >= 0) {
+	{
 		struct ts_dur_s real = ts_dur(t->t_sta, t->t_end);
 		struct tv_dur_s user =
 			tv_dur((struct timeval){0}, t->rus.ru_utime);
@@ -1057,12 +1088,9 @@ DESCRIPTION:$?=%d  %ldkB mem\\n\n\
  %ld.%06lis user  %ld.%06lis sys  %.2f%% cpu  %ld.%09lis real\n",
 			 s, t->rus.ru_maxrss,
 			 user.s, user.u, sys.s, sys.u, cpu, real.s, real.n);
-	} else {
-		static const char nr[] = "\
-DESCRIPTION:not run\n";
-		fdwrite(nr, strlenof(nr));
 	}
 
+flsh:
 	fdwrite(jftr, strlenof(jftr));
 	fdflush();
 	fdunlck(STDOUT_FILENO);
