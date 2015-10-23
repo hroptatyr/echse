@@ -1263,9 +1263,6 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			}
 			switch (comp->comp) {
 			case COMP_VTOD:
-				if (LIKELY(c->fld == FLD_BEGIN)) {
-					p->ve.t.vtod_typ = VTOD_TYP_RECUR;
-				}
 			case COMP_VEVT:
 				if (LIKELY(c->fld == FLD_BEGIN)) {
 					/* FINALLY a vevent thing */
@@ -2357,6 +2354,8 @@ make_task(struct ical_vevent_s *ve)
 	if (!echs_nul_instant_p(ve->comp)) {
 		/* this one's a reporting vtodo/vjournal */
 		s = NULL;
+		ve->t.compl = ve->comp;
+		ve->t.vtod_typ = VTOD_TYP_COMPL;
 
 	} else if (echs_nul_instant_p(ve->from)) {
 		/* oooh must be one of them execution vtodos */
