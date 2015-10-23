@@ -1214,6 +1214,13 @@ void timeout value, job execution will be unbounded");
 		rc = 127;
 		goto clean_up;
 	}
+
+	if (0) {
+	fatal:
+		ECHS_ERR_LOG("%s", xt.errmsg);
+		rc = -1;
+	}
+
 	/* no disruptions please */
 	block_sigs();
 	/* write out VJOURNAL */
@@ -1235,18 +1242,6 @@ clean_up:
 	/* reset umask */
 	(void)umask(umsk_old);
 	return rc;
-
-fatal:
-	if (time(&xt.t_sta.tv_sec) > 0) {
-		xt.t_end.tv_sec = xt.t_sta.tv_sec;
-	}
-	ECHS_ERR_LOG("%s", xt.errmsg);
-	/* make sure this will result in a mail */
-	if (argi->vjournal_flag) {
-		jlog_task(&xt);
-	}
-	mail_task(&xt);
-	return -1;
 }
 
 static int
