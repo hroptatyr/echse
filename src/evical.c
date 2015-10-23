@@ -1471,6 +1471,39 @@ send_task(int whither, echs_task_t t)
 		/* it's mandatory, so generate one */
 		fdprintf("UID:echse_merged_vevent_%u\n", auto_uid);
 	}
+	switch (t->vtod_typ) {
+	default:
+	case VTOD_TYP_UNK:
+		/* nothing to print */
+		break;
+	case VTOD_TYP_TIMEOUT: {
+		char stmp[32U] = "TIMEOUT:";
+		size_t n = strlenof("TIMEOUT:");
+
+		n += idiff_strf(stmp + n, sizeof(stmp) - n, t->timeout);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_DUE: {
+		char stmp[32U] = "DUE:";
+		size_t n = strlenof("DUE:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->due);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_COMPL: {
+		char stmp[32U] = "COMPLETED:";
+		size_t n = strlenof("COMPLETED:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->compl);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	}
 	if (t->cmd) {
 		fdprintf("SUMMARY:%s\n", t->cmd);
 	}
