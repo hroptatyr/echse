@@ -2556,12 +2556,12 @@ echs_task_icalify(int whither, echs_task_t t)
 		return;
 	}
 
-	send_ical_hdr(whither, t->vtod_typ);
+	send_ical_hdr(whither, s == NULL);
 	send_task(whither, t);
-	if (s) {
+	if (s != NULL) {
 		echs_evstrm_seria(whither, s);
 	}
-	send_ical_ftr(whither, t->vtod_typ);
+	send_ical_ftr(whither, s == NULL);
 	return;
 }
 
