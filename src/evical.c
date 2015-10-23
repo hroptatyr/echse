@@ -1263,9 +1263,6 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			}
 			switch (comp->comp) {
 			case COMP_VTOD:
-				if (LIKELY(c->fld == FLD_BEGIN)) {
-					p->ve.t.vtod_typ = VTOD_TYP_RECUR;
-				}
 			case COMP_VEVT:
 				if (LIKELY(c->fld == FLD_BEGIN)) {
 					/* FINALLY a vevent thing */
@@ -1474,6 +1471,39 @@ send_task(int whither, echs_task_t t)
 		/* it's mandatory, so generate one */
 		fdprintf("UID:echse_merged_vevent_%u\n", auto_uid);
 	}
+	switch (t->vtod_typ) {
+	default:
+	case VTOD_TYP_UNK:
+		/* nothing to print */
+		break;
+	case VTOD_TYP_TIMEOUT: {
+		char stmp[32U] = "TIMEOUT:";
+		size_t n = strlenof("TIMEOUT:");
+
+		n += idiff_strf(stmp + n, sizeof(stmp) - n, t->timeout);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_DUE: {
+		char stmp[32U] = "DUE:";
+		size_t n = strlenof("DUE:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->due);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_COMPL: {
+		char stmp[32U] = "COMPLETED:";
+		size_t n = strlenof("COMPLETED:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->compl);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	}
 	if (t->cmd) {
 		fdprintf("SUMMARY:%s\n", t->cmd);
 	}
@@ -1519,18 +1549,25 @@ send_task(int whither, echs_task_t t)
 }
 
 static void
-send_ical_hdr(int whither)
+send_ical_hdr(int whither, bool vtodop)
 {
-	static const char beg[] = "BEGIN:VEVENT\n";
+	static const char bege[] = "BEGIN:VEVENT\n";
+	static const char begt[] = "BEGIN:VTODO\n";
 	static char stmp[32U] = "DTSTAMP:";
 	static size_t ztmp = strlenof("DTSTAMP:");
 	/* singleton, there's only one now */
 	static time_t now;
+	const char *beg = bege;
+	size_t nbeg = strlenof(bege);
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
 
-	fdwrite(beg, strlenof(beg));
+	if (vtodop) {
+		beg = begt;
+		nbeg = strlenof(begt);
+	}
+	fdwrite(beg, nbeg);
 	if (UNLIKELY(now <= 0)) {
 		echs_instant_t nowi;
 
@@ -1549,13 +1586,21 @@ send_ical_hdr(int whither)
 }
 
 static void
-send_ical_ftr(int whither)
+send_ical_ftr(int whither, bool vtodp)
 {
-	static const char end[] = "END:VEVENT\n";
+	static const char ende[] = "END:VEVENT\n";
+	static const char endt[] = "END:VTODO\n";
+	const char *end = ende;
+	size_t nend = strlenof(ende);
+
+	if (vtodp) {
+		end = endt;
+		nend = strlenof(endt);
+	}
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
-	fdwrite(end, strlenof(end));
+	fdwrite(end, nend);
 	/* that's the last thing in line, just send it off */
 	fdflush();
 	return;
@@ -2261,10 +2306,10 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	send_ical_hdr(STDOUT_FILENO);
+	send_ical_hdr(STDOUT_FILENO, t->vtod_typ);
 	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
-	send_ical_ftr(STDOUT_FILENO);
+	send_ical_ftr(STDOUT_FILENO, t->vtod_typ);
 	return;
 }
 
@@ -2342,6 +2387,8 @@ make_task(struct ical_vevent_s *ve)
 	if (!echs_nul_instant_p(ve->comp)) {
 		/* this one's a reporting vtodo/vjournal */
 		s = NULL;
+		ve->t.compl = ve->comp;
+		ve->t.vtod_typ = VTOD_TYP_COMPL;
 
 	} else if (echs_nul_instant_p(ve->from)) {
 		/* oooh must be one of them execution vtodos */
@@ -2535,16 +2582,18 @@ echs_task_icalify(int whither, echs_task_t t)
 
 	if (UNLIKELY((s = t->strm) == NULL)) {
 		/* do fuckall */
-		return;
+		;
 	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s)))) {
 		/* doesn't make sense to put this guy on the wire does it */
 		return;
 	}
 
-	send_ical_hdr(whither);
+	send_ical_hdr(whither, s == NULL);
 	send_task(whither, t);
-	echs_evstrm_seria(whither, s);
-	send_ical_ftr(whither);
+	if (s != NULL) {
+		echs_evstrm_seria(whither, s);
+	}
+	send_ical_ftr(whither, s == NULL);
 	return;
 }
 

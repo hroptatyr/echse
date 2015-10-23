@@ -117,7 +117,7 @@ struct echs_task_s {
 		VTOD_TYP_UNK,
 		VTOD_TYP_TIMEOUT,
 		VTOD_TYP_DUE,
-		VTOD_TYP_RECUR,
+		VTOD_TYP_COMPL,
 	} vtod_typ:2U;
 
 	/* just an ordinary umask value as supported by umask(1) */
@@ -131,6 +131,7 @@ struct echs_task_s {
 	union {
 		echs_idiff_t timeout;
 		echs_instant_t due;
+		echs_instant_t compl;
 	};
 };
 
