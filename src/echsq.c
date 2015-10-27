@@ -651,6 +651,7 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	char buf[4096U];
 	size_t bix;
 	size_t i = 0U;
+	size_t conn;
 	const char *e;
 	uid_t u;
 
@@ -677,6 +678,7 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	}
 
 more:
+	conn = 0U;
 	bix = 0U;
 	/* right lets start with the http verb and stuff */
 	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
@@ -716,6 +718,7 @@ more:
 	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
 		if (UNLIKELY((e = get_esock(false)) == NULL)) {
+			conn++;
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
@@ -732,6 +735,7 @@ more:
 	/* global queue */
 	with (int s) {
 		if (UNLIKELY((e = get_esock(true)) == NULL)) {
+			conn++;
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			goto conn_err;
@@ -743,7 +747,9 @@ more:
 		}
 		free_conn(s);
 	}
-	if (UNLIKELY(i < argi->nargs)) {
+	if (UNLIKELY(conn >= 2U)) {
+		goto sock_err;
+	} else if (UNLIKELY(i < argi->nargs)) {
 		goto more;
 	}
 	return 0;
@@ -755,6 +761,11 @@ more:
 pwnam_err:
 	serror("\
 Error: cannot resolve user name `%s'", argi->user_arg);
+	return 1;
+
+sock_err:
+	errno = 0, serror("\
+Error: cannot connect to echsd, is it running?");
 	return 1;
 
 conn_err:
