@@ -170,101 +170,132 @@ xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
 }
 
 
-static const char*
-get_esock(bool systemp)
+static int
+try_conn(struct sockaddr *sa, socklen_t sz)
 {
-/* return a candidate for the echsd socket, system-wide or user local */
+	int s;
+
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		;
+	} else if (UNLIKELY(connect(s, sa, sz) < 0)) {
+		close(s);
+		s = -1;
+	}
+	return s;
+}
+
+static size_t
+get_esock_sys(char *restrict buf, size_t bsz)
+{
+	static const char sockfn[] = "/var/run/echse/=echsd";
+	struct stat st;
+	size_t bi;
+
+	bi = xstrlncpy(buf, bsz, sockfn, strlenof(sockfn));
+	if (stat(buf, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+		/* indicate failure */
+		return 0U;
+	}
+	return bi;
+}
+
+static size_t
+get_esock_usr(char *restrict buf, size_t bsz)
+{
 	static char hname[HOST_NAME_MAX];
 	static size_t hnamez;
-	static const char rundir[] = "/var/run";
-	static const char sockfn[] = ".echse/=echsd";
+	static const char sockfn[] = ".echse/";
 	static const char esokfn[] = "=echsd";
-	struct stat st;
-	static char d[PATH_MAX];
-	size_t di;
+	size_t bi;
 
 	/* populate with hostname we're running on */
 	if (UNLIKELY(!hnamez && gethostname(hname, sizeof(hname)) < 0)) {
 		perror("Error: cannot get hostname");
-		return NULL;
+		return 0U;
 	} else if (!hnamez) {
 		hnamez = strlen(hname);
 	}
 
-	if (systemp) {
-		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
-		d[di++] = '/';
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			sockfn + 1U, strlenof(sockfn) - 1U);
-
-		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-			return NULL;
-		}
-#if defined __linux__
-	} else {
-		/* use abstract sockets */
-		xstrlncpy(d, sizeof(d), esokfn, strlenof(esokfn));
-		/* make him abstract */
-		*d = '\0';
-#else  /* !__linux__ */
-	} else {
+	with (uid_t u = getuid()) {
 		struct passwd *pw;
-		uid_t u = getuid();
+		struct stat st;
 
 		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
 			/* there's nothing else we can do */
-			return NULL;
+			return 0U;
 		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
 			/* gimme a break! */
-			return NULL;
+			return 0U;
 		}
 
-		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		d[di++] = '/';
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			sockfn, strlenof(sockfn) - strlenof(esokfn));
+		bi = xstrlcpy(buf, pw->pw_dir, bsz);
+		if (LIKELY(bi < bsz)) {
+			buf[bi++] = '/';
+		}
+		bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
 		/* now the machine name */
-		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
-		d[di++] = '/';
-		/* and the =echsd bit again */
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			esokfn, strlenof(esokfn));
-
-		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-			return NULL;
+		bi += xstrlncpy(buf + bi, bsz - bi, hname, hnamez);
+		if (LIKELY(bi < bsz)) {
+			buf[bi++] = '/';
 		}
-#endif	/* __linux__ */
+		/* and the =echsd bit again */
+		bi += xstrlncpy(buf + bi, bsz - bi, esokfn, strlenof(esokfn));
+
+		if (stat(buf, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+			return 0U;
+		}
 	}
-	/* success */
-	return d;
+	return bi;
+}
+
+static size_t
+get_esock_ano(char *restrict buf, size_t bsz)
+{
+#if defined __linux__
+	static const char sockfn[] = "=echsd";
+	size_t bi;
+
+	bi = xstrlncpy(buf, bsz, sockfn, strlenof(sockfn));
+	*buf = '\0';
+	return bi;
+#else  /* !__linux__ */
+	return 0U;
+#endif	/* __linux__ */
 }
 
 static int
-make_conn(const char *path)
+get_esock(bool systemp)
 {
-/* run LIST command on socket PATH */
+/* return a candidate for the echsd socket, system-wide or user local */
 	struct sockaddr_un sa = {AF_UNIX};
+	socklen_t z;
 	int s;
-	size_t z;
 
-	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
-		return -1;
+	if (systemp) {
+		z = get_esock_sys(sa.sun_path, sizeof(sa.sun_path));
+		if (UNLIKELY(z <= 0)) {
+			return -1;
+		}
+	} else {
+		z = get_esock_ano(sa.sun_path, sizeof(sa.sun_path));
+		if (UNLIKELY(z <= 0)) {
+			/* try homedir socket */
+			goto usock;
+		}
+		z += sizeof(sa.sun_family);
+		if ((s = try_conn((void*)&sa, z)) < 0) {
+			goto usock;
+		}
+		return s;
+
+	usock:
+		z = get_esock_usr(sa.sun_path, sizeof(sa.sun_path));
+		if (UNLIKELY(z <= 0)) {
+			return -1;
+		}
 	}
-	if ((z = strlen(path)) == 0U) {
-		z = strlen(path + 1U) + 1U;
-	}
-	xstrlncpy(sa.sun_path, sizeof(sa.sun_path), path, z);
 	z += sizeof(sa.sun_family);
-	if (UNLIKELY(connect(s, (struct sockaddr*)&sa, z) < 0)) {
-		goto fail;
-	}
-	return s;
-fail:
-	close(s);
-	return -1;
+	return try_conn((void*)&sa, z);
 }
 
 static int
@@ -913,8 +944,7 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 	char buf[4096U];
 	size_t bix;
 	size_t i = 0U;
-	size_t conn;
-	const char *e;
+	size_t nfail;
 	uid_t u;
 
 #define BUF	(buf + bix)
@@ -945,7 +975,7 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 	}
 
 more:
-	conn = 0U;
+	nfail = 0U;
 	bix = 0U;
 	/* right lets start with the http verb and stuff */
 	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
@@ -984,12 +1014,9 @@ more:
 
 	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
-		if (UNLIKELY((e = get_esock(false)) == NULL)) {
-			conn++;
+		if (UNLIKELY((s = get_esock(false)) < 0)) {
+			nfail++;
 			break;
-		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
-			serror("Error: cannot connect to `%s'", e);
-			goto conn_err;
 		}
 		/* send off our command */
 		write(s, buf, bix);
@@ -1005,11 +1032,9 @@ more:
 
 	/* global queue */
 	with (int s) {
-		if (UNLIKELY((e = get_esock(true)) == NULL)) {
-			conn++;
+		if (UNLIKELY((s = get_esock(true)) < 0)) {
+			nfail++;
 			break;
-		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
-			goto conn_err;
 		}
 		/* send off our command */
 		write(s, buf, bix);
@@ -1022,7 +1047,7 @@ more:
 		/* drain and close S */
 		free_conn(s);
 	}
-	if (UNLIKELY(conn >= 2U)) {
+	if (UNLIKELY(nfail >= 2U)) {
 		goto sock_err;
 	} else if (UNLIKELY(i < argi->nargs)) {
 		goto more;
@@ -1043,11 +1068,6 @@ sock_err:
 Error: cannot connect to echsd, is it running?");
 	return 1;
 
-conn_err:
-	serror("\
-Error: cannot connect to `%s'", e);
-	return 1;
-
 reqstr_err:
 	serror("\
 Error: cannot build request string");
@@ -1066,10 +1086,9 @@ METHOD:PUBLISH\n\
 CALSCALE:GREGORIAN\n";
 	static const char ftr[] = "\
 END:VCALENDAR\n";
-	const char *e;
-	int s = -1;
 	size_t i = 0U;
 	int fd;
+	int s;
 
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
 		/* ah, use a template and fire up an editor */
@@ -1081,15 +1100,9 @@ END:VCALENDAR\n";
 	/* let's try the local echsd and then the system-wide one */
 	if (UNLIKELY(argi->dry_run_flag)) {
 		s = STDOUT_FILENO;
-	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
-	} else if ((s = make_conn(e)) < 0) {
-		serror("Error: cannot connect to `%s'", e);
-		return 1;
-	} else {
-		/* otherwise it's time for a `yay' */
-		errno = 0, serror("connected to %s ...", e);
 	}
 
 	write(s, hdr, strlenof(hdr));
@@ -1145,21 +1158,14 @@ END:VCALENDAR\n";
 	static const char beg[] = "BEGIN:VEVENT\n";
 	static const char end[] = "END:VEVENT\n";
 	static const char sta[] = "STATUS:CANCELLED\n";
-	const char *e;
-	int s = -1;
+	int s;
 
 	/* let's try the local echsd and then the system-wide one */
 	if (argi->dry_run_flag) {
 		s = STDOUT_FILENO;
-	} else if (!((e = get_esock(false)) || (e = get_esock(true)))) {
+	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
-	} else if ((s = make_conn(e)) < 0) {
-		serror("Error: cannot connect to `%s'", e);
-		return 1;
-	} else {
-		/* otherwise it's time for a `yay' */
-		errno = 0, serror("connected to %s ...", e);
 	}
 	/* we'll be writing to S, better believe it */
 	fdbang(s);
