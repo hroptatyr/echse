@@ -174,48 +174,64 @@ static const char*
 get_esock(bool systemp)
 {
 /* return a candidate for the echsd socket, system-wide or user local */
+	static char hname[HOST_NAME_MAX];
+	static size_t hnamez;
 	static const char rundir[] = "/var/run";
-	static const char sockfn[] = "echse/=echsd";
+	static const char sockfn[] = ".echse/=echsd";
 	struct stat st;
 	static char d[PATH_MAX];
 	size_t di;
 
+	/* populate with hostname we're running on */
+	if (UNLIKELY(!hnamez && gethostname(hname, sizeof(hname)) < 0)) {
+		perror("Error: cannot get hostname");
+		return NULL;
+	} else if (!hnamez) {
+		hnamez = strlen(hname);
+	}
+
 	if (systemp) {
-		di = xstrlcpy(d, rundir, sizeof(d));
+		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
 		d[di++] = '/';
-		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			sockfn + 1U, strlenof(sockfn) - 1U);
 
 		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
 			return NULL;
 		}
-		/* success */
-		return d;
 	} else {
+		static const char esokfn[] = "=echsd";
+		struct passwd *pw;
 		uid_t u = getuid();
 
-		di = xstrlcpy(d, rundir, sizeof(d));
-		d[di++] = '/';
-		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
-		d[di++] = '/';
-		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
-
-		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-			goto tmpdir;
-		}
-		/* success */
-		return d;
-
-	tmpdir:
-		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
-		di += xstrlcpy(d + di, sockfn, sizeof(d) - di);
-
-		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-			/* no more alternatives */
+		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
+			/* there's nothing else we can do */
+			return NULL;
+		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			/* gimme a break! */
 			return NULL;
 		}
-		/* success */
-		return d;
+
+		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
+		d[di++] = '/';
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			sockfn, strlenof(sockfn) - strlenof(esokfn));
+		/* now the machine name */
+		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+		d[di++] = '/';
+		/* and the =echsd bit again */
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			esokfn, strlenof(esokfn));
+
+		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
+			return NULL;
+		}
 	}
+	/* success */
+	return d;
 }
 
 static int
