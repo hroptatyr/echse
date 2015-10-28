@@ -68,6 +68,7 @@
 #include "nifty.h"
 #include "evical.h"
 #include "fdprnt.h"
+#include "intern.h"
 
 extern char **environ;
 
@@ -693,46 +694,160 @@ builtin:
 	return add_tmpl(NULL);
 }
 
-static int
-read_list(int fd)
+static ssize_t
+http_hdr_len(char *restrict buf, size_t bsz)
 {
 	static const char http_sep[] = "\r\n\r\n";
 	static const char http_hdr[] = "HTTP/";
-	char buf[4096U];
-	/* trial read, just to see if the 200/OK has come */
-	ssize_t nrd = read(fd, buf, sizeof(buf));
-	size_t beef;
+	size_t res;
 
-	if (UNLIKELY(nrd <= (ssize_t)strlenof(http_hdr))) {
+	if (UNLIKELY(bsz <= strlenof(http_hdr))) {
 		/* nope */
 		return -1;
 	} else if (memcmp(buf, http_hdr, strlenof(http_hdr))) {
 		/* not really */
 		return -1;
 	}
+
 	/* find header separator */
-	with (size_t bi = xmemmem(buf, nrd, http_sep, strlenof(http_sep))) {
-		if (UNLIKELY(bi >= (size_t)nrd)) {
-			/* bad luck aye */
-			return -1;
-		}
-		/* \nul-ify the region BI points to */
-		memset(buf + bi, 0, strlenof(http_sep));
-		beef = bi + strlenof(http_sep);
+	res = xmemmem(buf, bsz, http_sep, strlenof(http_sep));
+	if (UNLIKELY(res >= bsz)) {
+		/* bad luck aye */
+		return -1;
+	}
+	/* \nul-ify the region BI points to */
+	memset(buf + res, 0, strlenof(http_sep));
+	return res + strlenof(http_sep);
+}
+
+static int
+http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
+{
+	long unsigned int rc;
+	const char *spc;
+
+	(void)bsz;
+	if (UNLIKELY((spc = strchr(buf, ' ')) == NULL)) {
+		*cod = NULL;
+		return -1;
+	}
+	rc = strtoul(spc, cod, 10);
+	while (**cod == ' ') {
+		(*cod)++;
+	}
+	return rc;
+}
+
+static int
+brief_list(int fd)
+{
+	char buf[4096U];
+	ical_parser_t pp = NULL;
+	/* trial read, just to see if the 200/OK has come */
+	ssize_t nrd;
+	ssize_t beef;
+	char *cod;
+	int rc;
+
+	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+		errno = 0, serror("\
+Error: no reply from server");
+		return -1;
+	} else if (UNLIKELY((beef = http_hdr_len(buf, nrd)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY((rc = http_ret_cod(buf, &cod, beef)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY(rc != 200)) {
+		errno = 0, serror("\
+server returned: %s", cod);
+		return -1;
 	}
 
-	/* search for space to read return code */
-	with (size_t bi = strlenof(http_hdr)) {
-		long unsigned int rc;
-		char *on;
+	if (echs_evical_push(&pp, buf + beef, nrd - beef) < 0) {
+		/* pushing won't help */
+		return -1;
+	}
+	goto brief;
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
 
-		while (buf[bi++] != ' ');
-		rc = strtoul(buf + bi, &on, 10);
-		if (UNLIKELY(rc != 200 || (*on | ' ') != ' ')) {
-			errno = 0, serror("\
-Error: server returned: %s", ++on);
-			return -1;
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
 		}
+		/*@fallthrough@*/
+	case 0:
+	brief:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* otherwise print him briefly */
+			if (ins.t->oid) {
+				fputs(obint_name(ins.t->oid), stdout);
+			}
+			fputc('\t', stdout);
+			fputs(ins.t->cmd, stdout);
+			fputc('\n', stdout);
+
+			/* and free him */
+			free_echs_task(ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+		/*@fallthrough@*/
+	case -1:
+		/* last ever pull this one */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* not on my turf */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return 0;
+}
+
+static int
+ical_list(int fd)
+{
+	char buf[4096U];
+	/* trial read, just to see if the 200/OK has come */
+	ssize_t nrd;
+	ssize_t beef;
+	char *cod;
+	int rc;
+
+	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+		errno = 0, serror("\
+Error: no reply from server");
+		return -1;
+	} else if (UNLIKELY((beef = http_hdr_len(buf, nrd)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY((rc = http_ret_cod(buf, &cod, beef)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY(rc != 200)) {
+		errno = 0, serror("\
+server returned: %s", cod);
+		return -1;
 	}
 
 	/* write out initial portion of data we've got */
@@ -749,7 +864,7 @@ Error: server returned: %s", ++on);
 #include "echsq.yucc"
 
 static int
-cmd_list(const struct yuck_cmd_list_s argi[static 1U])
+cmd_list(struct yuck_cmd_list_s argi[static 1U])
 {
 /* try and request the schedules */
 	static const char verb[] = "GET /";
@@ -783,6 +898,11 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 			}
 			u = p->pw_uid;
 		}
+	}
+
+	if (!argi->cmd) {
+		/* echsq with no command equal list --brief */
+		argi->brief_flag = 1;
 	}
 
 more:
@@ -834,8 +954,12 @@ more:
 		}
 		/* send off our command */
 		write(s, buf, bix);
-		/* read listing */
-		read_list(s);
+		/* listing */
+		if (!argi->brief_flag) {
+			ical_list(s);
+		} else {
+			brief_list(s);
+		}
 		/* drain and close S */
 		free_conn(s);
 	}
@@ -850,8 +974,12 @@ more:
 		}
 		/* send off our command */
 		write(s, buf, bix);
-		/* read listing */
-		read_list(s);
+		/* listing */
+		if (!argi->brief_flag) {
+			ical_list(s);
+		} else {
+			brief_list(s);
+		}
 		/* drain and close S */
 		free_conn(s);
 	}
