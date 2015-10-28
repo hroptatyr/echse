@@ -767,8 +767,20 @@ server returned: %s", cod);
 		return -1;
 	}
 
-	if (echs_evical_push(&pp, buf + beef, nrd - beef) < 0) {
+	if (UNLIKELY(nrd - beef <= 0)) {
+		/* have to do another roundtrip to the reader */
+		nrd = read(fd, buf, sizeof(buf));
+		beef = 0;
+	}
+	if (UNLIKELY(nrd - beef <= 0)) {
+		/* no chance then, bugger off */
+		errno = 0, serror("\
+Error: incomplete reply from server");
+		return -1;
+	} else if (echs_evical_push(&pp, buf + beef, nrd - beef) < 0) {
 		/* pushing won't help */
+		errno = 0, serror("\
+Error: incomplete reply from server");
 		return -1;
 	}
 	goto brief;
