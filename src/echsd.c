@@ -398,7 +398,9 @@ get_queudir(void)
 		}
 
 		di = xstrlncpy(d, sizeof(d), spodir, strlenof(spodir));
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		di += xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir + 1U, strlenof(appdir) - 1U);
@@ -427,7 +429,9 @@ get_queudir(void)
 			break;
 		}
 		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		di += xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir, strlenof(appdir));
@@ -435,7 +439,9 @@ get_queudir(void)
 			/* plain horseshit again */
 			break;
 		}
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		/* now the machine name */
 		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
 
@@ -451,37 +457,57 @@ get_queudir(void)
 	return NULL;
 }
 
-static const char*
-get_sockdir(void)
+static int
+make_socket(void)
 {
 	static const char rundir[] = "/var/run";
 	static const char appdir[] = ".echse";
-	static char d[PATH_MAX];
+	static const char sockfn[] = "=echsd";
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	char d[PATH_MAX];
+	size_t di;
+	size_t sz;
 	uid_t u;
+	int s;
+
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		return -1;
+	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
+		goto fail;
+	}
 
 	switch ((u = meself.uid)) {
 		struct passwd *pw;
 		struct stat st;
-		size_t di;
 	case 0:
 		/* barf right away when there's no /var/run */
 		if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			return NULL;
+			goto fail;
 		}
 
 		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		di += xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir + 1U, strlenof(appdir) - 1U);
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* it's just horseshit */
-			break;
+			goto fail;
 		}
-		/* we consider our job done */
-		return d;
+		/* finish on / */
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
+		/* an copy sockfn */
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			sockfn, strlenof(sockfn));
+		break;
 	default:
+#if !defined __linux__
 		/* just like the queudir case we have no consistent
 		 * way of writing our sockets somewhere locally as
 		 * user (sort of an equivalent of /var/run)
@@ -495,68 +521,60 @@ get_sockdir(void)
 		 * home directory just like in get_queudir() */
 		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
 			/* there's nothing else we can do */
-			break;
+			goto fail;
 		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
 			/* gimme a break! */
-			break;
+			goto fail;
 		}
 		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		di += xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir, strlenof(appdir));
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
-			break;
+			goto fail;
 		}
-		d[di++] = '/';
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
 		/* now the machine name */
 		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
 
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
-			break;
+			goto fail;
 		}
+		/* finish on / */
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
+#endif	/* !__linux__ */
+		/* and copy sockfn */
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			sockfn, strlenof(sockfn));
+
+#if defined __linux__
+		/* lucky linux has got these abstract socket names */
+		*d = '\0';
+
+		(void)(pw = NULL);
+#endif	/* !__linux__ */
 		/* we consider our job done */
-		return d;
+		break;
 	}
-	/* we've run out of options */
-	return NULL;
-}
 
-static const char*
-pathcat(const char *dirnm, ...)
-{
-	static char res[PATH_MAX];
-	va_list ap;
-	size_t ri = 0U;
-
-	va_start(ap, dirnm);
-	ri += xstrlcpy(res + ri, dirnm, sizeof(res) - ri);
-	for (const char *fn; (fn = va_arg(ap, const char*));) {
-		res[ri++] = '/';
-		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
-	}
-	va_end(ap);
-	return res;
-}
-
-static int
-make_socket(const char *sdir)
-{
-	struct sockaddr_un sa = {.sun_family = AF_UNIX};
-	const char *fn;
-	size_t sz;
-	int s;
-
-	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
-		return -1;
-	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
+	if (UNLIKELY(di >= sizeof(sa.sun_path))) {
+		/* no way we can install this guy, he's too big*/
 		goto fail;
 	}
-	fn = pathcat(sdir, "=echsd", NULL);
-	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
+
+	/* copy what we've got */
+	sz = xstrlncpy(sa.sun_path, sizeof(sa.sun_path), d, di);
 	sz += sizeof(sa.sun_family);
 	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
 		goto fail;
@@ -570,12 +588,23 @@ fail:
 }
 
 static int
-free_socket(int s, const char *sdir)
+free_socket(int s)
 {
-	const char *fn = pathcat(sdir, "=echsd", NULL);
-	int res = unlink(fn);
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	socklen_t sz = sizeof(sa);
+	const char *fn;
+	int rc = 0;
+
+	if (UNLIKELY(getsockname(s, (void*)&sa, &sz) < 0)) {
+		rc = -1;
+	} else if ((fn = sa.sun_path) == NULL || !*fn) {
+		/* abstract socket? */
+		;
+	} else if (UNLIKELY(unlink(fn) < 0)) {
+		rc = -1;
+	}
 	close(s);
-	return res;
+	return rc;
 }
 
 static int
@@ -2573,7 +2602,6 @@ main(int argc, char *argv[])
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
 	const char *qdir;
-	const char *sdir;
 	int esok = -1;
 	int rc = 0;
 
@@ -2614,13 +2642,7 @@ main(int argc, char *argv[])
 		perror("Error: cannot open echsd spool directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY((sdir = get_sockdir()) == NULL)) {
-		perror("Error: cannot find directory to put the socket in");
-		rc = 1;
-		goto out;
-	}
-
-	if (UNLIKELY((esok = make_socket(sdir)) < 0)) {
+	} else if (UNLIKELY((esok = make_socket()) < 0)) {
 		perror("Error: cannot create socket file");
 		rc = 1;
 		goto out;
@@ -2697,7 +2719,7 @@ clo:
 
 out:
 	if (esok >= 0) {
-		(void)free_socket(esok, sdir);
+		(void)free_socket(esok);
 	}
 	if (qdirfd >= 0) {
 		close(qdirfd);

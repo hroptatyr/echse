@@ -178,6 +178,7 @@ get_esock(bool systemp)
 	static size_t hnamez;
 	static const char rundir[] = "/var/run";
 	static const char sockfn[] = ".echse/=echsd";
+	static const char esokfn[] = "=echsd";
 	struct stat st;
 	static char d[PATH_MAX];
 	size_t di;
@@ -200,8 +201,14 @@ get_esock(bool systemp)
 		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
 			return NULL;
 		}
+#if defined __linux__
 	} else {
-		static const char esokfn[] = "=echsd";
+		/* use abstract sockets */
+		xstrlncpy(d, sizeof(d), esokfn, strlenof(esokfn));
+		/* make him abstract */
+		*d = '\0';
+#else  /* !__linux__ */
+	} else {
 		struct passwd *pw;
 		uid_t u = getuid();
 
@@ -229,6 +236,7 @@ get_esock(bool systemp)
 		if (stat(d, &st) < 0 || !S_ISSOCK(st.st_mode)) {
 			return NULL;
 		}
+#endif	/* __linux__ */
 	}
 	/* success */
 	return d;
@@ -245,7 +253,10 @@ make_conn(const char *path)
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
 	}
-	z = xstrlcpy(sa.sun_path, path, sizeof(sa.sun_path));
+	if ((z = strlen(path)) == 0U) {
+		z = strlen(path + 1U) + 1U;
+	}
+	xstrlncpy(sa.sun_path, sizeof(sa.sun_path), path, z);
 	z += sizeof(sa.sun_family);
 	if (UNLIKELY(connect(s, (struct sockaddr*)&sa, z) < 0)) {
 		goto fail;
