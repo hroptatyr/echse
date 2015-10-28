@@ -68,6 +68,7 @@
 #include "nifty.h"
 #include "evical.h"
 #include "fdprnt.h"
+#include "intern.h"
 
 extern char **environ;
 
@@ -109,6 +110,63 @@ static size_t
 xstrlcpy(char *restrict dst, const char *src, size_t dsz)
 {
 	return xstrlncpy(dst, dsz, src, strlen(src));
+}
+
+static size_t
+xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
+{
+	const char *const eoh = hay + hayz;
+	const char *const eon = ndl + ndlz;
+	const char *hp;
+	const char *np;
+	const char *cand;
+	unsigned int hsum;
+	unsigned int nsum;
+	unsigned int eqp;
+
+	/* trivial checks first
+         * a 0-sized needle is defined to be found anywhere in haystack
+         * then run strchr() to find a candidate in HAYSTACK (i.e. a portion
+         * that happens to begin with *NEEDLE) */
+	if (UNLIKELY(ndlz == 0UL)) {
+		return 0U;
+	} else if ((hay = memchr(hay, *ndl, hayz)) == NULL) {
+		/* trivial */
+		return (size_t)-1;
+	}
+
+	/* First characters of haystack and needle are the same now. Both are
+	 * guaranteed to be at least one character long.  Now computes the sum
+	 * of characters values of needle together with the sum of the first
+	 * needle_len characters of haystack. */
+	for (hp = hay + 1U, np = ndl + 1U, hsum = *hay, nsum = *hay, eqp = 1U;
+	     hp < eoh && np < eon;
+	     hsum ^= *hp, nsum ^= *np, eqp &= *hp == *np, hp++, np++);
+
+	/* HP now references the (NZ + 1)-th character. */
+	if (np < eon) {
+		/* haystack is smaller than needle, :O */
+		return (size_t)-1;
+	} else if (eqp) {
+		/* found a match */
+		return hay - (eoh - hayz);
+	}
+
+	/* now loop through the rest of haystack,
+	 * updating the sum iteratively */
+	for (cand = hay; hp < eoh; hp++) {
+		hsum ^= *cand++;
+		hsum ^= *hp;
+
+		/* Since the sum of the characters is already known to be
+		 * equal at that point, it is enough to check just NZ - 1
+		 * characters for equality,
+		 * also CAND is by design < HP, so no need for range checks */
+		if (hsum == nsum && memcmp(cand, ndl, ndlz - 1U) == 0) {
+			return cand - (eoh - hayz);
+		}
+	}
+	return (size_t)-1;
 }
 
 
@@ -636,12 +694,189 @@ builtin:
 	return add_tmpl(NULL);
 }
 
+static ssize_t
+http_hdr_len(char *restrict buf, size_t bsz)
+{
+	static const char http_sep[] = "\r\n\r\n";
+	static const char http_hdr[] = "HTTP/";
+	size_t res;
+
+	if (UNLIKELY(bsz <= strlenof(http_hdr))) {
+		/* nope */
+		return -1;
+	} else if (memcmp(buf, http_hdr, strlenof(http_hdr))) {
+		/* not really */
+		return -1;
+	}
+
+	/* find header separator */
+	res = xmemmem(buf, bsz, http_sep, strlenof(http_sep));
+	if (UNLIKELY(res >= bsz)) {
+		/* bad luck aye */
+		return -1;
+	}
+	/* \nul-ify the region BI points to */
+	memset(buf + res, 0, strlenof(http_sep));
+	return res + strlenof(http_sep);
+}
+
+static int
+http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
+{
+	long unsigned int rc;
+	const char *spc;
+
+	(void)bsz;
+	if (UNLIKELY((spc = strchr(buf, ' ')) == NULL)) {
+		*cod = NULL;
+		return -1;
+	}
+	rc = strtoul(spc, cod, 10);
+	while (**cod == ' ') {
+		(*cod)++;
+	}
+	return rc;
+}
+
+static int
+brief_list(int fd)
+{
+	char buf[4096U];
+	ical_parser_t pp = NULL;
+	/* trial read, just to see if the 200/OK has come */
+	ssize_t nrd;
+	ssize_t beef;
+	char *cod;
+	int rc;
+
+	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+		errno = 0, serror("\
+Error: no reply from server");
+		return -1;
+	} else if (UNLIKELY((beef = http_hdr_len(buf, nrd)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY((rc = http_ret_cod(buf, &cod, beef)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY(rc != 200)) {
+		errno = 0, serror("\
+server returned: %s", cod);
+		return -1;
+	}
+
+	if (UNLIKELY(nrd - beef <= 0)) {
+		/* have to do another roundtrip to the reader */
+		nrd = read(fd, buf, sizeof(buf));
+		beef = 0;
+	}
+	if (UNLIKELY(nrd - beef <= 0)) {
+		/* no chance then, bugger off */
+		errno = 0, serror("\
+Error: incomplete reply from server");
+		return -1;
+	} else if (echs_evical_push(&pp, buf + beef, nrd - beef) < 0) {
+		/* pushing won't help */
+		errno = 0, serror("\
+Error: incomplete reply from server");
+		return -1;
+	}
+	goto brief;
+more:
+	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+		echs_instruc_t ins;
+
+	default:
+		if (echs_evical_push(&pp, buf, nrd) < 0) {
+			/* pushing more brings nothing */
+			break;
+		}
+		/*@fallthrough@*/
+	case 0:
+	brief:
+		do {
+			ins = echs_evical_pull(&pp);
+
+			if (UNLIKELY(ins.v != INSVERB_SCHE)) {
+				break;
+			} else if (UNLIKELY(ins.t == NULL)) {
+				continue;
+			}
+			/* otherwise print him briefly */
+			if (ins.t->oid) {
+				fputs(obint_name(ins.t->oid), stdout);
+			}
+			fputc('\t', stdout);
+			fputs(ins.t->cmd, stdout);
+			fputc('\n', stdout);
+
+			/* and free him */
+			free_echs_task(ins.t);
+		} while (1);
+		if (LIKELY(nrd > 0)) {
+			goto more;
+		}
+		/*@fallthrough@*/
+	case -1:
+		/* last ever pull this one */
+		ins = echs_evical_last_pull(&pp);
+
+		if (UNLIKELY(ins.v != INSVERB_SCHE)) {
+			break;
+		} else if (UNLIKELY(ins.t != NULL)) {
+			/* not on my turf */
+			free_echs_task(ins.t);
+		}
+		break;
+	}
+	return 0;
+}
+
+static int
+ical_list(int fd)
+{
+	char buf[4096U];
+	/* trial read, just to see if the 200/OK has come */
+	ssize_t nrd;
+	ssize_t beef;
+	char *cod;
+	int rc;
+
+	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+		errno = 0, serror("\
+Error: no reply from server");
+		return -1;
+	} else if (UNLIKELY((beef = http_hdr_len(buf, nrd)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY((rc = http_ret_cod(buf, &cod, beef)) < 0)) {
+		errno = 0, serror("\
+Error: invalid reply from server");
+		return -1;
+	} else if (UNLIKELY(rc != 200)) {
+		errno = 0, serror("\
+server returned: %s", cod);
+		return -1;
+	}
+
+	/* write out initial portion of data we've got */
+	write(STDOUT_FILENO, buf + beef, nrd - beef);
+
+	while ((nrd = read(fd, buf, sizeof(buf))) > 0) {
+		write(STDOUT_FILENO, buf, nrd);
+	}
+	return 0;
+}
+
 
 #if defined STANDALONE
 #include "echsq.yucc"
 
 static int
-cmd_list(const struct yuck_cmd_list_s argi[static 1U])
+cmd_list(struct yuck_cmd_list_s argi[static 1U])
 {
 /* try and request the schedules */
 	static const char verb[] = "GET /";
@@ -651,6 +886,7 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 	char buf[4096U];
 	size_t bix;
 	size_t i = 0U;
+	size_t conn;
 	const char *e;
 	uid_t u;
 
@@ -676,7 +912,13 @@ cmd_list(const struct yuck_cmd_list_s argi[static 1U])
 		}
 	}
 
+	if (!argi->cmd) {
+		/* echsq with no command equal list --brief */
+		argi->brief_flag = 1;
+	}
+
 more:
+	conn = 0U;
 	bix = 0U;
 	/* right lets start with the http verb and stuff */
 	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
@@ -716,34 +958,46 @@ more:
 	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
 		if (UNLIKELY((e = get_esock(false)) == NULL)) {
+			conn++;
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			serror("Error: cannot connect to `%s'", e);
 			goto conn_err;
 		}
+		/* send off our command */
 		write(s, buf, bix);
-
-		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
-			write(STDOUT_FILENO, buf, nrd);
+		/* listing */
+		if (!argi->brief_flag) {
+			ical_list(s);
+		} else {
+			brief_list(s);
 		}
+		/* drain and close S */
 		free_conn(s);
 	}
 
 	/* global queue */
 	with (int s) {
 		if (UNLIKELY((e = get_esock(true)) == NULL)) {
+			conn++;
 			break;
 		} else if (UNLIKELY((s = make_conn(e)) < 0)) {
 			goto conn_err;
 		}
+		/* send off our command */
 		write(s, buf, bix);
-
-		for (ssize_t nrd; (nrd = read(s, buf, sizeof(buf))) > 0;) {
-			write(STDOUT_FILENO, buf, nrd);
+		/* listing */
+		if (!argi->brief_flag) {
+			ical_list(s);
+		} else {
+			brief_list(s);
 		}
+		/* drain and close S */
 		free_conn(s);
 	}
-	if (UNLIKELY(i < argi->nargs)) {
+	if (UNLIKELY(conn >= 2U)) {
+		goto sock_err;
+	} else if (UNLIKELY(i < argi->nargs)) {
 		goto more;
 	}
 	return 0;
@@ -755,6 +1009,11 @@ more:
 pwnam_err:
 	serror("\
 Error: cannot resolve user name `%s'", argi->user_arg);
+	return 1;
+
+sock_err:
+	errno = 0, serror("\
+Error: cannot connect to echsd, is it running?");
 	return 1;
 
 conn_err:
