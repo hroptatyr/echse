@@ -457,10 +457,11 @@ get_sockdir(void)
 	static const char rundir[] = "/var/run";
 	static const char appdir[] = ".echse";
 	static char d[PATH_MAX];
-	struct stat st;
 	uid_t u;
 
 	switch ((u = meself.uid)) {
+		struct passwd *pw;
+		struct stat st;
 		size_t di;
 	case 0:
 		/* barf right away when there's no /var/run */
@@ -481,36 +482,43 @@ get_sockdir(void)
 		/* we consider our job done */
 		return d;
 	default:
-		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
-		d[di++] = '/';
-		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
-		if (stat(d, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			/* no /var/run/user/XXX,
-			 * try /tmp/echse */
-			goto tmpdir;
+		/* just like the queudir case we have no consistent
+		 * way of writing our sockets somewhere locally as
+		 * user (sort of an equivalent of /var/run)
+		 * we've seen on openSuSE that systemd's tmpfiles.d
+		 * system is so aggressive as to either not give us
+		 * /var/run/user/UID/ or just deleting stuff in there
+		 * after a certain amount of time.
+		 * Same goes for /tmp, these days on systemd linux
+		 * boxen files in /tmp will be deleted after a while.
+		 * So to cut this long story short, we're using the
+		 * home directory just like in get_queudir() */
+		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
+			/* there's nothing else we can do */
+			break;
+		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+			/* gimme a break! */
+			break;
 		}
+		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
 		d[di++] = '/';
 		di += xstrlncpy(
 			d + di, sizeof(d) - di,
-			appdir + 1U, strlenof(appdir) - 1U);
-		/* now mkdir the result and throw away errors */
+			appdir, strlenof(appdir));
+		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
+			/* plain horseshit again */
+			break;
+		}
+		d[di++] = '/';
+		/* now the machine name */
+		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+
+		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
 			break;
 		}
 		/* we consider our job done */
-		return d;
-
-	tmpdir:
-		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			appdir + 1U, strlenof(appdir) - 1U);
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* plain horseshit again */
-			break;
-		}
-		/* now that's a big success */
 		return d;
 	}
 	/* we've run out of options */
