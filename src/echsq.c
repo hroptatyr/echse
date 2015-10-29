@@ -171,131 +171,148 @@ xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
 
 
 static int
-try_conn(struct sockaddr *sa, socklen_t sz)
+get_ssock(int s, bool anonp)
 {
-	int s;
-
-	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
-		;
-	} else if (UNLIKELY(connect(s, sa, sz) < 0)) {
-		close(s);
-		s = -1;
-	}
-	return s;
-}
-
-static size_t
-get_esock_sys(char *restrict buf, size_t bsz)
-{
-	static const char sockfn[] = "/var/run/echse/=echsd";
+	static const char sockfn[] = "\0/var/run/echse/=echsd";
+	struct sockaddr_un sa = {AF_UNIX};
 	struct stat st;
-	size_t bi;
+	socklen_t sz;
 
-	bi = xstrlncpy(buf, bsz, sockfn, strlenof(sockfn));
-	if (stat(buf, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-		/* indicate failure */
-		return 0U;
+	if (UNLIKELY(sizeof(sa.sun_path) < sizeof(sockfn))) {
+		/* not gonna happen */
+		return -1;
+#if !defined __linux__
+	} else if (anonp) {
+		/* don't work on non-linuxen */
+		return -1;
+#endif	/* !__linux__ */
 	}
-	return bi;
+
+	memcpy(sa.sun_path, sockfn + !anonp, sizeof(sockfn) - !anonp);
+	sz = strlenof(sockfn) - !anonp + sizeof(sa.sun_family);
+
+	if (!anonp && (stat(sa.sun_path, &st) < 0 || !S_ISSOCK(st.st_mode))) {
+		/* indicate failure */
+		return -1;
+	} else if (UNLIKELY(connect(s, (struct sockaddr*)&sa, sz) < 0)) {
+		return -1;
+	}
+	/* otherwise it's been a success */
+	return 0;
 }
 
-static size_t
-get_esock_usr(char *restrict buf, size_t bsz)
+static int
+get_usock(int s, bool anonp)
 {
 	static char hname[HOST_NAME_MAX];
 	static size_t hnamez;
-	static const char sockfn[] = ".echse/";
-	static const char esokfn[] = "=echsd";
-	size_t bi;
+#if defined __linux__
+	static const char asokfn[] = "\0/var/run/echse/=echsd";
+#endif	/* __linux__ */
+	static const char appdir[] = ".echse/";
+	static const char sockfn[] = "=echsd";
+	struct sockaddr_un sa = {AF_UNIX};
+	uid_t u = getuid();
+	struct stat st;
+	socklen_t sz;
+
+	if (anonp) {
+#if defined __linux__
+		int rc;
+
+		if (UNLIKELY(sizeof(sa.sun_path) < sizeof(asokfn) + 6U)) {
+			/* not enough room is there */
+			return -1;
+		}
+		memcpy(sa.sun_path, asokfn, sz = strlenof(asokfn));
+		rc = snprintf(
+			sa.sun_path + sz, sizeof(sa.sun_path) - sz, "-%u", u);
+		if (UNLIKELY(rc <= 0)) {
+			return -1;
+		}
+		/* otherwise it's looking pretty good */
+		sz += rc;
+		goto conn;
+#else  /* !__linux__ */
+		/* don't work on non-linuxen */
+		return -1;
+#endif	/* __linux__ */
+	}
 
 	/* populate with hostname we're running on */
 	if (UNLIKELY(!hnamez && gethostname(hname, sizeof(hname)) < 0)) {
 		perror("Error: cannot get hostname");
-		return 0U;
+		return -1;
 	} else if (!hnamez) {
 		hnamez = strlen(hname);
 	}
 
-	with (uid_t u = getuid()) {
-		struct passwd *pw;
-		struct stat st;
-
+	with (struct passwd *pw) {
 		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
 			/* there's nothing else we can do */
-			return 0U;
-		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			/* gimme a break! */
-			return 0U;
+			return -1;
 		}
-
-		bi = xstrlcpy(buf, pw->pw_dir, bsz);
-		if (LIKELY(bi < bsz)) {
-			buf[bi++] = '/';
+		sz = xstrlcpy(sa.sun_path, pw->pw_dir, sizeof(sa.sun_path));
+		if (LIKELY(sz < sizeof(sa.sun_path))) {
+			sa.sun_path[sz++] = '/';
 		}
-		bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
+		/* append appdir */
+		sz += xstrlncpy(
+			sa.sun_path + sz, sizeof(sa.sun_path) - sz,
+			appdir, strlenof(appdir));
 		/* now the machine name */
-		bi += xstrlncpy(buf + bi, bsz - bi, hname, hnamez);
-		if (LIKELY(bi < bsz)) {
-			buf[bi++] = '/';
+		sz += xstrlncpy(
+			sa.sun_path + sz, sizeof(sa.sun_path) - sz,
+			hname, hnamez);
+		if (LIKELY(sz < sizeof(sa.sun_path))) {
+			sa.sun_path[sz++] = '/';
 		}
-		/* and the =echsd bit again */
-		bi += xstrlncpy(buf + bi, bsz - bi, esokfn, strlenof(esokfn));
-
-		if (stat(buf, &st) < 0 || !S_ISSOCK(st.st_mode)) {
-			return 0U;
-		}
+		/* and the =echsd bit */
+		sz += xstrlncpy(
+			sa.sun_path + sz, sizeof(sa.sun_path) - sz,
+			sockfn, strlenof(sockfn));
 	}
-	return bi;
-}
 
-static size_t
-get_esock_ano(char *restrict buf, size_t bsz)
-{
-#if defined __linux__
-	static const char sockfn[] = "=echsd";
-	size_t bi;
+conn:
+	/* wind SZ up just a little more */
+	sz += sizeof(sa.sun_family);
 
-	bi = xstrlncpy(buf, bsz, sockfn, strlenof(sockfn));
-	*buf = '\0';
-	return bi;
-#else  /* !__linux__ */
-	return 0U;
-#endif	/* __linux__ */
+	/* check for physical presence of the socket file */
+	if (!anonp && (stat(sa.sun_path, &st) < 0 || !S_ISSOCK(st.st_mode))) {
+		/* indicate failure */
+		return -1;
+	} else if (UNLIKELY(connect(s, (struct sockaddr*)&sa, sz) < 0)) {
+		return -1;
+	}
+	return 0;
 }
 
 static int
 get_esock(bool systemp)
 {
 /* return a candidate for the echsd socket, system-wide or user local */
-	struct sockaddr_un sa = {AF_UNIX};
-	socklen_t z;
 	int s;
 
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		return s;
+	}
+
 	if (systemp) {
-		z = get_esock_sys(sa.sun_path, sizeof(sa.sun_path));
-		if (UNLIKELY(z <= 0)) {
-			return -1;
+		/* try anonymous then filesystem socket */
+		if (get_ssock(s, true) < 0 && get_ssock(s, false) < 0) {
+			goto fail;
 		}
 	} else {
-		z = get_esock_ano(sa.sun_path, sizeof(sa.sun_path));
-		if (UNLIKELY(z <= 0)) {
-			/* try homedir socket */
-			goto usock;
-		}
-		z += sizeof(sa.sun_family);
-		if ((s = try_conn((void*)&sa, z)) < 0) {
-			goto usock;
-		}
-		return s;
-
-	usock:
-		z = get_esock_usr(sa.sun_path, sizeof(sa.sun_path));
-		if (UNLIKELY(z <= 0)) {
-			return -1;
+		/* again, first anonymously then filesystem sock */
+		if (get_usock(s, true) < 0 && get_usock(s, false) < 0) {
+			goto fail;
 		}
 	}
-	z += sizeof(sa.sun_family);
-	return try_conn((void*)&sa, z);
+	return s;
+
+fail:
+	close(s);
+	return -1;
 }
 
 static int
