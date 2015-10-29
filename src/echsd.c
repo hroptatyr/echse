@@ -90,6 +90,12 @@
 
 #define STRERR	(strerror(errno))
 
+#if defined __linux__
+# define USE_ABSTRACT_SOCKETS	1
+#else  /* !__linux__ */
+# define USE_ABSTRACT_SOCKETS	0
+#endif	/* __linux__ */
+
 typedef struct _task_s *_task_t;
 
 typedef struct {
@@ -457,17 +463,133 @@ get_queudir(void)
 	return NULL;
 }
 
-static int
-make_socket(void)
+static ssize_t
+make_ssock(char *restrict buf, size_t bsz)
 {
+#if USE_ABSTRACT_SOCKETS
+/* are we glad that we have abstract sockets? */
+	static const char sockfn[] = "@/var/run/echse/=echsd";
+
+	if (UNLIKELY(bsz < sizeof(sockfn))) {
+		return -1;
+	}
+	/* otherwise just use that string */
+	memcpy(buf, sockfn, sizeof(sockfn));
+	*buf = '\0';
+	return strlenof(sockfn);
+
+#else  /* !USE_ABSTRACT_SOCKETS */
 	static const char rundir[] = "/var/run";
 	static const char appdir[] = ".echse";
 	static const char sockfn[] = "=echsd";
+	struct stat st;
+	size_t bi;
+
+	/* barf right away when there's no /var/run */
+	if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+		return -1;
+	}
+
+	/* join rundir and appdir */
+	bi = xstrlncpy(buf, bsz, rundir, strlenof(rundir));
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, appdir + 1U, strlenof(appdir) - 1U);
+	/* just mkdir the result and throw away errors */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* it's just horseshit */
+		return -1;
+	}
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
+	return bi;
+#endif	/* USE_ABSTRACT_SOCKETS */
+}
+
+static ssize_t
+make_usock(char *restrict buf, size_t bsz, uid_t u)
+{
+#if USE_ABSTRACT_SOCKETS
+/* aren't we glad about those things? */
+	static const char sockfn[] = "@/var/run/echse/=echsd";
+	size_t bi;
+
+	if (UNLIKELY(bsz < sizeof(sockfn) + 6U/*for numeric user*/)) {
+		return -1;
+	}
+	memcpy(buf, sockfn, bi = strlenof(sockfn));
+	with (int rc = snprintf(buf + bi, bsz - bi, "-%u", u)) {
+		if (rc <= 0) {
+			return -1;
+		}
+		bi += rc;
+	}
+	*buf = '\0';
+	return bi;
+
+#else  /* !USE_ABSTRACT_SOCKETS */
+	static const char appdir[] = ".echse";
+	static const char sockfn[] = "=echsd";
+	struct passwd *pw;
+	struct stat st;
+	size_t bi;
+
+	/* just like the queudir case we have no consistent
+	 * way of writing our sockets somewhere locally as
+	 * user (sort of an equivalent of /var/run)
+	 * we've seen on openSuSE that systemd's tmpfiles.d
+	 * system is so aggressive as to either not give us
+	 * /var/run/user/UID/ or just deleting stuff in there
+	 * after a certain amount of time.
+	 * Same goes for /tmp, these days on systemd linux
+	 * boxen files in /tmp will be deleted after a while.
+	 * So to cut this long story short, we're using the
+	 * home directory just like in get_queudir() */
+	if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
+		/* there's nothing else we can do */
+		return -1;
+	} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+		/* gimme a break! */
+		return -1;
+	}
+	/* join homedir and appdir */
+	bi = xstrlcpy(buf, pw->pw_dir, bsz);
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, appdir, strlenof(appdir));
+	/* create the appdir if not already there */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* plain horseshit again */
+		return -1;
+	}
+	/* ok, append machine name now */
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, hname, hnamez);
+	/* and mkdir it again, just in case */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* plain horseshit again */
+		return -1;
+	}
+	/* now for our final trick, append the sockfn */
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
+	return bi;
+#endif	/* !USE_ABSTRACT_SOCKETS */
+}
+
+static int
+make_socket(void)
+{
 	struct sockaddr_un sa = {.sun_family = AF_UNIX};
-	char d[PATH_MAX];
-	size_t di;
 	size_t sz;
-	uid_t u;
 	int s;
 
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
@@ -476,105 +598,26 @@ make_socket(void)
 		goto fail;
 	}
 
-	switch ((u = meself.uid)) {
-		struct passwd *pw;
-		struct stat st;
-	case 0:
-		/* barf right away when there's no /var/run */
-		if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			goto fail;
-		}
+	if (!meself.uid) {
+		ssize_t tmp = make_ssock(sa.sun_path, sizeof(sa.sun_path));
 
-		di = xstrlncpy(d, sizeof(d), rundir, strlenof(rundir));
-		if (LIKELY(di < sizeof(d))) {
-			d[di++] = '/';
-		}
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			appdir + 1U, strlenof(appdir) - 1U);
-		/* just mkdir the result and throw away errors */
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* it's just horseshit */
+		if (UNLIKELY(tmp < 0)) {
 			goto fail;
 		}
-		/* finish on / */
-		if (LIKELY(di < sizeof(d))) {
-			d[di++] = '/';
-		}
-		/* an copy sockfn */
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			sockfn, strlenof(sockfn));
-		break;
-	default:
-#if !defined __linux__
-		/* just like the queudir case we have no consistent
-		 * way of writing our sockets somewhere locally as
-		 * user (sort of an equivalent of /var/run)
-		 * we've seen on openSuSE that systemd's tmpfiles.d
-		 * system is so aggressive as to either not give us
-		 * /var/run/user/UID/ or just deleting stuff in there
-		 * after a certain amount of time.
-		 * Same goes for /tmp, these days on systemd linux
-		 * boxen files in /tmp will be deleted after a while.
-		 * So to cut this long story short, we're using the
-		 * home directory just like in get_queudir() */
-		if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
-			/* there's nothing else we can do */
-			goto fail;
-		} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			/* gimme a break! */
-			goto fail;
-		}
-		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		if (LIKELY(di < sizeof(d))) {
-			d[di++] = '/';
-		}
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			appdir, strlenof(appdir));
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* plain horseshit again */
-			goto fail;
-		}
-		if (LIKELY(di < sizeof(d))) {
-			d[di++] = '/';
-		}
-		/* now the machine name */
-		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+		/* otherwise we're good to go nuclear */
+		sz = tmp;
+	} else {
+		ssize_t tmp = make_usock(
+			sa.sun_path, sizeof(sa.sun_path), meself.uid);
 
-		/* and mkdir it again, just in case */
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* plain horseshit again */
+		if (UNLIKELY(tmp < 0)) {
 			goto fail;
 		}
-		/* finish on / */
-		if (LIKELY(di < sizeof(d))) {
-			d[di++] = '/';
-		}
-#endif	/* !__linux__ */
-		/* and copy sockfn */
-		di += xstrlncpy(
-			d + di, sizeof(d) - di,
-			sockfn, strlenof(sockfn));
-
-#if defined __linux__
-		/* lucky linux has got these abstract socket names */
-		*d = '\0';
-
-		(void)(pw = NULL);
-#endif	/* !__linux__ */
-		/* we consider our job done */
-		break;
+		/* otherwise three cheers for the user */
+		sz = tmp;
 	}
 
-	if (UNLIKELY(di >= sizeof(sa.sun_path))) {
-		/* no way we can install this guy, he's too big*/
-		goto fail;
-	}
-
-	/* copy what we've got */
-	sz = xstrlncpy(sa.sun_path, sizeof(sa.sun_path), d, di);
+	/* go for gold */
 	sz += sizeof(sa.sun_family);
 	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
 		goto fail;
