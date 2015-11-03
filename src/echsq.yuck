@@ -9,6 +9,8 @@ Control echse queues.
 Usage: echsq add [FILE]...
 
 Add tasks from FILEs to the queue.
+With no FILE given and no input on stdin $EDITOR will be opened
+with the current machine's template.
 
 
 Usage: echsq cancel TUID...
