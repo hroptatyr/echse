@@ -15,7 +15,7 @@ with the current machine's template.
 
 Usage: echsq cancel TUID...
 
-Cancel tasks with uids TUID,
+Cancel task with uid TUID.
 
   --next                Only cancel the next run of the tasks.
 
