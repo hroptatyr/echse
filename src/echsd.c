@@ -2473,6 +2473,9 @@ ignoring task update for (non-existing) user %u", u);
 task update from user %d for task from user %d failed: permission denied",
 			     u, t->owner);
 		return -1;
+	} else if (UNLIKELY(t->strm == NULL)) {
+		ECHS_ERR_LOG("submitted ical object is not a task");
+		return -1;
 	} else if ((res = get_task(t->oid)) != NULL &&
 		   !echs_task_owned_by_p(res->t, c.u)) {
 		/* we've caught him, call the police!!! */
