@@ -20,6 +20,11 @@ Cancel task with uid TUID.
   --next                Only cancel the next run of the tasks.
 
 
+Usage: echsq edit TUID...
+
+Edit task with uid TUID.
+
+
 Usage: echsq list [TUID]...
 
 List jobs in the queue.
