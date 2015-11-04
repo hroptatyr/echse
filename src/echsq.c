@@ -169,6 +169,13 @@ xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
 	return (size_t)-1;
 }
 
+static int
+fd_cloexec(int fd)
+{
+	const int nu = fcntl(fd, F_GETFD, 0) | FD_CLOEXEC;
+	return fcntl(fd, F_SETFD, nu);
+}
+
 
 static int
 get_ssock(int s, bool anonp)
@@ -309,7 +316,7 @@ get_esock(bool systemp)
 		}
 	}
 	/* make sure we don't molest our children with this socket  */
-	fcntl(s, F_SETFD, fcntl(s, F_GETFD, 0) | FD_CLOEXEC);
+	(void)fd_cloexec(s);
 	return s;
 
 fail:
@@ -557,7 +564,7 @@ DURATION:P1D\n\
 RRULE:FREQ=DAILY\n\
 END:VEVENT\n\
 END:VCALENDAR\n";
-	static char tmpf[] = "/tmp/taskXXXXXXXX";
+	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	static const char sh[] = "/bin/sh";
 	static char *args[] = {
 		"sh", "-s", NULL
@@ -568,7 +575,7 @@ END:VCALENDAR\n";
 	int rc = 0;
 	pid_t p;
 	int ifd;
-	int fd;
+	int tmpfd;
 
 	/* check input file */
 	if (UNLIKELY(fn == NULL)) {
@@ -586,8 +593,8 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
-	if ((fd = mkstemp(tmpf)) < 0) {
-		serror("Error: cannot create temporary file `%s'", tmpf);
+	if ((tmpfd = mkstemp(tmpfn)) < 0) {
+		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
 	} else if (pipe(pd) < 0) {
 		serror("Error: cannot set up pipe to shell");
@@ -598,9 +605,9 @@ END:VCALENDAR\n";
 	}
 	/* fiddle with the child's descriptors */
 	rc += posix_spawn_file_actions_adddup2(&fa, pd[0U], STDIN_FILENO);
-	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDOUT_FILENO);
-	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDERR_FILENO);
-	rc += posix_spawn_file_actions_addclose(&fa, fd);
+	rc += posix_spawn_file_actions_adddup2(&fa, tmpfd, STDOUT_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, tmpfd, STDERR_FILENO);
+	rc += posix_spawn_file_actions_addclose(&fa, tmpfd);
 	rc += posix_spawn_file_actions_addclose(&fa, pd[0U]);
 	rc += posix_spawn_file_actions_addclose(&fa, pd[1U]);
 
@@ -654,21 +661,22 @@ END:VCALENDAR\n";
 			goto clo;
 		}
 	}
-
+	/* now set the CLOEXEC bit so the editor isn't terribly confused */
+	(void)fd_cloexec(tmpfd);
 	/* launch the editor so the user can peruse the proto-task */
-	if (run_editor(tmpf) < 0) {
+	if (run_editor(tmpfn) < 0) {
 		goto clo;
 	}
 	/* don't keep this file, we talk descriptors */
-	unlink(tmpf);
+	unlink(tmpfn);
 	/* rewind it though */
-	lseek(fd, 0, SEEK_SET);
-	return fd;
+	lseek(tmpfd, 0, SEEK_SET);
+	return tmpfd;
 clo:
-	unlink(tmpf);
+	unlink(tmpfn);
 	close(pd[0U]);
 	close(pd[1U]);
-	close(fd);
+	close(tmpfd);
 	return -1;
 }
 
