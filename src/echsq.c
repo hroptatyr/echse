@@ -1179,7 +1179,10 @@ END:VCALENDAR\n";
 	int s;
 
 	/* let's try the local echsd and then the system-wide one */
-	if (argi->dry_run_flag) {
+	if (!argi->nargs) {
+		errno = 0, serror("Error: TUID argument is mandatory");
+		return 1;
+	} else if (argi->dry_run_flag) {
 		s = STDOUT_FILENO;
 	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
