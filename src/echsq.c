@@ -308,6 +308,8 @@ get_esock(bool systemp)
 			goto fail;
 		}
 	}
+	/* make sure we don't molest our children with this socket  */
+	fcntl(s, F_SETFD, fcntl(s, F_GETFD, 0) | FD_CLOEXEC);
 	return s;
 
 fail:
@@ -485,12 +487,12 @@ get_editor(void)
 }
 
 static int
-run_editor(const char *fn, int fd)
+run_editor(const char *fn)
 {
+/* run $EDITOR on FN. */
 	static const char sh[] = "/bin/sh";
 	static char *args[] = {"sh", "-c", NULL, NULL};
 	const char *editor;
-	posix_spawn_file_actions_t fa;
 	int rc = 0;
 	pid_t p;
 
@@ -519,18 +521,9 @@ run_editor(const char *fn, int fd)
 		args[2U][elen + 2U + flen + 1U] = '\0';
 	}
 
-	if (posix_spawn_file_actions_init(&fa) < 0) {
-		serror("Error: cannot initialise file actions");
-		rc = -1;
-		goto out;
-	}
-
-	/* fiddle with the child's descriptors */
-	rc += posix_spawn_file_actions_addclose(&fa, fd);
-
 	/* call /bin/sh with the above proto-task as here-document
 	 * and stdout redir'd to FD */
-	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+	if (UNLIKELY(posix_spawn(&p, sh, NULL, NULL, args, environ) < 0)) {
 		serror("Error: cannot run /bin/sh");
 		rc = -1;
 	} else {
@@ -540,10 +533,6 @@ run_editor(const char *fn, int fd)
 			rc = -1;
 		}
 	}
-
-	/* also get rid of the file actions resources */
-	posix_spawn_file_actions_destroy(&fa);
-out:
 	free(args[2U]);
 	return rc;
 }
@@ -667,7 +656,7 @@ END:VCALENDAR\n";
 	}
 
 	/* launch the editor so the user can peruse the proto-task */
-	if (run_editor(tmpf, fd) < 0) {
+	if (run_editor(tmpf) < 0) {
 		goto clo;
 	}
 	/* don't keep this file, we talk descriptors */
