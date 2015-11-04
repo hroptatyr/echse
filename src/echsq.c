@@ -1170,6 +1170,96 @@ Error: cannot open file `%s'", fn);
 }
 
 static int
+cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
+{
+/* try and request the schedules */
+	static const char verb[] = "GET /";
+	static const char vers[] = " HTTP/1.1\r\n\r\n";
+	static const char queu[] = "queue";
+	static char tmpfn[] = "/tmp/taskXXXXXXXX";
+	char buf[4096U];
+	size_t bix = 0U;
+	int tmpfd;
+	int s;
+
+	if (!argi->nargs) {
+		errno = 0, serror("Error: TUID argument is mandatory");
+		return 1;
+	} else if (argi->dry_run_flag) {
+		errno = 0, serror("Error: --dry-run in edit mode not possible");
+		return 1;
+	} else if (UNLIKELY((tmpfd = mkstemp(tmpfn)) < 0)) {
+		serror("Error: cannot create temporary file `%s'", tmpfn);
+		return 1;
+	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		return 1;
+	}
+
+#define BUF	(buf + bix)
+#define BSZ	(sizeof(buf) - bix)
+#define CHK_BIX()				\
+	if (UNLIKELY(bix > sizeof(buf))) {	\
+		goto reqstr_err;		\
+	} else (void)0				\
+
+	/* right lets start with the http verb and stuff */
+	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
+	CHK_BIX();
+
+	/* paste the routine we want invoked */
+	bix += xstrlncpy(BUF, BSZ, queu, strlenof(queu));
+	CHK_BIX();
+
+	/* put the ?tuid=x,y,z */
+	bix += snprintf(BUF, BSZ, "?tuid=%s", argi->args[0U]);
+	CHK_BIX();
+
+	for (size_t i = 1U, n; i < argi->nargs; i++, bix += n) {
+		n = snprintf(BUF, BSZ, "&tuid=%s", argi->args[i]);
+		if (UNLIKELY(bix + n >= sizeof(buf))) {
+			/* user can go fuck themself */
+			break;
+		} else if (UNLIKELY(bix + strlenof(vers) >= sizeof(buf))) {
+			/* there'd be no space for the version suffix */
+			break;
+		}
+	}
+	/* version and stuff */
+	bix += xstrlncpy(BUF, BSZ, vers, strlenof(vers));
+
+	/* send off our command */
+	write(s, buf, bix);
+	/* and push results to tmpfd */
+	ical_list(tmpfd, s);
+	/* lest we molest our EDITOR child ... */
+	fd_cloexec(tmpfd);
+	/* now the editing bit */
+	run_editor(tmpfn);
+
+	/* don't keep this file, we talk descriptors */
+	unlink(tmpfn);
+	/* rewind tmpfd ... */
+	lseek(tmpfd, 0, SEEK_SET);
+	/* ... and add the stuff back to echsd */
+	add_fd(s, tmpfd);
+
+	/* drain and close */
+	close(tmpfd);
+	free_conn(s);
+	return 0;
+
+#undef BUF
+#undef BSZ
+#undef CHK_BIX
+
+reqstr_err:
+	serror("\
+Error: cannot build request string");
+	return 1;
+}
+
+static int
 cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
@@ -1252,6 +1342,10 @@ main(int argc, char *argv[])
 
 	case ECHSQ_CMD_CANCEL:
 		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);
+		break;
+
+	case ECHSQ_CMD_EDIT:
+		rc = cmd_edit((struct yuck_cmd_edit_s*)argi);
 		break;
 
 	default:
