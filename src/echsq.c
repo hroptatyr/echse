@@ -814,7 +814,7 @@ http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
 }
 
 static int
-brief_list(int fd)
+brief_list(int tgtfd, int srcfd)
 {
 	char buf[4096U];
 	ical_parser_t pp = NULL;
@@ -824,7 +824,7 @@ brief_list(int fd)
 	char *cod;
 	int rc;
 
-	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+	if (UNLIKELY((nrd = read(srcfd, buf, sizeof(buf))) < 0)) {
 		errno = 0, serror("\
 Error: no reply from server");
 		return -1;
@@ -844,7 +844,7 @@ server returned: %s", cod);
 
 	if (UNLIKELY(nrd - beef <= 0)) {
 		/* have to do another roundtrip to the reader */
-		nrd = read(fd, buf, sizeof(buf));
+		nrd = read(srcfd, buf, sizeof(buf));
 		beef = 0;
 	}
 	if (UNLIKELY(nrd - beef <= 0)) {
@@ -858,9 +858,11 @@ Error: incomplete reply from server");
 Error: incomplete reply from server");
 		return -1;
 	}
+	/* alright jump into it */
+	fdbang(tgtfd);
 	goto brief;
 more:
-	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+	switch ((nrd = read(srcfd, buf, sizeof(buf)))) {
 		echs_instruc_t ins;
 
 	default:
@@ -881,11 +883,17 @@ more:
 			}
 			/* otherwise print him briefly */
 			if (ins.t->oid) {
-				fputs(obint_name(ins.t->oid), stdout);
+				const char *const str = obint_name(ins.t->oid);
+				const size_t len = strlen(str);
+				fdwrite(str, len);
 			}
-			fputc('\t', stdout);
-			fputs(ins.t->cmd, stdout);
-			fputc('\n', stdout);
+			fdputc('\t');
+			{
+				const char *const str = ins.t->cmd;
+				const size_t len = strlen(str);
+				fdwrite(str, len);
+			}
+			fdputc('\n');
 
 			/* and free him */
 			free_echs_task(ins.t);
@@ -906,11 +914,12 @@ more:
 		}
 		break;
 	}
+	fdflush();
 	return 0;
 }
 
 static int
-ical_list(int fd)
+ical_list(int tgtfd, int srcfd)
 {
 	char buf[4096U];
 	/* trial read, just to see if the 200/OK has come */
@@ -919,7 +928,7 @@ ical_list(int fd)
 	char *cod;
 	int rc;
 
-	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+	if (UNLIKELY((nrd = read(srcfd, buf, sizeof(buf))) < 0)) {
 		errno = 0, serror("\
 Error: no reply from server");
 		return -1;
@@ -936,13 +945,16 @@ Error: invalid reply from server");
 server returned: %s", cod);
 		return -1;
 	}
+	/* off we go */
+	fdbang(tgtfd);
 
 	/* write out initial portion of data we've got */
-	write(STDOUT_FILENO, buf + beef, nrd - beef);
+	fdwrite(buf + beef, nrd - beef);
 
-	while ((nrd = read(fd, buf, sizeof(buf))) > 0) {
-		write(STDOUT_FILENO, buf, nrd);
+	while ((nrd = read(srcfd, buf, sizeof(buf))) > 0) {
+		fdwrite(buf, nrd);
 	}
+	fdflush();
 	return 0;
 }
 
@@ -1039,9 +1051,9 @@ more:
 		write(s, buf, bix);
 		/* listing */
 		if (!argi->brief_flag) {
-			ical_list(s);
+			ical_list(STDOUT_FILENO, s);
 		} else {
-			brief_list(s);
+			brief_list(STDOUT_FILENO, s);
 		}
 		/* drain and close S */
 		free_conn(s);
@@ -1057,9 +1069,9 @@ more:
 		write(s, buf, bix);
 		/* listing */
 		if (!argi->brief_flag) {
-			ical_list(s);
+			ical_list(STDOUT_FILENO, s);
 		} else {
-			brief_list(s);
+			brief_list(STDOUT_FILENO, s);
 		}
 		/* drain and close S */
 		free_conn(s);
