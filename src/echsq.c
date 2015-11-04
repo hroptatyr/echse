@@ -76,6 +76,15 @@ extern char **environ;
 # define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
+static const char vcal_hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+METHOD:PUBLISH\n\
+CALSCALE:GREGORIAN\n";
+static const char vcal_ftr[] = "\
+END:VCALENDAR\n";
+
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -1104,14 +1113,6 @@ static int
 cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	static const char hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:PUBLISH\n\
-CALSCALE:GREGORIAN\n";
-	static const char ftr[] = "\
-END:VCALENDAR\n";
 	size_t i = 0U;
 	int fd;
 	int s;
@@ -1131,7 +1132,7 @@ END:VCALENDAR\n";
 		return 1;
 	}
 
-	write(s, hdr, strlenof(hdr));
+	write(s, vcal_hdr, strlenof(vcal_hdr));
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
 		/* template mode */
 		goto proc;
@@ -1155,7 +1156,7 @@ Error: cannot open file `%s'", fn);
 		add_fd(s, fd);
 		close(fd);
 	}
-	write(s, ftr, strlenof(ftr));
+	write(s, vcal_ftr, strlenof(vcal_ftr));
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
@@ -1242,10 +1243,15 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	/* rewind tmpfd ... */
 	lseek(tmpfd, 0, SEEK_SET);
 	/* ... and add the stuff back to echsd */
+	write(s, vcal_hdr, strlenof(vcal_hdr));
 	add_fd(s, tmpfd);
+	write(s, vcal_ftr, strlenof(vcal_ftr));
+	close(tmpfd);
+
+	/* wait for all the season greetings and congrats ... */
+	while (nout && !(poll1(s, 5000) < 0));
 
 	/* drain and close */
-	close(tmpfd);
 	free_conn(s);
 	return 0;
 
