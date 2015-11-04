@@ -1180,19 +1180,17 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	char buf[4096U];
 	size_t bix = 0U;
+	bool realm = 0;
 	int tmpfd;
 	int s;
 
 	if (!argi->nargs) {
 		errno = 0, serror("Error: TUID argument is mandatory");
 		return 1;
-	} else if (argi->dry_run_flag) {
-		errno = 0, serror("Error: --dry-run in edit mode not possible");
-		return 1;
 	} else if (UNLIKELY((tmpfd = mkstemp(tmpfn)) < 0)) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
 		return 1;
-	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
+	} else if ((s = get_esock(realm)) < 0 && (s = get_esock(++realm)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	}
@@ -1233,6 +1231,8 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	write(s, buf, bix);
 	/* and push results to tmpfd */
 	ical_list(tmpfd, s);
+	/* drain and close */
+	free_conn(s);
 	/* lest we molest our EDITOR child ... */
 	fd_cloexec(tmpfd);
 	/* now the editing bit */
@@ -1242,6 +1242,14 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	unlink(tmpfn);
 	/* rewind tmpfd ... */
 	lseek(tmpfd, 0, SEEK_SET);
+	/* ... and get the socket back we had to let go of */
+	if (argi->dry_run_flag) {
+		s = STDOUT_FILENO;
+	} else if ((s = get_esock(realm)) < 0) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		close(tmpfd);
+		return 1;
+	}
 	/* ... and add the stuff back to echsd */
 	write(s, vcal_hdr, strlenof(vcal_hdr));
 	add_fd(s, tmpfd);
