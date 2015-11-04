@@ -1256,6 +1256,11 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	write(s, vcal_ftr, strlenof(vcal_ftr));
 	close(tmpfd);
 
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
 	/* wait for all the season greetings and congrats ... */
 	while (nout && !(poll1(s, 5000) < 0));
 
