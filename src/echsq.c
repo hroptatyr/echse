@@ -76,6 +76,15 @@ extern char **environ;
 # define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
+static const char vcal_hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+METHOD:PUBLISH\n\
+CALSCALE:GREGORIAN\n";
+static const char vcal_ftr[] = "\
+END:VCALENDAR\n";
+
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -167,6 +176,13 @@ xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
 		}
 	}
 	return (size_t)-1;
+}
+
+static int
+fd_cloexec(int fd)
+{
+	const int nu = fcntl(fd, F_GETFD, 0) | FD_CLOEXEC;
+	return fcntl(fd, F_SETFD, nu);
 }
 
 
@@ -308,6 +324,8 @@ get_esock(bool systemp)
 			goto fail;
 		}
 	}
+	/* make sure we don't molest our children with this socket  */
+	(void)fd_cloexec(s);
 	return s;
 
 fail:
@@ -485,12 +503,12 @@ get_editor(void)
 }
 
 static int
-run_editor(const char *fn, int fd)
+run_editor(const char *fn)
 {
+/* run $EDITOR on FN. */
 	static const char sh[] = "/bin/sh";
 	static char *args[] = {"sh", "-c", NULL, NULL};
 	const char *editor;
-	posix_spawn_file_actions_t fa;
 	int rc = 0;
 	pid_t p;
 
@@ -519,18 +537,9 @@ run_editor(const char *fn, int fd)
 		args[2U][elen + 2U + flen + 1U] = '\0';
 	}
 
-	if (posix_spawn_file_actions_init(&fa) < 0) {
-		serror("Error: cannot initialise file actions");
-		rc = -1;
-		goto out;
-	}
-
-	/* fiddle with the child's descriptors */
-	rc += posix_spawn_file_actions_addclose(&fa, fd);
-
 	/* call /bin/sh with the above proto-task as here-document
 	 * and stdout redir'd to FD */
-	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+	if (UNLIKELY(posix_spawn(&p, sh, NULL, NULL, args, environ) < 0)) {
 		serror("Error: cannot run /bin/sh");
 		rc = -1;
 	} else {
@@ -540,10 +549,6 @@ run_editor(const char *fn, int fd)
 			rc = -1;
 		}
 	}
-
-	/* also get rid of the file actions resources */
-	posix_spawn_file_actions_destroy(&fa);
-out:
 	free(args[2U]);
 	return rc;
 }
@@ -568,7 +573,7 @@ DURATION:P1D\n\
 RRULE:FREQ=DAILY\n\
 END:VEVENT\n\
 END:VCALENDAR\n";
-	static char tmpf[] = "/tmp/taskXXXXXXXX";
+	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	static const char sh[] = "/bin/sh";
 	static char *args[] = {
 		"sh", "-s", NULL
@@ -579,7 +584,7 @@ END:VCALENDAR\n";
 	int rc = 0;
 	pid_t p;
 	int ifd;
-	int fd;
+	int tmpfd;
 
 	/* check input file */
 	if (UNLIKELY(fn == NULL)) {
@@ -597,8 +602,8 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
-	if ((fd = mkstemp(tmpf)) < 0) {
-		serror("Error: cannot create temporary file `%s'", tmpf);
+	if ((tmpfd = mkstemp(tmpfn)) < 0) {
+		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
 	} else if (pipe(pd) < 0) {
 		serror("Error: cannot set up pipe to shell");
@@ -609,9 +614,9 @@ END:VCALENDAR\n";
 	}
 	/* fiddle with the child's descriptors */
 	rc += posix_spawn_file_actions_adddup2(&fa, pd[0U], STDIN_FILENO);
-	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDOUT_FILENO);
-	rc += posix_spawn_file_actions_adddup2(&fa, fd, STDERR_FILENO);
-	rc += posix_spawn_file_actions_addclose(&fa, fd);
+	rc += posix_spawn_file_actions_adddup2(&fa, tmpfd, STDOUT_FILENO);
+	rc += posix_spawn_file_actions_adddup2(&fa, tmpfd, STDERR_FILENO);
+	rc += posix_spawn_file_actions_addclose(&fa, tmpfd);
 	rc += posix_spawn_file_actions_addclose(&fa, pd[0U]);
 	rc += posix_spawn_file_actions_addclose(&fa, pd[1U]);
 
@@ -665,21 +670,22 @@ END:VCALENDAR\n";
 			goto clo;
 		}
 	}
-
+	/* now set the CLOEXEC bit so the editor isn't terribly confused */
+	(void)fd_cloexec(tmpfd);
 	/* launch the editor so the user can peruse the proto-task */
-	if (run_editor(tmpf, fd) < 0) {
+	if (run_editor(tmpfn) < 0) {
 		goto clo;
 	}
 	/* don't keep this file, we talk descriptors */
-	unlink(tmpf);
+	unlink(tmpfn);
 	/* rewind it though */
-	lseek(fd, 0, SEEK_SET);
-	return fd;
+	lseek(tmpfd, 0, SEEK_SET);
+	return tmpfd;
 clo:
-	unlink(tmpf);
+	unlink(tmpfn);
 	close(pd[0U]);
 	close(pd[1U]);
-	close(fd);
+	close(tmpfd);
 	return -1;
 }
 
@@ -814,7 +820,7 @@ http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
 }
 
 static int
-brief_list(int fd)
+brief_list(int tgtfd, int srcfd)
 {
 	char buf[4096U];
 	ical_parser_t pp = NULL;
@@ -824,7 +830,7 @@ brief_list(int fd)
 	char *cod;
 	int rc;
 
-	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+	if (UNLIKELY((nrd = read(srcfd, buf, sizeof(buf))) < 0)) {
 		errno = 0, serror("\
 Error: no reply from server");
 		return -1;
@@ -844,7 +850,7 @@ server returned: %s", cod);
 
 	if (UNLIKELY(nrd - beef <= 0)) {
 		/* have to do another roundtrip to the reader */
-		nrd = read(fd, buf, sizeof(buf));
+		nrd = read(srcfd, buf, sizeof(buf));
 		beef = 0;
 	}
 	if (UNLIKELY(nrd - beef <= 0)) {
@@ -858,9 +864,11 @@ Error: incomplete reply from server");
 Error: incomplete reply from server");
 		return -1;
 	}
+	/* alright jump into it */
+	fdbang(tgtfd);
 	goto brief;
 more:
-	switch ((nrd = read(fd, buf, sizeof(buf)))) {
+	switch ((nrd = read(srcfd, buf, sizeof(buf)))) {
 		echs_instruc_t ins;
 
 	default:
@@ -881,11 +889,17 @@ more:
 			}
 			/* otherwise print him briefly */
 			if (ins.t->oid) {
-				fputs(obint_name(ins.t->oid), stdout);
+				const char *const str = obint_name(ins.t->oid);
+				const size_t len = strlen(str);
+				fdwrite(str, len);
 			}
-			fputc('\t', stdout);
-			fputs(ins.t->cmd, stdout);
-			fputc('\n', stdout);
+			fdputc('\t');
+			{
+				const char *const str = ins.t->cmd;
+				const size_t len = strlen(str);
+				fdwrite(str, len);
+			}
+			fdputc('\n');
 
 			/* and free him */
 			free_echs_task(ins.t);
@@ -906,11 +920,12 @@ more:
 		}
 		break;
 	}
+	fdflush();
 	return 0;
 }
 
 static int
-ical_list(int fd)
+ical_list(int tgtfd, int srcfd)
 {
 	char buf[4096U];
 	/* trial read, just to see if the 200/OK has come */
@@ -919,7 +934,7 @@ ical_list(int fd)
 	char *cod;
 	int rc;
 
-	if (UNLIKELY((nrd = read(fd, buf, sizeof(buf))) < 0)) {
+	if (UNLIKELY((nrd = read(srcfd, buf, sizeof(buf))) < 0)) {
 		errno = 0, serror("\
 Error: no reply from server");
 		return -1;
@@ -936,13 +951,16 @@ Error: invalid reply from server");
 server returned: %s", cod);
 		return -1;
 	}
+	/* off we go */
+	fdbang(tgtfd);
 
 	/* write out initial portion of data we've got */
-	write(STDOUT_FILENO, buf + beef, nrd - beef);
+	fdwrite(buf + beef, nrd - beef);
 
-	while ((nrd = read(fd, buf, sizeof(buf))) > 0) {
-		write(STDOUT_FILENO, buf, nrd);
+	while ((nrd = read(srcfd, buf, sizeof(buf))) > 0) {
+		fdwrite(buf, nrd);
 	}
+	fdflush();
 	return 0;
 }
 
@@ -1039,9 +1057,9 @@ more:
 		write(s, buf, bix);
 		/* listing */
 		if (!argi->brief_flag) {
-			ical_list(s);
+			ical_list(STDOUT_FILENO, s);
 		} else {
-			brief_list(s);
+			brief_list(STDOUT_FILENO, s);
 		}
 		/* drain and close S */
 		free_conn(s);
@@ -1057,9 +1075,9 @@ more:
 		write(s, buf, bix);
 		/* listing */
 		if (!argi->brief_flag) {
-			ical_list(s);
+			ical_list(STDOUT_FILENO, s);
 		} else {
-			brief_list(s);
+			brief_list(STDOUT_FILENO, s);
 		}
 		/* drain and close S */
 		free_conn(s);
@@ -1095,14 +1113,6 @@ static int
 cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	static const char hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:PUBLISH\n\
-CALSCALE:GREGORIAN\n";
-	static const char ftr[] = "\
-END:VCALENDAR\n";
 	size_t i = 0U;
 	int fd;
 	int s;
@@ -1122,7 +1132,7 @@ END:VCALENDAR\n";
 		return 1;
 	}
 
-	write(s, hdr, strlenof(hdr));
+	write(s, vcal_hdr, strlenof(vcal_hdr));
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
 		/* template mode */
 		goto proc;
@@ -1146,7 +1156,7 @@ Error: cannot open file `%s'", fn);
 		add_fd(s, fd);
 		close(fd);
 	}
-	write(s, ftr, strlenof(ftr));
+	write(s, vcal_ftr, strlenof(vcal_ftr));
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
@@ -1158,6 +1168,114 @@ Error: cannot open file `%s'", fn);
 
 	free_conn(s);
 	return 0;
+}
+
+static int
+cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
+{
+/* try and request the schedules */
+	static const char verb[] = "GET /";
+	static const char vers[] = " HTTP/1.1\r\n\r\n";
+	static const char queu[] = "queue";
+	static char tmpfn[] = "/tmp/taskXXXXXXXX";
+	char buf[4096U];
+	size_t bix = 0U;
+	bool realm = 0;
+	int tmpfd;
+	int s;
+
+	if (!argi->nargs) {
+		errno = 0, serror("Error: TUID argument is mandatory");
+		return 1;
+	} else if (UNLIKELY((tmpfd = mkstemp(tmpfn)) < 0)) {
+		serror("Error: cannot create temporary file `%s'", tmpfn);
+		return 1;
+	} else if ((s = get_esock(realm)) < 0 && (s = get_esock(++realm)) < 0) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		return 1;
+	}
+
+#define BUF	(buf + bix)
+#define BSZ	(sizeof(buf) - bix)
+#define CHK_BIX()				\
+	if (UNLIKELY(bix > sizeof(buf))) {	\
+		goto reqstr_err;		\
+	} else (void)0				\
+
+	/* right lets start with the http verb and stuff */
+	bix += xstrlncpy(BUF, BSZ, verb, strlenof(verb));
+	CHK_BIX();
+
+	/* paste the routine we want invoked */
+	bix += xstrlncpy(BUF, BSZ, queu, strlenof(queu));
+	CHK_BIX();
+
+	/* put the ?tuid=x,y,z */
+	bix += snprintf(BUF, BSZ, "?tuid=%s", argi->args[0U]);
+	CHK_BIX();
+
+	for (size_t i = 1U, n; i < argi->nargs; i++, bix += n) {
+		n = snprintf(BUF, BSZ, "&tuid=%s", argi->args[i]);
+		if (UNLIKELY(bix + n >= sizeof(buf))) {
+			/* user can go fuck themself */
+			break;
+		} else if (UNLIKELY(bix + strlenof(vers) >= sizeof(buf))) {
+			/* there'd be no space for the version suffix */
+			break;
+		}
+	}
+	/* version and stuff */
+	bix += xstrlncpy(BUF, BSZ, vers, strlenof(vers));
+
+	/* send off our command */
+	write(s, buf, bix);
+	/* and push results to tmpfd */
+	ical_list(tmpfd, s);
+	/* drain and close */
+	free_conn(s);
+	/* lest we molest our EDITOR child ... */
+	fd_cloexec(tmpfd);
+	/* now the editing bit */
+	run_editor(tmpfn);
+
+	/* don't keep this file, we talk descriptors */
+	unlink(tmpfn);
+	/* rewind tmpfd ... */
+	lseek(tmpfd, 0, SEEK_SET);
+	/* ... and get the socket back we had to let go of */
+	if (argi->dry_run_flag) {
+		s = STDOUT_FILENO;
+	} else if ((s = get_esock(realm)) < 0) {
+		errno = 0, serror("Error: cannot connect to echsd");
+		close(tmpfd);
+		return 1;
+	}
+	/* ... and add the stuff back to echsd */
+	write(s, vcal_hdr, strlenof(vcal_hdr));
+	add_fd(s, tmpfd);
+	write(s, vcal_ftr, strlenof(vcal_ftr));
+	close(tmpfd);
+
+	if (argi->dry_run_flag) {
+		/* nothing is outstanding in dry-run mode */
+		return 0;
+	}
+
+	/* wait for all the season greetings and congrats ... */
+	while (nout && !(poll1(s, 5000) < 0));
+
+	/* drain and close */
+	free_conn(s);
+	return 0;
+
+#undef BUF
+#undef BSZ
+#undef CHK_BIX
+
+reqstr_err:
+	serror("\
+Error: cannot build request string");
+	return 1;
 }
 
 static int
@@ -1178,7 +1296,10 @@ END:VCALENDAR\n";
 	int s;
 
 	/* let's try the local echsd and then the system-wide one */
-	if (argi->dry_run_flag) {
+	if (!argi->nargs) {
+		errno = 0, serror("Error: TUID argument is mandatory");
+		return 1;
+	} else if (argi->dry_run_flag) {
 		s = STDOUT_FILENO;
 	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
@@ -1240,6 +1361,10 @@ main(int argc, char *argv[])
 
 	case ECHSQ_CMD_CANCEL:
 		rc = cmd_cancel((struct yuck_cmd_cancel_s*)argi);
+		break;
+
+	case ECHSQ_CMD_EDIT:
+		rc = cmd_edit((struct yuck_cmd_edit_s*)argi);
 		break;
 
 	default:

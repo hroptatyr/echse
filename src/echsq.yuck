@@ -9,13 +9,20 @@ Control echse queues.
 Usage: echsq add [FILE]...
 
 Add tasks from FILEs to the queue.
+With no FILE given and no input on stdin $EDITOR will be opened
+with the current machine's template.
 
 
 Usage: echsq cancel TUID...
 
-Cancel tasks with uids TUID,
+Cancel task with uid TUID.
 
   --next                Only cancel the next run of the tasks.
+
+
+Usage: echsq edit TUID...
+
+Edit task with uid TUID.
 
 
 Usage: echsq list [TUID]...
