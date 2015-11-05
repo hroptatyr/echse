@@ -535,11 +535,7 @@ prep_task(echsx_task_t t)
 	static char tmpl[] = "/tmp/echsXXXXXXXX";
 	int nulfd = open(nulfn, O_WRONLY, 0600);
 	int nulfd_used = 0;
-	mode_t oldm;
 	int rc = 0;
-
-	/* set the umask here just so we're safe throughout the whole run */
-	oldm = umask(0077);
 
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
@@ -820,8 +816,6 @@ clo:
 		close(nulfd);
 	}
 #undef NULFD
-	/* restore old umask */
-	(void)umask(oldm);
 	return rc;
 }
 
