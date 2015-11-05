@@ -446,7 +446,10 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		assert(mfo >= nsp);
 		mfo -= nsp;
 # if defined HAVE_SENDFILE
-		(void)sendfile(ofd, mfd, &mfo, nsp);
+		for (ssize_t nsf, tots = 0;
+		     tots < nsp &&
+			     (nsf = sendfile(ofd, mfd, &mfo, nsp)) >= 0;
+		     tots += nsf);
 
 # else  /* !HAVE_SENDFILE */
 		char buf[16U * 4096U];
