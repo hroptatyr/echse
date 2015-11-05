@@ -638,9 +638,14 @@ cannot open %s for output: %s", t->t->out, STRERR);
 		/* all the pipe-less stuff, R6, R7, R10, R11, R18, R19 */
 		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
 
+		/* let's go through these cases, we must certainly
+		 * set ofd, efd and mfd in every single one of them */
 		if (t->t->out == NULL && t->t->mailout) {
-			/* R6 */
+			/* R6 (R11 mirror) */
+			assert(t->t->err);
+			assert(!t->t->mailerr);
 			t->ofd = t->mfd = mkstemp(tmpl);
+			t->efd = open(t->t->err, fl, 0644);
 			t->mfn = tmpl;
 			t->mrm = 1U;
 		} else if (t->t->out == NULL) {
@@ -652,13 +657,16 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->mfn = t->t->err;
 		} else if (t->t->err == NULL && t->t->mailout) {
 			/* R10 */
-			t->efd = NULFD;
+			assert(t->t->out);
+			assert(!t->t->mailerr);
 			t->ofd = t->mfd = open(t->t->out, fl, 0644);
+			t->efd = NULFD;
 			t->mfn = t->t->out;
 		} else if (t->t->err == NULL) {
-			/* R11 */
+			/* R11 (R6 mirror) */
 			assert(t->t->out);
-			assert(t->t->mailerr);
+			assert(!t->t->mailout);
+			t->ofd = open(t->t->out, fl, 0644);
 			t->efd = t->mfd = mkstemp(tmpl);
 			t->mfn = tmpl;
 			t->mrm = 1U;
