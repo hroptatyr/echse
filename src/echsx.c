@@ -739,7 +739,7 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->teeo = open(t->t->out, fl, 0644);
 		} else if (t->t->err) {
 			/* R5 */
-			t->teee = open(t->t->out, fl, 0644);
+			t->teee = open(t->t->err, fl, 0644);
 		} else {
 			abort();
 		}
