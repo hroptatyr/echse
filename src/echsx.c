@@ -656,6 +656,10 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->efd = open(t->t->err, fl, 0644);
 			t->mfn = tmpl;
 			t->mrm = 1U;
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->out == NULL) {
 			/* R7 */
 			assert(t->t->err);
@@ -663,6 +667,10 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->ofd = NULFD;
 			t->efd = t->mfd = open(t->t->err, fl, 0644);
 			t->mfn = t->t->err;
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->err == NULL && t->t->mailout) {
 			/* R10 */
 			assert(t->t->out);
@@ -670,21 +678,37 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->ofd = t->mfd = open(t->t->out, fl, 0644);
 			t->efd = NULFD;
 			t->mfn = t->t->out;
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->err == NULL) {
 			/* R11 (R6 mirror) */
 			assert(t->t->out);
 			assert(!t->t->mailout);
-			t->ofd = open(t->t->out, fl, 0644);
 			t->efd = t->mfd = mkstemp(tmpl);
+			t->ofd = open(t->t->out, fl, 0644);
 			t->mfn = tmpl;
 			t->mrm = 1U;
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->mailout) {
 			/* R18 */
 			assert(t->t->out);
 			assert(t->t->err);
 			assert(!t->t->mailerr);
 			t->ofd = t->mfd = open(t->t->out, fl, 0644);
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 			t->efd = open(t->t->err, fl, 0644);
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 			t->mfn = t->t->out;
 		} else {
 			/* R19 */
@@ -692,7 +716,15 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			assert(t->t->err);
 			assert(t->t->mailerr);
 			t->ofd = open(t->t->out, fl, 0644);
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 			t->efd = t->mfd = open(t->t->err, fl, 0644);
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 			t->mfn = t->t->err;
 		}
 		/* postset with defaults */
@@ -709,9 +741,13 @@ cannot open %s for output: %s", t->t->out, STRERR);
 		int epip[2] = {-1, -1};
 
 		if (pipe(opip) < 0) {
+			ECHS_ERR_LOG("\
+cannot open pipe for output: %s", STRERR);
 			rc = -1;
 			goto clo;
 		} else if (pipe(epip) < 0) {
+			ECHS_ERR_LOG("\
+cannot open pipe for error output: %s", STRERR);
 			close(opip[0U]);
 			close(opip[1U]);
 			rc = -1;
@@ -745,16 +781,36 @@ cannot open %s for output: %s", t->t->out, STRERR);
 				abort();
 			}
 			t->mfd = open(t->t->out, fl, 0644);
+			if (UNLIKELY(t->mfd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->out && t->t->err) {
 			/* R17 */
 			t->teeo = open(t->t->out, fl, 0644);
+			if (UNLIKELY(t->teeo < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 			t->teee = open(t->t->err, fl, 0644);
+			if (UNLIKELY(t->teee < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->out) {
 			/* R9 */
 			t->teeo = open(t->t->out, fl, 0644);
+			if (UNLIKELY(t->teeo < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->err) {
 			/* R5 */
 			t->teee = open(t->t->err, fl, 0644);
+			if (UNLIKELY(t->teee < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else {
 			abort();
 		}
