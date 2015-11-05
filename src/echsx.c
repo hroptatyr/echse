@@ -446,7 +446,10 @@ data_cb(EV_P_ ev_io *w, int UNUSED(revents))
 		assert(mfo >= nsp);
 		mfo -= nsp;
 # if defined HAVE_SENDFILE
-		(void)sendfile(ofd, mfd, &mfo, nsp);
+		for (ssize_t nsf, tots = 0;
+		     tots < nsp &&
+			     (nsf = sendfile(ofd, mfd, &mfo, nsp)) >= 0;
+		     tots += nsf);
 
 # else  /* !HAVE_SENDFILE */
 		char buf[16U * 4096U];
@@ -532,11 +535,7 @@ prep_task(echsx_task_t t)
 	static char tmpl[] = "/tmp/echsXXXXXXXX";
 	int nulfd = open(nulfn, O_WRONLY, 0600);
 	int nulfd_used = 0;
-	mode_t oldm;
 	int rc = 0;
-
-	/* set the umask here just so we're safe throughout the whole run */
-	oldm = umask(0077);
 
 #define NULFD	(nulfd_used++, nulfd)
 	/* put some sane defaults into t */
@@ -580,11 +579,16 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 			rc = -1;
 			goto clo;
 		} else if (t->t->mailout && t->t->mailerr) {
+			/* R1 */
 			t->ofd = t->efd = t->mfd = fd;
 		} else if (t->t->mailout) {
+			/* R2 */
 			t->ofd = t->mfd = fd;
+			t->efd = NULFD;
 		} else if (t->t->mailerr) {
+			/* R3 */
 			t->efd = t->mfd = fd;
+			t->ofd = NULFD;
 		}
 		/* mark t->mfn for deletion */
 		t->mfn = tmpl;
@@ -594,20 +598,23 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
 
 		if (t->t->out) {
-			t->ofd = open(t->t->out, fl, 0644);
+			/* R12 || R20 || R16 */
+			t->ofd = open(t->t->out, fl, 0666);
 			if (UNLIKELY(t->ofd < 0)) {
 				    ECHS_ERR_LOG("\
 cannot open %s for output: %s", t->t->out, STRERR);
 			}
 		}
-		if (t->t->err && t->ofd >= 0 &&
-		    strcmp(t->t->out, t->t->err)) {
-			t->efd = open(t->t->err, fl, 0644);
+		if (t->t->err &&
+		    (t->t->out == NULL || strcmp(t->t->out, t->t->err))) {
+			/* R8 || R20 */
+			t->efd = open(t->t->err, fl, 0666);
 			if (UNLIKELY(t->efd < 0)) {
 				    ECHS_ERR_LOG("\
 cannot open %s for error output: %s", t->t->err, STRERR);
 			}
 		} else if (t->t->err && t->ofd >= 0) {
+			/* R16 */
 			t->efd = t->ofd;
 		}
 		/* postset with defaults */
@@ -623,7 +630,7 @@ cannot open %s for error output: %s", t->t->err, STRERR);
 		/* this is simple again, R13 */
 		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
 
-		t->ofd = t->efd = t->mfd = open(t->t->out, fl, 0644);
+		t->ofd = t->efd = t->mfd = open(t->t->out, fl, 0666);
 		t->mfn = t->t->out;
 		if (UNLIKELY(t->ofd < 0)) {
 			ECHS_ERR_LOG("\
@@ -635,46 +642,93 @@ cannot open %s for output: %s", t->t->out, STRERR);
 		/* all the pipe-less stuff, R6, R7, R10, R11, R18, R19 */
 		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
 
+		/* let's go through these cases, we must certainly
+		 * set ofd, efd and mfd in every single one of them */
 		if (t->t->out == NULL && t->t->mailout) {
-			/* R6 */
+			/* R6 (R11 mirror) */
+			assert(t->t->err);
+			assert(!t->t->mailerr);
 			t->ofd = t->mfd = mkstemp(tmpl);
+			t->efd = open(t->t->err, fl, 0666);
 			t->mfn = tmpl;
 			t->mrm = 1U;
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->out == NULL) {
 			/* R7 */
 			assert(t->t->err);
 			assert(t->t->mailerr);
 			t->ofd = NULFD;
-			t->efd = t->mfd = open(t->t->err, fl, 0644);
+			t->efd = t->mfd = open(t->t->err, fl, 0666);
 			t->mfn = t->t->err;
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->err == NULL && t->t->mailout) {
 			/* R10 */
-			t->efd = NULFD;
-			t->ofd = t->mfd = open(t->t->out, fl, 0644);
-			t->mfn = t->t->out;
-		} else if (t->t->err == NULL) {
-			/* R11 */
 			assert(t->t->out);
-			assert(t->t->mailerr);
+			assert(!t->t->mailerr);
+			t->ofd = t->mfd = open(t->t->out, fl, 0666);
+			t->efd = NULFD;
+			t->mfn = t->t->out;
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
+		} else if (t->t->err == NULL) {
+			/* R11 (R6 mirror) */
+			assert(t->t->out);
+			assert(!t->t->mailout);
 			t->efd = t->mfd = mkstemp(tmpl);
+			t->ofd = open(t->t->out, fl, 0666);
 			t->mfn = tmpl;
 			t->mrm = 1U;
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->mailout) {
 			/* R18 */
 			assert(t->t->out);
 			assert(t->t->err);
 			assert(!t->t->mailerr);
-			t->ofd = t->mfd = open(t->t->out, fl, 0644);
-			t->efd = open(t->t->err, fl, 0644);
+			t->ofd = t->mfd = open(t->t->out, fl, 0666);
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
+			t->efd = open(t->t->err, fl, 0666);
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 			t->mfn = t->t->out;
 		} else {
 			/* R19 */
 			assert(t->t->out);
 			assert(t->t->err);
 			assert(t->t->mailerr);
-			t->ofd = open(t->t->out, fl, 0644);
-			t->efd = t->mfd = open(t->t->err, fl, 0644);
+			t->ofd = open(t->t->out, fl, 0666);
+			if (UNLIKELY(t->ofd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
+			t->efd = t->mfd = open(t->t->err, fl, 0666);
+			if (UNLIKELY(t->efd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 			t->mfn = t->t->err;
+		}
+		/* postset with defaults */
+		if (UNLIKELY(t->ofd < 0)) {
+			t->ofd = NULFD;
+		}
+		if (UNLIKELY(t->efd < 0)) {
+			t->efd = NULFD;
 		}
 	} else {
 		/* all the pipe-ful rest, R5, R9, R14, R15, R17 */
@@ -683,9 +737,13 @@ cannot open %s for output: %s", t->t->out, STRERR);
 		int epip[2] = {-1, -1};
 
 		if (pipe(opip) < 0) {
+			ECHS_ERR_LOG("\
+cannot open pipe for output: %s", STRERR);
 			rc = -1;
 			goto clo;
 		} else if (pipe(epip) < 0) {
+			ECHS_ERR_LOG("\
+cannot open pipe for error output: %s", STRERR);
 			close(opip[0U]);
 			close(opip[1U]);
 			rc = -1;
@@ -718,17 +776,37 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			} else {
 				abort();
 			}
-			t->mfd = open(t->t->out, fl, 0644);
+			t->mfd = open(t->t->out, fl, 0666);
+			if (UNLIKELY(t->mfd < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->out && t->t->err) {
 			/* R17 */
-			t->teeo = open(t->t->out, fl, 0644);
-			t->teee = open(t->t->err, fl, 0644);
+			t->teeo = open(t->t->out, fl, 0666);
+			if (UNLIKELY(t->teeo < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
+			t->teee = open(t->t->err, fl, 0666);
+			if (UNLIKELY(t->teee < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else if (t->t->out) {
 			/* R9 */
-			t->teeo = open(t->t->out, fl, 0644);
+			t->teeo = open(t->t->out, fl, 0666);
+			if (UNLIKELY(t->teeo < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for output: %s", t->t->out, STRERR);
+			}
 		} else if (t->t->err) {
 			/* R5 */
-			t->teee = open(t->t->out, fl, 0644);
+			t->teee = open(t->t->err, fl, 0666);
+			if (UNLIKELY(t->teee < 0)) {
+				ECHS_ERR_LOG("\
+cannot open %s for error output: %s", t->t->err, STRERR);
+			}
 		} else {
 			abort();
 		}
@@ -738,8 +816,6 @@ clo:
 		close(nulfd);
 	}
 #undef NULFD
-	/* restore old umask */
-	(void)umask(oldm);
 	return rc;
 }
 
