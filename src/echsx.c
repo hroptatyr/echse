@@ -583,11 +583,16 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 			rc = -1;
 			goto clo;
 		} else if (t->t->mailout && t->t->mailerr) {
+			/* R1 */
 			t->ofd = t->efd = t->mfd = fd;
 		} else if (t->t->mailout) {
+			/* R2 */
 			t->ofd = t->mfd = fd;
+			t->efd = NULFD;
 		} else if (t->t->mailerr) {
+			/* R3 */
 			t->efd = t->mfd = fd;
+			t->ofd = NULFD;
 		}
 		/* mark t->mfn for deletion */
 		t->mfn = tmpl;
@@ -597,20 +602,23 @@ cannot open %s for mail output: %s", tmpl, STRERR);
 		const int fl = O_WRONLY | O_TRUNC | O_CREAT;
 
 		if (t->t->out) {
+			/* R12 || R20 || R16 */
 			t->ofd = open(t->t->out, fl, 0644);
 			if (UNLIKELY(t->ofd < 0)) {
 				    ECHS_ERR_LOG("\
 cannot open %s for output: %s", t->t->out, STRERR);
 			}
 		}
-		if (t->t->err && t->ofd >= 0 &&
-		    strcmp(t->t->out, t->t->err)) {
+		if (t->t->err &&
+		    (t->t->out == NULL || strcmp(t->t->out, t->t->err))) {
+			/* R8 || R20 */
 			t->efd = open(t->t->err, fl, 0644);
 			if (UNLIKELY(t->efd < 0)) {
 				    ECHS_ERR_LOG("\
 cannot open %s for error output: %s", t->t->err, STRERR);
 			}
 		} else if (t->t->err && t->ofd >= 0) {
+			/* R16 */
 			t->efd = t->ofd;
 		}
 		/* postset with defaults */
@@ -686,6 +694,13 @@ cannot open %s for output: %s", t->t->out, STRERR);
 			t->ofd = open(t->t->out, fl, 0644);
 			t->efd = t->mfd = open(t->t->err, fl, 0644);
 			t->mfn = t->t->err;
+		}
+		/* postset with defaults */
+		if (UNLIKELY(t->ofd < 0)) {
+			t->ofd = NULFD;
+		}
+		if (UNLIKELY(t->efd < 0)) {
+			t->efd = NULFD;
 		}
 	} else {
 		/* all the pipe-ful rest, R5, R9, R14, R15, R17 */
