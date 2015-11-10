@@ -51,6 +51,7 @@ libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += bitint.c bitint.h
 EXTRA_libechse_la_SOURCES += bitint-bobs.c
 libechse_la_SOURCES += nifty.h
+libechse_la_SOURCES += sock.h
 libechse_la_SOURCES += echse-genuid.c echse-genuid.c
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
