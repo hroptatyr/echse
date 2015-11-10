@@ -2684,8 +2684,15 @@ main(int argc, char *argv[])
 		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY | O_CLOEXEC)) < 0)) {
+	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY)) < 0)) {
 		perror("Error: cannot open echsd spool directory");
+		rc = 1;
+		goto out;
+	} else if (UNLIKELY({
+				int x = fcntl(qdirfd, F_GETFD);
+				fcntl(qdirfd, F_SETFD, x | FD_CLOEXEC) < 0;
+			})) {
+		perror("Error: cannot set FD_CLOEXEC on spool directory");
 		rc = 1;
 		goto out;
 	} else if (UNLIKELY((esok = make_socket()) < 0)) {
