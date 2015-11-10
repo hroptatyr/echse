@@ -64,6 +64,7 @@
 #include "dt-strpf.h"
 #include "logger.h"
 #include "nifty.h"
+#include "sock.h"
 #include "fdprnt.h"
 #include "intern.h"
 #include "evical.h"
@@ -756,8 +757,8 @@ cannot open pipe for error output: %s", STRERR);
 		t->epip = epip[0U];
 
 		/* mark parent side as close-on-exec */
-		(void)fcntl(t->opip, F_SETFD, FD_CLOEXEC);
-		(void)fcntl(t->epip, F_SETFD, FD_CLOEXEC);
+		(void)fd_cloexec(t->opip);
+		(void)fd_cloexec(t->epip);
 
 		/* and get us a file for the mailer */
 		t->mfd = mkstemp(tmpl);
@@ -972,7 +973,7 @@ cannot set up pipe to mailer: %s", STRERR);
 		return -1;
 	}
 
-	(void)fcntl(mfd = mpip[1], F_SETFD, FD_CLOEXEC);
+	(void)fd_cloexec(mfd = mpip[1]);
 	if (posix_spawn_file_actions_init(&fa) < 0) {
 		ECHS_ERR_LOG("\
 cannot initialise file actions: %s", STRERR);
