@@ -66,6 +66,7 @@
 #include <pwd.h>
 #include <spawn.h>
 #include "nifty.h"
+#include "sock.h"
 #include "evical.h"
 #include "fdprnt.h"
 #include "intern.h"
@@ -176,13 +177,6 @@ xmemmem(const char *hay, const size_t hayz, const char *ndl, const size_t ndlz)
 		}
 	}
 	return (size_t)-1;
-}
-
-static int
-fd_cloexec(int fd)
-{
-	const int nu = fcntl(fd, F_GETFD, 0) | FD_CLOEXEC;
-	return fcntl(fd, F_SETFD, nu);
 }
 
 

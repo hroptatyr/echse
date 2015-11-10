@@ -77,6 +77,7 @@
 #include "logger.h"
 #include "fdprnt.h"
 #include "nifty.h"
+#include "sock.h"
 #include "nedtrie.h"
 /* for rescheduling */
 #include "evfilt.h"
@@ -594,7 +595,7 @@ make_socket(void)
 
 	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
 		return -1;
-	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
+	} else if (UNLIKELY(fd_cloexec(s) < 0)) {
 		goto fail;
 	}
 
@@ -2688,10 +2689,7 @@ main(int argc, char *argv[])
 		perror("Error: cannot open echsd spool directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY({
-				int x = fcntl(qdirfd, F_GETFD);
-				fcntl(qdirfd, F_SETFD, x | FD_CLOEXEC) < 0;
-			})) {
+	} else if (UNLIKELY(fd_cloexec(qdirfd) < 0)) {
 		perror("Error: cannot set FD_CLOEXEC on spool directory");
 		rc = 1;
 		goto out;
