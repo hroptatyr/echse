@@ -36,7 +36,7 @@
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-DAEMON=/usr/bin/echsd
+DAEMON=/usr/sbin/echsd
 NAME=echsd
 SHORTNAME=echsd
 DESC="echse task spooling service"
