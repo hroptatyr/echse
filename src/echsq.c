@@ -730,16 +730,30 @@ get_dirs(char *restrict buf, size_t bsz, char **eoh, char **eoe)
 		return 0U;
 	}
 	buf[bi++] = '/';
+	if (UNLIKELY(bi >= bsz)) {
+		goto out;
+	}
 	*eoh = buf + bi;
 	bi += xstrlncpy(buf + bi, bsz - bi, dotechs, strlenof(dotechs));
 	buf[bi++] = '/';
+	if (UNLIKELY(bi >= bsz)) {
+		goto out;
+	}
 	*eoe = buf + bi;
 	if (UNLIKELY(gethostname(buf + bi, bsz - bi) < 0)) {
 		return 0U;
 	}
 	bi += strlen(*eoe);
+	if (UNLIKELY(bi >= bsz)) {
+		goto out;
+	}
 	buf[bi++] = '/';
 	return bi;
+
+out:
+	*eoh = NULL;
+	*eoe = NULL;
+	return 0U;
 }
 
 static int
