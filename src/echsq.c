@@ -737,7 +737,9 @@ get_dirs(char *restrict buf, size_t bsz, char **eoh, char **eoe)
 	if (UNLIKELY(gethostname(buf + bi, bsz - bi) < 0)) {
 		return 0U;
 	}
-	return bi + strlen(*eoe);
+	bi += strlen(*eoe);
+	buf[bi++] = '/';
+	return bi;
 }
 
 static int
