@@ -1,0 +1,22 @@
+Source: echse
+Section: utils
+Priority: optional
+Maintainer: Sebastian Freundt <devel@fresse.org>
+Build-Depends: debhelper (>= 9.0.0), gperf, libev-dev
+Standards-Version: 3.9.5
+Homepage: http://www.fresse.org/echse/
+Vcs-Git: git://github.com/hroptatyr/echse.git
+Vcs-Browser: https://github.com/hroptatyr/echse/
+
+Package: echse
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         sendmail    |    mail-transport-agent
+Description: Run jobs at regular times, much like cron.
+ To schedule jobs this cron implementation makes use of RFC 5545
+ calendaring and scheduling instructions, also known as ics or
+ iCalendar, for which numerous front-end implementations are
+ readily available and widely adopted.  Not only will organizing
+ jobs become easier using these front-ends but they will also
+ greatly help keep track of schedules with their visualization
+ facilities.
