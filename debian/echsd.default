@@ -1,5 +1,10 @@
-# /etc/default/echsd
+# Defaults for echse initscript
+# sourced by /etc/init.d/echse
+# installed at /etc/default/echse by the maintainer scripts
 
-## Placeholder file to configure the echse task spooling daemon
-## There are currently no meaningful options
-DAEMON_OPTS=''
+#
+# This is a POSIX shell fragment
+#
+
+# Additional options that are passed to the Daemon.
+DAEMON_OPTS=""
