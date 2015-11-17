@@ -567,6 +567,8 @@ DURATION:P1D\n\
 RRULE:FREQ=DAILY\n\
 END:VEVENT\n\
 END:VCALENDAR\n";
+	static const char cat[] = "cat <<EOF\n";
+	static const char eof[] = "EOF\n";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	static const char sh[] = "/bin/sh";
 	static char *args[] = {
@@ -583,6 +585,7 @@ END:VCALENDAR\n";
 	/* check input file */
 	if (UNLIKELY(fn == NULL)) {
 		fz = 0U;
+		ifd = -1;
 	} else {
 		struct stat st;
 
@@ -627,7 +630,7 @@ END:VCALENDAR\n";
 	close(pd[0U]);
 
 	/* feed the shell */
-	write(pd[1U], "cat <<EOF\n", sizeof("cat <<EOF\n"));
+	write(pd[1U], cat, strlenof(cat));
 	if (!(ifd < 0)) {
 #if defined HAVE_SENDFILE
 		for (ssize_t nsf;
@@ -654,7 +657,7 @@ END:VCALENDAR\n";
 		     tot += nwr);
 	}
 	/* feed more to shell */
-	write(pd[1U], "EOF\n", sizeof("EOF\n"));
+	write(pd[1U], eof, strlenof(eof));
 	close(pd[1U]);
 
 	/* let's hang around and have a beer */
