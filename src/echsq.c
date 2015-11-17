@@ -583,6 +583,7 @@ END:VCALENDAR\n";
 	/* check input file */
 	if (UNLIKELY(fn == NULL)) {
 		fz = 0U;
+		ifd = -1;
 	} else {
 		struct stat st;
 
