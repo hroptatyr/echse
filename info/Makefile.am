@@ -20,6 +20,7 @@ man1_MANS += echsx.man
 
 BUILT_SOURCES += $(built_mans)
 EXTRA_DIST += author.h2m
+EXTRA_DIST += proto
 
 VPATH += @top_srcdir@/src
 SUFFIXES += .yuck
