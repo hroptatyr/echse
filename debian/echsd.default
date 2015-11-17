@@ -1,0 +1,5 @@
+# /etc/default/echsd
+
+## Placeholder file to configure the echse task spooling daemon
+## There are currently no meaningful options
+DAEMON_OPTS=''
