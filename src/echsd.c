@@ -587,6 +587,69 @@ make_usock(char *restrict buf, size_t bsz, uid_t u)
 }
 
 static int
+get_peereuid(ncred_t *restrict cred, int s)
+{
+/* return UID/GID pair of connected peer in S. */
+#if defined SO_PEERCRED
+	struct ucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, SOL_SOCKET, SO_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*cred = (ncred_t){c.uid, c.gid};
+	return 0;
+#elif defined LOCAL_PEERCRED
+	struct xucred c;
+	socklen_t z = sizeof(c);
+
+	if (getsockopt(s, 0, LOCAL_PEERCRED, &c, &z) < 0) {
+		return -1;
+	} else if (z != sizeof(c)) {
+		return -1;
+	} else if (c.cr_version != XUCRED_VERSION) {
+		return -1;
+	}
+	*cred = (ncred_t){c.c.cr_uid, c.cr_gid};
+	return 0;
+#elif defined HAVE_GETPEERUCRED
+	ucred_t *c = NULL;
+
+	if (getpeerucred(s, &c) < 0) {
+		return -1;
+	}
+
+	cred->uid = ucred_geteuid(c);
+	cred->gid = ucred_getegid(c);
+	ucred_free(c);
+
+	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
+		return -1;
+	}
+	return 0;
+#else
+	errno = ENOSYS;
+	return -1;
+#endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
+}
+
+static int
+set_peereuid(int s)
+{
+/* enable the passing of credentials on this socket. */
+#if defined SO_PASSCRED
+	int yes = 1;
+
+	return setsockopt(s, SOL_SOCKET, SO_PASSCRED, &yes, sizeof(yes));
+#else
+	return 0;
+#endif	/* SO_PASSCRED */
+}
+
+static int
 make_socket(void)
 {
 	struct sockaddr_un sa = {.sun_family = AF_UNIX};
@@ -649,56 +712,6 @@ free_socket(int s)
 	}
 	close(s);
 	return rc;
-}
-
-static int
-get_peereuid(ncred_t *restrict cred, int s)
-{
-/* return UID/GID pair of connected peer in S. */
-#if defined SO_PEERCRED
-	struct ucred c;
-	socklen_t z = sizeof(c);
-
-	if (getsockopt(s, SOL_SOCKET, SO_PEERCRED, &c, &z) < 0) {
-		return -1;
-	} else if (z != sizeof(c)) {
-		errno = EINVAL;
-		return -1;
-	}
-	*cred = (ncred_t){c.uid, c.gid};
-	return 0;
-#elif defined LOCAL_PEERCRED
-	struct xucred c;
-	socklen_t z = sizeof(c);
-
-	if (getsockopt(s, 0, LOCAL_PEERCRED, &c, &z) < 0) {
-		return -1;
-	} else if (z != sizeof(c)) {
-		return -1;
-	} else if (c.cr_version != XUCRED_VERSION) {
-		return -1;
-	}
-	*cred = (ncred_t){c.c.cr_uid, c.cr_gid};
-	return 0;
-#elif defined HAVE_GETPEERUCRED
-	ucred_t *c = NULL;
-
-	if (getpeerucred(s, &c) < 0) {
-		return -1;
-	}
-
-	cred->uid = ucred_geteuid(c);
-	cred->gid = ucred_getegid(c);
-	ucred_free(c);
-
-	if (*uid == (uid_t)(-1) || *gid == (gid_t)(-1)) {
-		return -1;
-	}
-	return 0;
-#else
-	errno = ENOSYS;
-	return -1;
-#endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
 static ncred_t
@@ -2315,12 +2328,14 @@ sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
-		ECHS_ERR_LOG("\
-authenticity of connection %d cannot be established: %s", w->fd, STRERR);
-		return;
-	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+	if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
 		ECHS_ERR_LOG("connection vanished: %s", STRERR);
+		return;
+	} else if (UNLIKELY(set_peereuid(s) < 0) ||
+		   UNLIKELY(get_peereuid(&cred, s) < 0)) {
+		ECHS_ERR_LOG("\
+authenticity of connection %d cannot be established: %s", s, STRERR);
+		close(s);
 		return;
 	}
 
