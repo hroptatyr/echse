@@ -2328,12 +2328,14 @@ sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
-		ECHS_ERR_LOG("\
-authenticity of connection %d cannot be established: %s", w->fd, STRERR);
-		return;
-	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+	if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
 		ECHS_ERR_LOG("connection vanished: %s", STRERR);
+		return;
+	} else if (UNLIKELY(set_peereuid(s) < 0) ||
+		   UNLIKELY(get_peereuid(&cred, s) < 0)) {
+		ECHS_ERR_LOG("\
+authenticity of connection %d cannot be established: %s", s, STRERR);
+		close(s);
 		return;
 	}
 
