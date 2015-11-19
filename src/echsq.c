@@ -1147,7 +1147,10 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 
 	write(s, vcal_hdr, strlenof(vcal_hdr));
 	if (!argi->nargs && isatty(STDIN_FILENO)) {
-		/* template mode */
+		/* template mode,
+		 * gcc might think we haven't init'd fd but fact is
+		 * we have a similar predicate to this one right at
+		 * the beginning where fd gets initialised defo */
 		goto proc;
 	} else if (!argi->nargs) {
 		fd = STDIN_FILENO;
