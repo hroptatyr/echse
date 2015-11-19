@@ -717,6 +717,7 @@ free_socket(int s)
 }
 
 #define NOT_A_UID	((uid_t)-1)
+#define NOT_A_GID	((gid_t)-1)
 
 static ncred_t
 compl_uid(uid_t u)
@@ -767,44 +768,6 @@ static inline __attribute__((const, pure)) bool
 echs_task_owned_by_p(echs_task_t t, uid_t uid)
 {
 	return echs_task_owner(t) == uid;
-}
-
-static ncred_t
-cred_to_ncred(cred_t c)
-{
-/* turn string creds into numeric creds */
-	ncred_t res = {0};
-
-	if (c.u != NULL) {
-		char *on;
-		long unsigned int u = strtoul(c.u, &on, 10);
-
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.u = (uid_t)u;
-		} else {
-			res = compl_user(c.u);
-		}
-	}
-	if (c.g != NULL) {
-		char *on;
-		long unsigned int g = strtoul(c.g, &on, 10);
-		struct group *p;
-
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.g = (gid_t)g;
-		} else if ((p = getgrnam(c.g)) != NULL) {
-			res.g = p->gr_gid;
-		}
-	}
-	if (c.wd) {
-		res.wd = c.wd;
-	}
-	if (c.sh) {
-		res.sh = c.sh;
-	}
-	return res;
 }
 
 
@@ -1065,22 +1028,20 @@ END:VTODO\n";
 		goto out;
 	}
 
-	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
-		if (!run_as.u) {
-			run_as.u = t->dflt_cred.u;
-		}
-		if (!run_as.g) {
-			run_as.g = t->dflt_cred.g;
-		}
-		if (!run_as.wd) {
+	with (ncred_t run_as = {.wd = t->t->run_as.wd, .sh = t->t->run_as.sh}) {
+		/* we trust the injector to have put dflt_creds properly */
+		run_as.u = t->dflt_cred.u;
+		run_as.g = t->dflt_cred.g;
+
+		if (run_as.wd == NULL) {
 			run_as.wd = t->dflt_cred.wd;
 		}
-		if (!run_as.sh) {
+		if (run_as.sh == NULL) {
 			run_as.sh = t->dflt_cred.sh;
 		}
 
 		rc -= fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u) < 0;
-		rc -= fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g) < 0;
+		rc -= fdprintf("X-ECHS-SETGID:%u\n", (gid_t)run_as.g) < 0;
 		rc -= fdprintf("X-ECHS-SHELL:%s\n", run_as.sh) < 0;
 		rc -= fdprintf("LOCATION:%s\n", run_as.wd) < 0;
 	}
