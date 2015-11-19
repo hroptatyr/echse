@@ -42,15 +42,20 @@
 #include "task.h"
 #include "evfilt.h"
 #include "nifty.h"
+#include "nummapstr.h"
 
 struct echs_task_s*
 echs_task_clone(echs_task_t t)
 {
 	struct echs_task_s *res = malloc(sizeof(*res));
+	const char *tmps;
 
 	*res = *t;
 	if (t->cmd != NULL) {
 		res->cmd = strdup(t->cmd);
+	}
+	if ((tmps = nummapstr_str(t->owner)) != NULL) {
+		res->owner = nummapstr_bang_str(strdup(tmps));
 	}
 	if (t->run_as.wd != NULL) {
 		res->run_as.wd = strdup(t->run_as.wd);
@@ -74,12 +79,16 @@ void
 free_echs_task(echs_task_t t)
 {
 	struct echs_task_s *restrict tmpt = deconst(t);
+	char *tmps;
 
 	if (tmpt->strm) {
 		free_echs_evstrm(tmpt->strm);
 	}
 	if (tmpt->cmd) {
 		free(deconst(tmpt->cmd));
+	}
+	if ((tmps = nummapstr_str(t->owner))) {
+		free(tmps);
 	}
 	if (tmpt->run_as.wd) {
 		free(deconst(tmpt->run_as.wd));
@@ -110,11 +119,15 @@ echs_task_rset_toid(echs_task_t t, echs_toid_t oid)
 }
 
 int
-echs_task_rset_ownr(echs_task_t t, int uid)
+echs_task_rset_ownr(echs_task_t t, unsigned int uid)
 {
 	struct echs_task_s *restrict tmpt = deconst(t);
+	char *tmps;
 
-	tmpt->owner = uid;
+	if (UNLIKELY((tmps = nummapstr_str(t->owner)) != NULL)) {
+		free(tmps);
+	}
+	tmpt->owner = nummapstr_bang_num(uid);
 	return 0;
 }
 
