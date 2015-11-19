@@ -1029,29 +1029,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, &on, 0)) {
-			if (UNLIKELY(on < ep)) {
-				/* nope */
-				;
-			} else {
-				/* off-by-one assignment here */
-				ve->t.owner = i + 1;
-			}
-		}
-		break;
-
 	case FLD_UMASK:
-		with (long int i = strtol(vp, &on, 8)) {
-			if (UNLIKELY(on < ep)) {
-				/* couldn't read it */
-				;
-			} else if (UNLIKELY(i < 0 || i > 0777)) {
-				/* not a umask we want */
-				;
-			} else {
-				ve->t.umsk = i + 1U;
-			}
-		}
+		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
 	default:
