@@ -948,16 +948,38 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
+	case FLD_SUID:
+	case FLD_SGID:
 		with (long int i = strtol(vp, &on, 0)) {
 			if (UNLIKELY(on < ep)) {
 				/* nope */
 				const char *s = strndup(vp, ep - vp);
 
-				ve->t.owner = nummapstr_bang_str(s);
+				switch (fld) {
+				case FLD_OWNER:
+					ve->t.owner = nummapstr_bang_str(s);
+					break;
+				case FLD_SUID:
+					ve->t.run_as.u = nummapstr_bang_str(s);
+					break;
+				case FLD_SGID:
+					ve->t.run_as.g = nummapstr_bang_str(s);
+					break;
+				}
 				break;
 			}
 			/* numerical assignments here */
-			ve->t.owner = nummapstr_bang_num(i);
+			switch (fld) {
+			case FLD_OWNER:
+				ve->t.owner = nummapstr_bang_num(i);
+				break;
+			case FLD_SUID:
+				ve->t.run_as.u = nummapstr_bang_num(i);
+				break;
+			case FLD_SGID:
+				ve->t.run_as.g = nummapstr_bang_num(i);
+				break;
+			}
 		}
 		break;
 
@@ -1032,6 +1054,8 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 
 	case FLD_OWNER:
 	case FLD_UMASK:
+	case FLD_SUID:
+	case FLD_SGID:
 		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
@@ -1323,6 +1347,10 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			if (!p->ve.t.max_simul) {
 				/* bang umask */
 				p->ve.t.max_simul = p->globve.t.max_simul;
+			}
+			if (!p->ve.t.run_as.u) {
+				/* bang run_as */
+				p->ve.t.run_as = p->globve.t.run_as;
 			}
 			/* reset to unknown state */
 			p->st = ST_VCAL;

@@ -50,8 +50,8 @@ typedef const struct echs_task_s *echs_task_t;
 typedef echs_oid_t echs_toid_t;
 
 typedef struct {
-	const char *u;
-	const char *g;
+	nummapstr_t u;
+	nummapstr_t g;
 	const char *wd;
 	const char *sh;
 } cred_t;

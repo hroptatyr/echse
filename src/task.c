@@ -57,6 +57,12 @@ echs_task_clone(echs_task_t t)
 	if ((tmps = nummapstr_str(t->owner)) != NULL) {
 		res->owner = nummapstr_bang_str(strdup(tmps));
 	}
+	if ((tmps = nummapstr_str(t->run_as.u)) != NULL) {
+		res->run_as.u = nummapstr_bang_str(strdup(tmps));
+	}
+	if ((tmps = nummapstr_str(t->run_as.g)) != NULL) {
+		res->run_as.g = nummapstr_bang_str(strdup(tmps));
+	}
 	if (t->run_as.wd != NULL) {
 		res->run_as.wd = strdup(t->run_as.wd);
 	}
@@ -88,6 +94,12 @@ free_echs_task(echs_task_t t)
 		free(deconst(tmpt->cmd));
 	}
 	if ((tmps = nummapstr_str(t->owner))) {
+		free(tmps);
+	}
+	if ((tmps = nummapstr_str(tmpt->run_as.u))) {
+		free(tmps);
+	}
+	if ((tmps = nummapstr_str(tmpt->run_as.g))) {
 		free(tmps);
 	}
 	if (tmpt->run_as.wd) {
