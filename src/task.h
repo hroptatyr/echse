@@ -44,13 +44,14 @@
 #include "strlst.h"
 #include "evstrm.h"
 #include "oid.h"
+#include "nummapstr.h"
 
 typedef const struct echs_task_s *echs_task_t;
 typedef echs_oid_t echs_toid_t;
 
 typedef struct {
-	const char *u;
-	const char *g;
+	nummapstr_t u;
+	nummapstr_t g;
 	const char *wd;
 	const char *sh;
 } cred_t;
@@ -82,9 +83,8 @@ struct echs_task_s {
 	const char *cmd;
 	struct strlst_s *env;
 
-	/* owner of the task, this is meant to be a uid with values <0
-	 * indicating that this has not been set */
-	int owner;
+	/* owner of the task */
+	nummapstr_t owner;
 	/* credentials we want this job run as */
 	cred_t run_as;
 
@@ -146,7 +146,7 @@ extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
 /**
  * Forcefully change owner of T to UID.
  * Negative values of UID `unset' the owner field. */
-extern int echs_task_rset_ownr(echs_task_t t, int uid);
+extern int echs_task_rset_ownr(echs_task_t t, unsigned int uid);
 
 
 /* convenience */
@@ -154,12 +154,6 @@ static inline __attribute__((const, pure)) bool
 echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 {
 	return t1 == t2 || (t1 && t2 && t1->oid == t2->oid);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_task_owned_by_p(echs_task_t t, int uid)
-{
-	return (t->owner & uid) == uid;
 }
 
 #endif	/* INCLUDED_task_h_ */

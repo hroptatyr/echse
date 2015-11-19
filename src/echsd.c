@@ -81,6 +81,8 @@
 #include "nedtrie.h"
 /* for rescheduling */
 #include "evfilt.h"
+/* for user/group mappings */
+#include "nummapstr.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -714,13 +716,16 @@ free_socket(int s)
 	return rc;
 }
 
+#define NOT_A_UID	((uid_t)-1)
+#define NOT_A_GID	((gid_t)-1)
+
 static ncred_t
 compl_uid(uid_t u)
 {
 	struct passwd *p;
 
-	if ((p = getpwuid(u)) == NULL) {
-		return (ncred_t){0, 0, NULL, NULL};
+	if (UNLIKELY(u == NOT_A_UID || (p = getpwuid(u)) == NULL)) {
+		return (ncred_t){NOT_A_UID};
 	}
 	return (ncred_t){p->pw_uid, p->pw_gid, p->pw_dir, p->pw_shell};
 }
@@ -730,48 +735,39 @@ compl_user(const char *u)
 {
 	struct passwd *p;
 
-	if ((p = getpwnam(u)) == NULL) {
-		return (ncred_t){0, 0, NULL, NULL};
+	if (UNLIKELY(u == NULL || (p = getpwnam(u)) == NULL)) {
+		return (ncred_t){NOT_A_UID};
 	}
 	return (ncred_t){p->pw_uid, p->pw_gid, p->pw_dir, p->pw_shell};
 }
 
 static ncred_t
-cred_to_ncred(cred_t c)
+compl_owner(nummapstr_t o)
 {
-/* turn string creds into numeric creds */
-	ncred_t res = {0};
+	const char *tmps;
+	uid_t tmpu;
 
-	if (c.u != NULL) {
-		char *on;
-		long unsigned int u = strtoul(c.u, &on, 10);
+	if ((tmps = nummapstr_str(o))) {
+		/* numerify owner */
+		return compl_user(tmps);
+	} else if ((tmpu = nummapstr_num(o)) < NUMMAPSTR_NAN) {
+		return compl_uid(tmpu);
+	}
+	/* else fucked */
+	return (ncred_t){NOT_A_UID};
+}
 
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.u = (uid_t)u;
-		} else {
-			res = compl_user(c.u);
-		}
-	}
-	if (c.g != NULL) {
-		char *on;
-		long unsigned int g = strtoul(c.g, &on, 10);
-		struct group *p;
+static inline __attribute__((const, pure)) uid_t
+echs_task_owner(echs_task_t t)
+{
+	uintptr_t owner = nummapstr_num(t->owner);
+	return owner != NUMMAPSTR_NAN ? owner : NOT_A_UID;
+}
 
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.g = (gid_t)g;
-		} else if ((p = getgrnam(c.g)) != NULL) {
-			res.g = p->gr_gid;
-		}
-	}
-	if (c.wd) {
-		res.wd = c.wd;
-	}
-	if (c.sh) {
-		res.sh = c.sh;
-	}
-	return res;
+static inline __attribute__((const, pure)) bool
+echs_task_owned_by_p(echs_task_t t, uid_t uid)
+{
+	return echs_task_owner(t) == uid;
 }
 
 
@@ -1032,22 +1028,20 @@ END:VTODO\n";
 		goto out;
 	}
 
-	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
-		if (!run_as.u) {
-			run_as.u = t->dflt_cred.u;
-		}
-		if (!run_as.g) {
-			run_as.g = t->dflt_cred.g;
-		}
-		if (!run_as.wd) {
+	with (ncred_t run_as = {.wd = t->t->run_as.wd, .sh = t->t->run_as.sh}) {
+		/* we trust the injector to have put dflt_creds properly */
+		run_as.u = t->dflt_cred.u;
+		run_as.g = t->dflt_cred.g;
+
+		if (run_as.wd == NULL) {
 			run_as.wd = t->dflt_cred.wd;
 		}
-		if (!run_as.sh) {
+		if (run_as.sh == NULL) {
 			run_as.sh = t->dflt_cred.sh;
 		}
 
 		rc -= fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u) < 0;
-		rc -= fdprintf("X-ECHS-SETGID:%u\n", (uid_t)run_as.g) < 0;
+		rc -= fdprintf("X-ECHS-SETGID:%u\n", (gid_t)run_as.g) < 0;
 		rc -= fdprintf("X-ECHS-SHELL:%s\n", run_as.sh) < 0;
 		rc -= fdprintf("LOCATION:%s\n", run_as.wd) < 0;
 	}
@@ -1423,7 +1417,7 @@ chkpnt1(uid_t u)
 	for (size_t i = 0U; i < ztask_ht; i++) {
 		if (!task_ht[i].oid) {
 			continue;
-		} else if ((uint)task_ht[i].t->t->owner != u) {
+		} else if (echs_task_owner(task_ht[i].t->t) != u) {
 			continue;
 		} else if (!inittedp) {
 			echs_instruc_t ins = {
@@ -1478,7 +1472,8 @@ chkpnta(void)
 
 		if (!task_ht[i].oid) {
 			continue;
-		} else if ((u = task_ht[i].t->t->owner) == (uid_t)-1) {
+		} else if ((u = echs_task_owner(
+				    task_ht[i].t->t)) == NOT_A_UID) {
 			/* grml, no owner */
 			continue;
 		} else if ((fd = seenp(&sntr, u)) >= 0) {
@@ -1812,7 +1807,7 @@ hdr:
 cannot find task: no task with oid 0x%x found", oid);
 				continue;
 			} else if (UNLIKELY(!echs_task_owned_by_p(t->t, u))) {
-				uid_t owner = t->t->owner;
+				uid_t owner = echs_task_owner(t->t);
 				ECHS_ERR_LOG("\
 requesting task from user %d as user %d failed: permission denied", u, owner);
 				continue;
@@ -1863,7 +1858,8 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 
 				if (!task_ht[i].oid) {
 					continue;
-				} else if ((uint)task_ht[i].t->t->owner != u) {
+				} else if (echs_task_owner(
+						   task_ht[i].t->t) != u) {
 					continue;
 				}
 				/* yep */
@@ -2155,7 +2151,7 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 	_task_t t = (void*)w;
 
 	ECHS_NOTI_LOG("taking event off of schedule");
-	add_chkpnt(t->t->owner);
+	add_chkpnt(echs_task_owner(t->t));
 	ev_periodic_stop(EV_A_ w);
 	free_task(t);
 	return;
@@ -2471,33 +2467,50 @@ static int
 _inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
 	_task_t res;
-	ncred_t c;
+	ncred_t uc;
+	ncred_t oc;
 
-	if (meself.uid && !u) {
+	/* massage owner and u
+	 * we allow U to be set to NOT_A_UID in which case the
+	 * uid will be taken from the compl'd T->owner slot */
+	oc = compl_owner(t->owner);
+	uc = compl_uid(u);
+
+	/* big checking */
+	if (uc.u == NOT_A_UID && oc.u == NOT_A_UID) {
+		/* can't have both unset, bugger off */
 		ECHS_ERR_LOG("\
-need root privileges to run task as user %d", u);
+ignoring task update with no user nor owner specified");
 		return -1;
-	} else if (UNLIKELY((c = compl_uid(u),
-			     c.sh == NULL || c.wd == NULL))) {
-		/* user doesn't exist, do they */
+	} else if (uc.u == NOT_A_UID && meself.uid && oc.u != meself.uid) {
 		ECHS_ERR_LOG("\
-ignoring task update for (non-existing) user %u", u);
+need root privileges to run task as user %d", oc.u);
+			return -1;
+	} else if (oc.u == NOT_A_UID && meself.uid && uc.u != meself.uid) {
+		ECHS_ERR_LOG("\
+need root privileges to run task as user %d", uc.u);
 		return -1;
-	} else if (!echs_task_owned_by_p(t, c.u)) {
+	} else if (uc.u != NOT_A_UID && oc.u != uc.u) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     u, t->owner);
+			     uc.u, oc.u);
 		return -1;
+	} else if (oc.u == NOT_A_UID && (oc.u = uc.u, false)) {
+		/* not reached */
+
+	} else if (uc.u == NOT_A_UID && (uc.u = oc.u, false)) {
+		/* not reached */
+
 	} else if (UNLIKELY(t->strm == NULL)) {
 		ECHS_ERR_LOG("submitted ical object is not a task");
 		return -1;
 	} else if ((res = get_task(t->oid)) != NULL &&
-		   !echs_task_owned_by_p(res->t, c.u)) {
+		   !echs_task_owned_by_p(res->t, oc.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     u, res->t->owner);
+			     uc.u, echs_task_owner(res->t));
 		return -1;
 	} else if (res != NULL) {
 		ECHS_NOTI_LOG("task update, unscheduling old task");
@@ -2509,20 +2522,24 @@ task update from user %d for task from user %d failed: permission denied",
 		ECHS_ERR_LOG("cannot submit new task");
 		return -1;
 	}
-
+	/* refresh the actual credentials again */
+	if (UNLIKELY((uc = compl_uid(uc.u)).u == NOT_A_UID)) {
+		ECHS_ERR_LOG("user %u has vanished", oc.u);
+		return -1;
+	}
 	/* massage away the owner in the task and
 	 * replace by the connection credentials */
-	echs_task_rset_ownr(t, u);
+	echs_task_rset_ownr(t, uc.u);
 	/* bang libechse task into our _task */
 	res->t = t;
 	/* run all tasks as U and the default group of U */
-	res->dflt_cred.u = c.u;
-	res->dflt_cred.g = c.g;
+	res->dflt_cred.u = uc.u;
+	res->dflt_cred.g = uc.g;
 	/* also, by default, in U's home dir using U's shell */
-	res->dflt_cred.wd = strdup(c.wd);
-	res->dflt_cred.sh = strdup(c.sh);
+	res->dflt_cred.wd = strdup(uc.wd);
+	res->dflt_cred.sh = strdup(uc.sh);
 
-	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
+	ECHS_NOTI_LOG("scheduling task for user %u(%u)", uc.u, uc.g);
 	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
 	return 0;
@@ -2541,7 +2558,7 @@ cannot update task: no task with oid 0x%x found", oid);
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     uid, res->t->owner);
+			     uid, echs_task_owner(res->t));
 		return -1;
 	}
 	/* otherwise proceed with the evacuation */
@@ -2583,11 +2600,12 @@ more:
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			} else if (UNLIKELY(!ins.t->oid)) {
+				/* not even an OID */
 				free_echs_task(ins.t);
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx->loop, ins.t, ins.t->owner);
+			_inject_task1(ctx->loop, ins.t, NOT_A_UID);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;

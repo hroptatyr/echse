@@ -58,6 +58,8 @@
 #if defined HAVE_NET_PROTO_UIPC_H
 # include <net/proto_uipc.h>
 #endif	/* HAVE_NET_PROTO_UIPC_H */
+#include <pwd.h>
+#include <grp.h>
 #include <ev.h>
 #include <assert.h>
 #include <inttypes.h>
@@ -68,6 +70,7 @@
 #include "fdprnt.h"
 #include "intern.h"
 #include "evical.h"
+#include "nummapstr.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -1199,42 +1202,83 @@ echsx(echs_task_t t)
 	struct echsx_task_s xt = {t};
 	mode_t umsk_old = 0777U;
 	int rc = 0;
+	const char *tmps;
+	uintptr_t tmpn;
+	uid_t u;
+	gid_t g;
+
+#define NOT_A_UID	((uid_t)-1)
+#define NOT_A_GID	((gid_t)-1)
+
+#define XERROR(args...)						\
+	with (int __z) {					\
+		__z = snprintf(_err, sizeof(_err), args);	\
+		if (__z < 0) {					\
+			/* you've got to be kidding :O */	\
+			return -1;				\
+		}						\
+		xt.errmsg = _err;				\
+		xt.errmsz = __z;				\
+	}
 
 	/* switch to user/group early */
-	if (t->run_as.g) {
-		long unsigned int g = strtoul(t->run_as.g, NULL, 10);
+	if ((tmps = nummapstr_str(t->run_as.g))) {
+		struct group *gr;
 
-		errno = ERANGE;
-		if (g > (gid_t)~0UL ||
-		    setgid((gid_t)g) < 0) {
-			int z = snprintf(_err, sizeof(_err), "\
-cannot set group id to %lu: %s", g, STRERR);
-
-			if (z < 0) {
-				/* you've got to be kidding :O */
-				return -1;
-			}
-			xt.errmsg = _err;
-			xt.errmsz = z;
+		if (UNLIKELY((gr = getgrnam(tmps)) == NULL)) {
+			XERROR("\
+cannot obtain group id for group `%s': %s", tmps, STRERR);
 			goto fatal;
 		}
+		/* otherwise get the gid */
+		g = gr->gr_gid;
+	} else if ((tmpn = nummapstr_num(t->run_as.g)) == NUMMAPSTR_NAN) {
+		/* no group info at all :O */
+		g = NOT_A_GID;
+	} else {
+		g = (gid_t)tmpn;
 	}
-	if (t->run_as.u) {
-		long unsigned int u = strtoul(t->run_as.u, NULL, 10);
 
-		errno = ERANGE;
-		if (u > (uid_t)~0UL ||
-		    setuid((uid_t)u) < 0) {
-			int z = snprintf(_err, sizeof(_err), "\
-cannot set user id to %lu: %s", u, STRERR);
-			if (z < 0) {
-				/* you've got to be kidding :O */
-				return -1;
-			}
-			xt.errmsg = _err;
-			xt.errmsz = z;
+	if ((tmps = nummapstr_str(t->run_as.u))) {
+		struct passwd *pw;
+
+		if (UNLIKELY((pw = getpwnam(tmps)) == NULL)) {
+			XERROR("\
+cannot obtain user id for user `%s': %s", tmps, STRERR);
 			goto fatal;
 		}
+		/* otherwise get the uid */
+		u = pw->pw_uid;
+		if (UNLIKELY(g == NOT_A_GID)) {
+			/* also obtain the gid */
+			g = pw->pw_gid;
+		}
+	} else if ((tmpn = nummapstr_num(t->run_as.u)) == NUMMAPSTR_NAN) {
+		/* no user info at all :O */
+		XERROR("\
+X-ECHS-SETUID field in VTODO is mandatory");
+		goto fatal;
+	} else if ((u = (uid_t)tmpn, g == NOT_A_GID)) {
+		struct passwd *pw;
+
+		if (UNLIKELY((pw = getpwuid(u)) == NULL)) {
+			XERROR("\
+cannot obtain group id for numeric user %u: %s", u, STRERR);
+			goto fatal;
+		}
+		g = pw->pw_gid;
+	}
+
+	/* now actually setgid/setuid the whole thing */
+	if (UNLIKELY(setgid(g) < 0)) {
+		XERROR("\
+cannot set group id to %u: %s", g, STRERR);
+		goto fatal;
+	}
+	if (UNLIKELY(setuid(u) < 0)) {
+		XERROR("\
+cannot set user id to %u: %s", u, STRERR);
+		goto fatal;
 	}
 
 	/* are we supposed to run? */

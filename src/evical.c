@@ -948,13 +948,37 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
+	case FLD_SUID:
+	case FLD_SGID:
 		with (long int i = strtol(vp, &on, 0)) {
 			if (UNLIKELY(on < ep)) {
 				/* nope */
-				;
-			} else {
-				/* off-by-one assignment here */
-				ve->t.owner = i + 1;
+				const char *s = strndup(vp, ep - vp);
+
+				switch (fld) {
+				case FLD_OWNER:
+					ve->t.owner = nummapstr_bang_str(s);
+					break;
+				case FLD_SUID:
+					ve->t.run_as.u = nummapstr_bang_str(s);
+					break;
+				case FLD_SGID:
+					ve->t.run_as.g = nummapstr_bang_str(s);
+					break;
+				}
+				break;
+			}
+			/* numerical assignments here */
+			switch (fld) {
+			case FLD_OWNER:
+				ve->t.owner = nummapstr_bang_num(i);
+				break;
+			case FLD_SUID:
+				ve->t.run_as.u = nummapstr_bang_num(i);
+				break;
+			case FLD_SGID:
+				ve->t.run_as.g = nummapstr_bang_num(i);
+				break;
 			}
 		}
 		break;
@@ -1029,29 +1053,10 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, &on, 0)) {
-			if (UNLIKELY(on < ep)) {
-				/* nope */
-				;
-			} else {
-				/* off-by-one assignment here */
-				ve->t.owner = i + 1;
-			}
-		}
-		break;
-
 	case FLD_UMASK:
-		with (long int i = strtol(vp, &on, 8)) {
-			if (UNLIKELY(on < ep)) {
-				/* couldn't read it */
-				;
-			} else if (UNLIKELY(i < 0 || i > 0777)) {
-				/* not a umask we want */
-				;
-			} else {
-				ve->t.umsk = i + 1U;
-			}
-		}
+	case FLD_SUID:
+	case FLD_SGID:
+		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
 	default:
@@ -1343,6 +1348,10 @@ _ical_proc(struct ical_parser_s p[static 1U])
 				/* bang umask */
 				p->ve.t.max_simul = p->globve.t.max_simul;
 			}
+			if (!p->ve.t.run_as.u) {
+				/* bang run_as */
+				p->ve.t.run_as = p->globve.t.run_as;
+			}
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -1523,6 +1532,26 @@ send_task(int whither, echs_task_t t)
 	}
 	if (t->err) {
 		fdprintf("X-ECHS-EFILE:%s\n", t->err);
+	}
+	with (nummapstr_t u = t->run_as.u) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(u))) {
+			fdprintf("X-ECHS-SETUID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(u)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETUID:%u\n", (unsigned int)tmpn);
+		}
+	}
+	with (nummapstr_t g = t->run_as.g) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(g))) {
+			fdprintf("X-ECHS-SETGID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(g)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETGID:%u\n", (unsigned int)tmpn);
+		}
 	}
 	if (t->run_as.sh) {
 		fdprintf("X-ECHS-SHELL:%s\n", t->run_as.sh);
@@ -2361,9 +2390,6 @@ make_task(struct ical_vevent_s *ve)
 	if (UNLIKELY(!ve->t.oid)) {
 		ve->t.oid = echs_toid_gen(&ve->t);
 	}
-	/* off-by-one correction of owner, this is to indicate
-	 * an unset owner by the value of -1 */
-	ve->t.owner--;
 	/* off-by-one correction of umask, this is to indicate
 	 * an unset umask by the value of -1 */
 	ve->t.umsk--;
@@ -2624,8 +2650,16 @@ CALSCALE:GREGORIAN\n";
 		if (i.t->max_simul) {
 			fdprintf("X-ECHS-MAX-SIMUL:%d\n", i.t->max_simul);
 		}
-		if (i.t->owner > 0) {
-			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
+		with (nummapstr_t o = i.t->owner) {
+			const char *p;
+			uintptr_t n;
+
+			if ((p = nummapstr_str(o))) {
+				fdprintf("X-ECHS-OWNER:%s\n", p);
+			} else if ((n = nummapstr_num(o)) < NUMMAPSTR_NAN &&
+				   (unsigned int)n < -1U) {
+				fdprintf("X-ECHS-OWNER:%u\n", (unsigned int)n);
+			}
 		}
 		break;
 	case INSVERB_UNSC:
