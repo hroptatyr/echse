@@ -1533,6 +1533,26 @@ send_task(int whither, echs_task_t t)
 	if (t->err) {
 		fdprintf("X-ECHS-EFILE:%s\n", t->err);
 	}
+	with (nummapstr_t u = t->run_as.u) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(u))) {
+			fdprintf("X-ECHS-SETUID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(u)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETUID:%u\n", (unsigned int)tmpn);
+		}
+	}
+	with (nummapstr_t g = t->run_as.g) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(g))) {
+			fdprintf("X-ECHS-SETGID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(g)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETGID:%u\n", (unsigned int)tmpn);
+		}
+	}
 	if (t->run_as.sh) {
 		fdprintf("X-ECHS-SHELL:%s\n", t->run_as.sh);
 	}
