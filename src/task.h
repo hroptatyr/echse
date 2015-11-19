@@ -156,10 +156,4 @@ echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 	return t1 == t2 || (t1 && t2 && t1->oid == t2->oid);
 }
 
-static inline __attribute__((const, pure)) bool
-echs_task_owned_by_p(echs_task_t t, unsigned int uid)
-{
-	return nummapstr_num(t->owner) == uid;
-}
-
 #endif	/* INCLUDED_task_h_ */
