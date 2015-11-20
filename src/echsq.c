@@ -1002,7 +1002,34 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 		goto reqstr_err;		\
 	} else (void)0				\
 
-	/* first of all transmogrify user name to uid */
+	/* massage the commands */
+	switch (argi->cmd) {
+	case ECHSQ_CMD_NONE:
+		/* echsq with no command equal echsq list --brief
+		 * unless -l is given */
+		if (!argi->list_flag) {
+			argi->brief_flag = 1;
+		}
+
+		/* retune this guy to list command */
+		argi->cmd = ECHSQ_CMD_LIST;
+		break;
+
+	case ECHSQ_CMD_NEXT:
+		/* echsq next is an alternative for echsq list --next */
+		argi->next_flag = 1;
+
+		/* retune this guy to list command */
+		argi->cmd = ECHSQ_CMD_LIST;
+		break;
+
+	case ECHSQ_CMD_LIST:
+	default:
+		/* that's just fine as it is */
+		break;
+	}
+
+	/* now transmogrify user name to uid */
 	if (argi->user_arg) {
 		char *on = NULL;
 		u = strtoul(argi->user_arg, &on, 10);
@@ -1015,11 +1042,6 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 			}
 			u = p->pw_uid;
 		}
-	}
-
-	if (!argi->cmd) {
-		/* echsq with no command equal list --brief */
-		argi->brief_flag = 1;
 	}
 
 more:
@@ -1367,10 +1389,10 @@ main(int argc, char *argv[])
 	switch (argi->cmd) {
 	case ECHSQ_CMD_NONE:
 	case ECHSQ_CMD_LIST:
+	case ECHSQ_CMD_NEXT:
 		/* with no command just list queues */
 		rc = cmd_list((struct yuck_cmd_list_s*)argi);
 		break;
-
 
 	case ECHSQ_CMD_ADD:
 		rc = cmd_add((struct yuck_cmd_add_s*)argi);
