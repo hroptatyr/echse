@@ -343,7 +343,7 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 				i = e.from;
 				goto cpy_inst;
 			case 'e':
-				i = e.till;
+				i = echs_instant_add(e.from, e.dur);
 				goto cpy_inst;
 			case 's':
 				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
@@ -524,12 +524,15 @@ more:
 				free_echs_task(ins.t);
 				continue;
 			}
-			/* unwind him */
-			for (echs_event_t e;
-			     (e = echs_evstrm_next(ins.t->strm),
-			      !echs_nul_event_p(e)) &&
-				     echs_instant_lt_p(e.from, unr_till);
-			     (void)echs_evstrm_pop(ins.t->strm));
+			/* unwind him, maybe */
+			if (ins.t->strm) {
+				echs_event_t e;
+				while ((e = echs_evstrm_next(ins.t->strm),
+					!echs_nul_event_p(e)) &&
+				       echs_instant_lt_p(e.from, unr_till)) {
+					(void)echs_evstrm_pop(ins.t->strm);
+				}
+			}
 			/* and otherwise inject him */
 			echs_task_icalify(STDOUT_FILENO, ins.t);
 			free_echs_task(ins.t);

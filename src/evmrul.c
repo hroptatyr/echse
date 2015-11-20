@@ -139,22 +139,23 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
 	echs_event_t res = echs_evstrm_next(this->movers);
 	echs_event_t aux = pop_aux_event(this);
-	echs_idiff_t dur;
+	echs_instant_t res_til = echs_instant_add(res.from, res.dur);
+	echs_instant_t aux_til;
 
 	if (UNLIKELY(echs_nul_event_p(aux))) {
 		goto pop;
-	} else if (echs_instant_le_p(res.till, aux.from)) {
+	} else if (echs_instant_le_p(res_til, aux.from)) {
 		/* no danger then aye */
 		goto out;
 	}
-	/* invariant: AUX.FROM < RES.TILL */
-	dur = echs_instant_diff(res.till, res.from);
+	/* invariant: AUX.FROM < TIL */
 	/* fast forward to the event that actually blocks RES */
 	do {
 		/* get next blocking event */
 		echs_event_t nex = pop_aux_event(this);
 		echs_idiff_t and;
 
+		aux_til = echs_instant_add(aux.from, aux.dur);
 		if (UNLIKELY(echs_nul_event_p(nex))) {
 			/* state stream and event cache are finished,
 			 * prepare to go to short-circuiting mode,
@@ -163,17 +164,17 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
 			free_echs_evstrm(this->states);
 			this->states = NULL;
 
-			if (echs_instant_le_p(aux.till, res.from)) {
+			if (echs_instant_le_p(aux_til, res.from)) {
 				/* the invariant before the loop does not
-				 * guarantee that AUX.TILL <= RES.FROM */
+				 * guarantee that AUX_TIL <= RES.FROM */
 				return res;
 			}
 			break;
 		}
 
-		and = echs_instant_diff(nex.from, aux.till);
+		and = echs_instant_diff(nex.from, aux_til);
 		/* check if RES would fit between AUX and NEX */
-		if (echs_idiff_le_p(dur, and)) {
+		if (echs_idiff_le_p(res.dur, and)) {
 			/* yep, would fit, forget about aux */
 			if (!aux_blocks_p(this->mr, aux = nex)) {
 				/* it's just noise though */
@@ -181,15 +182,15 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
 			}
 		} else if (aux_blocks_p(this->mr, nex)) {
 			/* no fittee, `extend' aux */
-			aux.till = nex.till;
+			aux_til = echs_instant_add(nex.from, nex.dur);
 		}
-	} while (echs_instant_le_p(aux.till, res.from));
-	/* invariant RES.FROM < AUX.TILL
+	} while (echs_instant_le_p(aux_til, res.from));
+	/* invariant RES.FROM < RES_TIL
 	 * check if RES is entirely before AUX we're on our way */
-	if (!echs_instant_le_p(res.till, aux.from)) {
+	if (!echs_instant_le_p(res_til, aux.from)) {
 		/* ah, we need to move RES just before AUX.FROM */
-		res.till = aux.from;
-		res.from = echs_instant_add(aux.from, echs_idiff_neg(dur));
+		res_til = aux.from;
+		res.from = echs_instant_add(aux.from, echs_idiff_neg(res.dur));
 	}
 out:
 	/* better save what we've got */
@@ -209,14 +210,16 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 	struct evmrul_s *restrict this = (struct evmrul_s*)s;
 	echs_event_t res = echs_evstrm_next(this->movers);
 	echs_event_t aux = pop_aux_event(this);
-	echs_idiff_t dur;
+	echs_instant_t res_til = echs_instant_add(res.from, res.dur);
+	echs_instant_t aux_til;
 
 	if (UNLIKELY(echs_nul_event_p(aux))) {
 		goto pop;
 	}
 
 	/* fast forward to the event that actually blocks RES */
-	while (echs_instant_le_p(aux.till, res.from)) {
+	while (aux_til = echs_instant_add(aux.from, aux.dur),
+	       echs_instant_le_p(aux_til, res.from)) {
 		aux = pop_aux_event(this);
 		if (UNLIKELY(echs_nul_event_p(aux))) {
 			/* state stream and event cache are finished,
@@ -229,7 +232,7 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 		}
 	}
 	/* invariant: RES.FROM < AUX.TILL */
-	if (echs_instant_le_p(res.till, aux.from)) {
+	if (echs_instant_le_p(res_til, aux.from)) {
 		/* no danger then aye */
 		goto out;
 	} else if (!aux_blocks_p(this->mr, aux)) {
@@ -237,9 +240,7 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 		goto out;
 	}
 
-	/* invariant: AUX.FROM < RES.TILL */
-	dur = echs_instant_diff(res.till, res.from);
-
+	/* invariant: AUX.FROM < RES_TIL */
 	do {
 		/* get next blocking event */
 		echs_event_t nex = pop_aux_event(this);
@@ -256,19 +257,18 @@ next_evmrul_futu(echs_evstrm_t s, bool popp)
 		}
 
 		/* check if RES would fit between AUX and NEX */
-		and = echs_instant_diff(nex.from, aux.till);
-		if (echs_idiff_le_p(dur, and)) {
+		and = echs_instant_diff(nex.from, aux_til);
+		if (echs_idiff_le_p(res.dur, and)) {
 			/* yep, would fit, forget about nex */
 			push_aux_event(this, nex);
 			break;
 		} else if (aux_blocks_p(this->mr, nex)) {
 			/* no fittee, `extend' aux */
-			aux.till = nex.till;
+			aux_til = echs_instant_add(nex.from, nex.dur);
 		}
 	} while (1);
 	/* invariant AUX.TILL + (RES.TILL - RES.FROM) <= NEX.FROM */
-	res.from = aux.till;
-	res.till = echs_instant_add(aux.till, dur);
+	res.from = aux_til;
 out:
 	/* better save what we've got */
 	push_aux_event(this, aux);

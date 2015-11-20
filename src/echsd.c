@@ -77,9 +77,12 @@
 #include "logger.h"
 #include "fdprnt.h"
 #include "nifty.h"
+#include "sock.h"
 #include "nedtrie.h"
 /* for rescheduling */
 #include "evfilt.h"
+/* for user/group mappings */
+#include "nummapstr.h"
 
 #if defined __INTEL_COMPILER
 # define auto	static
@@ -89,6 +92,12 @@
 #define EV_P  struct ev_loop *loop __attribute__((unused))
 
 #define STRERR	(strerror(errno))
+
+#if defined __linux__
+# define USE_ABSTRACT_SOCKETS	1
+#else  /* !__linux__ */
+# define USE_ABSTRACT_SOCKETS	0
+#endif	/* __linux__ */
 
 typedef struct _task_s *_task_t;
 
@@ -106,7 +115,8 @@ struct _task_s {
 	_task_t next;
 
 	/* currently scheduled run-time */
-	echs_range_t cur;
+	echs_instant_t cur;
+	echs_idiff_t dur;
 
 	/* this is the task as understood by libechse */
 	echs_task_t t;
@@ -148,6 +158,8 @@ struct ucred {
 static const char *echsx;
 static int qdirfd = -1;
 static struct ucred meself;
+static char hname[HOST_NAME_MAX];
+static size_t hnamez;
 
 
 static inline size_t
@@ -394,9 +406,13 @@ get_queudir(void)
 			break;
 		}
 
-		di = xstrlcpy(d, spodir, sizeof(d));
-		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
+		di = xstrlncpy(d, sizeof(d), spodir, strlenof(spodir));
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir + 1U, strlenof(appdir) - 1U);
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* bollocks */
@@ -422,18 +438,22 @@ get_queudir(void)
 			break;
 		}
 		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir, sizeof(d) - di);
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
+		}
+		di += xstrlncpy(
+			d + di, sizeof(d) - di,
+			appdir, strlenof(appdir));
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
 			break;
 		}
-		d[di++] = '/';
-		/* now the machine name */
-		if (gethostname(d + di, sizeof(d) - di) < 0) {
-			/* is there anything that works on this machine? */
-			break;
+		if (LIKELY(di < sizeof(d))) {
+			d[di++] = '/';
 		}
+		/* now the machine name */
+		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
@@ -446,117 +466,126 @@ get_queudir(void)
 	return NULL;
 }
 
-static const char*
-get_sockdir(void)
+static ssize_t
+make_ssock(char *restrict buf, size_t bsz)
 {
+#if USE_ABSTRACT_SOCKETS
+/* are we glad that we have abstract sockets? */
+	static const char sockfn[] = "@/var/run/echse/=echsd";
+
+	if (UNLIKELY(bsz < sizeof(sockfn))) {
+		return -1;
+	}
+	/* otherwise just use that string */
+	memcpy(buf, sockfn, sizeof(sockfn));
+	*buf = '\0';
+	return strlenof(sockfn);
+
+#else  /* !USE_ABSTRACT_SOCKETS */
 	static const char rundir[] = "/var/run";
 	static const char appdir[] = ".echse";
-	static char d[PATH_MAX];
+	static const char sockfn[] = "=echsd";
 	struct stat st;
-	uid_t u;
+	size_t bi;
 
-	switch ((u = meself.uid)) {
-		size_t di;
-	case 0:
-		/* barf right away when there's no /var/run */
-		if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			return NULL;
-		}
-
-		di = xstrlcpy(d, rundir, sizeof(d));
-		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
-		/* just mkdir the result and throw away errors */
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* it's just horseshit */
-			break;
-		}
-		/* we consider our job done */
-		return d;
-	default:
-		di = xstrlcpy(d, rundir, sizeof(d));
-		d[di++] = '/';
-		di += snprintf(d + di, sizeof(d) - di, "user/%u", u);
-		if (stat(d, &st) < 0 || !S_ISDIR(st.st_mode)) {
-			/* no /var/run/user/XXX,
-			 * try /tmp/echse */
-			goto tmpdir;
-		}
-		d[di++] = '/';
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
-		/* now mkdir the result and throw away errors */
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* plain horseshit again */
-			break;
-		}
-		/* we consider our job done */
-		return d;
-
-	tmpdir:
-		di = xstrlcpy(d, _PATH_TMP, sizeof(d));
-		di += xstrlcpy(d + di, appdir + 1U, sizeof(d) - di);
-		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
-			/* plain horseshit again */
-			break;
-		}
-		/* now that's a big success */
-		return d;
-	}
-	/* we've run out of options */
-	return NULL;
-}
-
-static const char*
-pathcat(const char *dirnm, ...)
-{
-	static char res[PATH_MAX];
-	va_list ap;
-	size_t ri = 0U;
-
-	va_start(ap, dirnm);
-	ri += xstrlcpy(res + ri, dirnm, sizeof(res) - ri);
-	for (const char *fn; (fn = va_arg(ap, const char*));) {
-		res[ri++] = '/';
-		ri += xstrlcpy(res + ri, fn, sizeof(res) - ri);
-	}
-	va_end(ap);
-	return res;
-}
-
-static int
-make_socket(const char *sdir)
-{
-	struct sockaddr_un sa = {.sun_family = AF_UNIX};
-	const char *fn;
-	size_t sz;
-	int s;
-
-	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+	/* barf right away when there's no /var/run */
+	if (stat(rundir, &st) < 0 || !S_ISDIR(st.st_mode)) {
 		return -1;
-	} else if (UNLIKELY(fcntl(s, F_SETFD, FD_CLOEXEC) < 0)) {
-		goto fail;
 	}
-	fn = pathcat(sdir, "=echsd", NULL);
-	sz = xstrlcpy(sa.sun_path, fn, sizeof(sa.sun_path));
-	sz += sizeof(sa.sun_family);
-	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
-		goto fail;
-	} else if (listen(s, 5U) < 0) {
-		goto fail;
+
+	/* join rundir and appdir */
+	bi = xstrlncpy(buf, bsz, rundir, strlenof(rundir));
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
 	}
-	return s;
-fail:
-	close(s);
-	return -1;
+	bi += xstrlncpy(buf + bi, bsz - bi, appdir + 1U, strlenof(appdir) - 1U);
+	/* just mkdir the result and throw away errors */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* it's just horseshit */
+		return -1;
+	}
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
+	return bi;
+#endif	/* USE_ABSTRACT_SOCKETS */
 }
 
-static int
-free_socket(int s, const char *sdir)
+static ssize_t
+make_usock(char *restrict buf, size_t bsz, uid_t u)
 {
-	const char *fn = pathcat(sdir, "=echsd", NULL);
-	int res = unlink(fn);
-	close(s);
-	return res;
+#if USE_ABSTRACT_SOCKETS
+/* aren't we glad about those things? */
+	static const char sockfn[] = "@/var/run/echse/=echsd";
+	size_t bi;
+
+	if (UNLIKELY(bsz < sizeof(sockfn) + 6U/*for numeric user*/)) {
+		return -1;
+	}
+	memcpy(buf, sockfn, bi = strlenof(sockfn));
+	with (int rc = snprintf(buf + bi, bsz - bi, "-%u", u)) {
+		if (rc <= 0) {
+			return -1;
+		}
+		bi += rc;
+	}
+	*buf = '\0';
+	return bi;
+
+#else  /* !USE_ABSTRACT_SOCKETS */
+	static const char appdir[] = ".echse";
+	static const char sockfn[] = "=echsd";
+	struct passwd *pw;
+	struct stat st;
+	size_t bi;
+
+	/* just like the queudir case we have no consistent
+	 * way of writing our sockets somewhere locally as
+	 * user (sort of an equivalent of /var/run)
+	 * we've seen on openSuSE that systemd's tmpfiles.d
+	 * system is so aggressive as to either not give us
+	 * /var/run/user/UID/ or just deleting stuff in there
+	 * after a certain amount of time.
+	 * Same goes for /tmp, these days on systemd linux
+	 * boxen files in /tmp will be deleted after a while.
+	 * So to cut this long story short, we're using the
+	 * home directory just like in get_queudir() */
+	if ((pw = getpwuid(u)) == NULL || pw->pw_dir == NULL) {
+		/* there's nothing else we can do */
+		return -1;
+	} else if (stat(pw->pw_dir, &st) < 0 || !S_ISDIR(st.st_mode)) {
+		/* gimme a break! */
+		return -1;
+	}
+	/* join homedir and appdir */
+	bi = xstrlcpy(buf, pw->pw_dir, bsz);
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, appdir, strlenof(appdir));
+	/* create the appdir if not already there */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* plain horseshit again */
+		return -1;
+	}
+	/* ok, append machine name now */
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, hname, hnamez);
+	/* and mkdir it again, just in case */
+	if (mkdir(buf, 0700) < 0 && errno != EEXIST) {
+		/* plain horseshit again */
+		return -1;
+	}
+	/* now for our final trick, append the sockfn */
+	if (LIKELY(bi < bsz)) {
+		buf[bi++] = '/';
+	}
+	bi += xstrlncpy(buf + bi, bsz - bi, sockfn, strlenof(sockfn));
+	return bi;
+#endif	/* !USE_ABSTRACT_SOCKETS */
 }
 
 static int
@@ -609,13 +638,94 @@ get_peereuid(ncred_t *restrict cred, int s)
 #endif	/* SO_PEERCRED || LOCAL_PEERCRED || HAVE_GETPEERUCRED */
 }
 
+static int
+set_peereuid(int s)
+{
+/* enable the passing of credentials on this socket. */
+#if defined SO_PASSCRED
+	int yes = 1;
+
+	return setsockopt(s, SOL_SOCKET, SO_PASSCRED, &yes, sizeof(yes));
+#else
+	return 0;
+#endif	/* SO_PASSCRED */
+}
+
+static int
+make_socket(void)
+{
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	size_t sz;
+	int s;
+
+	if (UNLIKELY((s = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)) {
+		return -1;
+	} else if (UNLIKELY(fd_cloexec(s) < 0)) {
+		goto fail;
+	}
+
+	if (!meself.uid) {
+		ssize_t tmp = make_ssock(sa.sun_path, sizeof(sa.sun_path));
+
+		if (UNLIKELY(tmp < 0)) {
+			goto fail;
+		}
+		/* otherwise we're good to go nuclear */
+		sz = tmp;
+	} else {
+		ssize_t tmp = make_usock(
+			sa.sun_path, sizeof(sa.sun_path), meself.uid);
+
+		if (UNLIKELY(tmp < 0)) {
+			goto fail;
+		}
+		/* otherwise three cheers for the user */
+		sz = tmp;
+	}
+
+	/* go for gold */
+	sz += sizeof(sa.sun_family);
+	if (UNLIKELY(bind(s, (struct sockaddr*)&sa, sz) < 0)) {
+		goto fail;
+	} else if (listen(s, 5U) < 0) {
+		goto fail;
+	}
+	return s;
+fail:
+	close(s);
+	return -1;
+}
+
+static int
+free_socket(int s)
+{
+	struct sockaddr_un sa = {.sun_family = AF_UNIX};
+	socklen_t sz = sizeof(sa);
+	const char *fn;
+	int rc = 0;
+
+	if (UNLIKELY(getsockname(s, (void*)&sa, &sz) < 0)) {
+		rc = -1;
+	} else if ((fn = sa.sun_path) == NULL || !*fn) {
+		/* abstract socket? */
+		;
+	} else if (UNLIKELY(unlink(fn) < 0)) {
+		rc = -1;
+	}
+	close(s);
+	return rc;
+}
+
+#define NOT_A_UID	((uid_t)-1)
+#define NOT_A_GID	((gid_t)-1)
+
 static ncred_t
 compl_uid(uid_t u)
 {
 	struct passwd *p;
 
-	if ((p = getpwuid(u)) == NULL) {
-		return (ncred_t){0, 0, NULL, NULL};
+	if (UNLIKELY(u == NOT_A_UID || (p = getpwuid(u)) == NULL)) {
+		return (ncred_t){NOT_A_UID};
 	}
 	return (ncred_t){p->pw_uid, p->pw_gid, p->pw_dir, p->pw_shell};
 }
@@ -625,48 +735,39 @@ compl_user(const char *u)
 {
 	struct passwd *p;
 
-	if ((p = getpwnam(u)) == NULL) {
-		return (ncred_t){0, 0, NULL, NULL};
+	if (UNLIKELY(u == NULL || (p = getpwnam(u)) == NULL)) {
+		return (ncred_t){NOT_A_UID};
 	}
 	return (ncred_t){p->pw_uid, p->pw_gid, p->pw_dir, p->pw_shell};
 }
 
 static ncred_t
-cred_to_ncred(cred_t c)
+compl_owner(nummapstr_t o)
 {
-/* turn string creds into numeric creds */
-	ncred_t res = {0};
+	const char *tmps;
+	uid_t tmpu;
 
-	if (c.u != NULL) {
-		char *on;
-		long unsigned int u = strtoul(c.u, &on, 10);
+	if ((tmps = nummapstr_str(o))) {
+		/* numerify owner */
+		return compl_user(tmps);
+	} else if ((tmpu = nummapstr_num(o)) < NUMMAPSTR_NAN) {
+		return compl_uid(tmpu);
+	}
+	/* else fucked */
+	return (ncred_t){NOT_A_UID};
+}
 
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.u = (uid_t)u;
-		} else {
-			res = compl_user(c.u);
-		}
-	}
-	if (c.g != NULL) {
-		char *on;
-		long unsigned int g = strtoul(c.g, &on, 10);
-		struct group *p;
+static inline __attribute__((const, pure)) uid_t
+echs_task_owner(echs_task_t t)
+{
+	uintptr_t owner = nummapstr_num(t->owner);
+	return owner != NUMMAPSTR_NAN ? owner : NOT_A_UID;
+}
 
-		if (*on == '\0') {
-			/* oooh, we've got a numeric value already */
-			res.g = (gid_t)g;
-		} else if ((p = getgrnam(c.g)) != NULL) {
-			res.g = p->gr_gid;
-		}
-	}
-	if (c.wd) {
-		res.wd = c.wd;
-	}
-	if (c.sh) {
-		res.sh = c.sh;
-	}
-	return res;
+static inline __attribute__((const, pure)) bool
+echs_task_owned_by_p(echs_task_t t, uid_t uid)
+{
+	return echs_task_owner(t) == uid;
 }
 
 
@@ -890,116 +991,203 @@ free_task_ht(void)
 	return;
 }
 
-static bool mockp;
-static pid_t
-run_task(_task_t t, bool no_run)
+static int
+vtodoify(int ofd, _task_t t)
 {
-/* assumes ev_loop_fork() has been called */
-	static char uid[16U], gid[16U], tmo[16U];
-	static char *args_proto[] = {
-		[0] = "echsx",
-		[1] = "-n",
-		[2] = "-c", NULL,
-		[4] = "--uid", uid,
-		[6] = "--gid", gid,
-		[8] = "--cwd", NULL,
-		[10] = "--shell", NULL,
-		[12] = "--timeout", tmo,
-		[14] = "--mailfrom", NULL,
-		[16] = "--mailout",
-		[17] = "--mailerr",
-		[18] = "--stdin", NULL,
-		[20] = "--stdout", NULL,
-		[22] = "--stderr", NULL,
-		NULL
-	};
-	/* use a VLA for the real args */
-	const size_t natt = t->t->att ? t->t->att->nl : 0U;
-	char *args[countof(args_proto) + 2U * natt];
-	char *const *env = deconst(t->t->env);
-	pid_t r;
+	static const char vcal_hdr[] = "\
+BEGIN:VCALENDAR\n\
+VERSION:2.0\n\
+PRODID:-//GA Financial Solutions//echse//EN\n\
+CALSCALE:GREGORIAN\n";
+	static const char vcal_ftr[] = "\
+END:VCALENDAR\n\
+";
+	static const char vtod_hdr[] = "\
+BEGIN:VTODO\n";
+	static const char vtod_ftr[] = "\
+END:VTODO\n";
+	int rc = 0;
 
-	/* set up the real args */
-	memcpy(args, args_proto, sizeof(args_proto));
-	if (no_run) {
-		args[1U] = "--no-run";
+	/* bang and print VCAL header */
+	fdbang(ofd);
+	if (UNLIKELY(fdwrite(vcal_hdr, strlenof(vcal_hdr)) < 0)) {
+		rc--;
+		goto out;
 	}
-	args[3U] = deconst(t->t->cmd);
-	with (ncred_t run_as = cred_to_ncred(t->t->run_as)) {
-		if (!run_as.u) {
-			run_as.u = t->dflt_cred.u;
-		}
-		if (!run_as.g) {
-			run_as.g = t->dflt_cred.g;
-		}
-		snprintf(uid, sizeof(uid), "%u", (uid_t)run_as.u);
-		snprintf(gid, sizeof(gid), "%u", (gid_t)run_as.g);
 
-		if (!run_as.wd) {
+	/* start off with VTODO's header */
+	if (UNLIKELY(fdwrite(vtod_hdr, strlenof(vtod_hdr)) < 0)) {
+		rc--;
+		goto out;
+	}
+
+
+	rc -= fdprintf("UID:%s\n", obint_name(t->t->oid)) < 0;
+	rc -= fdprintf("SUMMARY:%s\n", t->t->cmd) < 0;
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
+
+	with (ncred_t run_as = {.wd = t->t->run_as.wd, .sh = t->t->run_as.sh}) {
+		/* we trust the injector to have put dflt_creds properly */
+		run_as.u = t->dflt_cred.u;
+		run_as.g = t->dflt_cred.g;
+
+		if (run_as.wd == NULL) {
 			run_as.wd = t->dflt_cred.wd;
 		}
-		if (!run_as.sh) {
+		if (run_as.sh == NULL) {
 			run_as.sh = t->dflt_cred.sh;
 		}
-		args[9U] = deconst(run_as.wd);
-		args[11U] = deconst(run_as.sh);
-	}
-	with (echs_idiff_t d = echs_instant_diff(t->cur.end, t->cur.beg)) {
-		const int s = d.dd * 86400 + d.msd / 1000U + !!(d.msd % 1000U);
 
-		snprintf(tmo, sizeof(tmo), "%d", s);
-		args[13U] = tmo;
+		rc -= fdprintf("X-ECHS-SETUID:%u\n", (uid_t)run_as.u) < 0;
+		rc -= fdprintf("X-ECHS-SETGID:%u\n", (gid_t)run_as.g) < 0;
+		rc -= fdprintf("X-ECHS-SHELL:%s\n", run_as.sh) < 0;
+		rc -= fdprintf("LOCATION:%s\n", run_as.wd) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
 	}
 
+	with (echs_idiff_t d = t->dur) {
+		const int s = d.d / 1000U + !!(d.d % 1000U);
+
+		rc -= fdprintf("DURATION:%d\n", s) < 0;
+	}
+	with (unsigned int um = 0066U) {
+		if (t->t->umsk < 0777U) {
+			um = t->t->umsk;
+		}
+		rc -= fdprintf("X-ECHS-UMASK:0%o\n", um) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
+
+	rc -= fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->t->mailrun) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->t->mailout) < 0;
+	rc -= fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->t->mailerr) < 0;
+	if (t->t->in) {
+		rc -= fdprintf("X-ECHS-IFILE:%s\n", t->t->in) < 0;
+	}
+	if (t->t->out) {
+		rc -= fdprintf("X-ECHS-OFILE:%s\n", t->t->out) < 0;
+	}
+	if (t->t->err) {
+		rc -= fdprintf("X-ECHS-EFILE:%s\n", t->t->err) < 0;
+	}
 	if (t->t->org) {
-		args[15U] = deconst(t->t->org);
-	} else if (natt) {
-		args[15U] = t->t->att->l[0U];
+		rc -= fdprintf("ORGANIZER:%s\n", t->t->org) < 0;
+	} else if (hnamez) {
+		/* singleton, extend mailfrom by +HOSTNAME */
+		const int hnamei = hnamez;
+		rc -= fdprintf("ORGANIZER:echse+%.*s\n", hnamei, hname) < 0;
 	} else {
-		args[15U] = "echse";
+		static const char eorg[] = "ORGANIZER:echse\n";
+		rc -= fdwrite(eorg, strlenof(eorg)) < 0;
 	}
-	with (size_t i = 16U) {
-		if (t->t->mailout) {
-			args[i++] = "--mailout";
-		}
-		if (t->t->mailerr) {
-			args[i++] = "--mailerr";
-		}
-		if (t->t->in) {
-			args[i++] = args[18];
-			args[i++] = deconst(t->t->in);
-		}
-		if (t->t->out) {
-			args[i++] = args[20];
-			args[i++] = deconst(t->t->out);
-		}
-		if (t->t->err) {
-			args[i++] = args[22];
-			args[i++] = deconst(t->t->err);
-		}
-		for (size_t j = 0U; j < natt; j++) {
-			args[i++] = "--mailto";
-			args[i++] = t->t->att->l[j];
-		}
-		/* finalise args array */
-		args[i++] = NULL;
+	for (size_t j = 0U, natt = t->t->att ? t->t->att->nl : 0U;
+	     j < natt; j++) {
+		rc -= fdprintf("ATTENDEE:%s\n", t->t->att->l[j]) < 0;
+	}
+	if (UNLIKELY(rc < 0)) {
+		goto out;
+	}
+
+	/* and finish with VTODO's footer followed by a nice flush */
+	if (UNLIKELY(fdwrite(vtod_ftr, strlenof(vtod_ftr)) < 0)) {
+		rc--;
+		goto out;
+	} else if (UNLIKELY(fdwrite(vcal_ftr, strlenof(vcal_ftr)) < 0)) {
+		rc--;
+		goto out;
+	}
+	rc -= fdflush() < 0;
+out:
+	return rc;
+}
+
+static pid_t
+run_task(_task_t t)
+{
+/* assumes ev_loop_fork() has been called */
+	static char *args[] = {
+		"echsx",
+		/* we want a vjournal log, defo defo */
+		"-v",
+		/* we maybe want to indicate a --no-run */
+		NULL,
+		NULL
+	};
+	char *const *env = deconst(t->t->env);
+	/* echsx's stdin */
+	int xin[2U];
+	/* for the journal */
+	posix_spawn_file_actions_t fa;
+	char vjfn[PATH_MAX];
+	int vjfd;
+	off_t vjof;
+	/* the actual process */
+	pid_t r;
+
+	/* set up pipe for echsx(1) */
+	if (UNLIKELY(pipe(xin) < 0)) {
+		ECHS_ERR_LOG("cannot set up pipe to echsx: %s", STRERR);
+		return -1;
+	}
+
+	/* prepare the forking */
+	if (UNLIKELY(posix_spawn_file_actions_init(&fa) < 0)) {
+		/* shit, what are we gonna do?*/
+		ECHS_ERR_LOG("cannot prepare forking to echsx: %s", STRERR);
+		return -1;
+	}
+
+	if (!(t->nsim < (unsigned int)t->t->max_simul - 1U)) {
+		args[2U] = "-nd";
+	}
+
+	/* prep the IPC with echsx */
+	posix_spawn_file_actions_adddup2(&fa, xin[0U], STDIN_FILENO);
+	posix_spawn_file_actions_addclose(&fa, xin[0U]);
+	posix_spawn_file_actions_addclose(&fa, xin[1U]);
+
+	/* get the journalling on the way */
+	if (snprintf(vjfn, sizeof(vjfn),
+			    "echsj_%u.ics", t->dflt_cred.u) < 0) {
+		/* couldn't care less */
+		vjfd = -1;
+	} else if ((vjfd = openat(qdirfd, vjfn, O_RDWR | O_CREAT, 0600)) < 0) {
+		/* brilliant */
+		;
+	} else if ((vjof = lseek(vjfd, 0, SEEK_END)) < 0) {
+		/* make sure we don't shed a tear over this one */
+		close(vjfd);
+		vjfd = -1;
+	} else {
+		/* all's well in either case */
+		posix_spawn_file_actions_adddup2(&fa, vjfd, STDOUT_FILENO);
+		posix_spawn_file_actions_addclose(&fa, vjfd);
 	}
 
 	/* finally fork out our child */
-	if (UNLIKELY(mockp)) {
-		r = -1;
-		fputs(echsx, stdout);
-		for (const char *const *ap = args + 1U; *ap; ap++) {
-			fputc(' ', stdout);
-			fputc('\'', stdout);
-			fputs(*ap, stdout);
-			fputc('\'', stdout);
-		}
-		fputc('\n', stdout);
-	} else if (UNLIKELY(posix_spawn(&r, echsx, NULL, NULL, args, env) < 0)) {
+	if (UNLIKELY(posix_spawn(&r, echsx, &fa, NULL, args, env) < 0)) {
 		ECHS_ERR_LOG("cannot fork: %s", STRERR);
 		r = -1;
 	}
+	/* free spawn resources */
+	posix_spawn_file_actions_destroy(&fa);
+
+	if (LIKELY(!(vjfd < 0))) {
+		close(vjfd);
+	}
+	/* close read side of the pipe to echsx(1) */
+	close(xin[0U]);
+
+	/* and splice our VTODO onto xin[1U] */
+	(void)vtodoify(xin[1U], t);
+	/* we're finished aren't we? */
+	close(xin[1U]);
 	return r;
 }
 
@@ -1229,7 +1417,7 @@ chkpnt1(uid_t u)
 	for (size_t i = 0U; i < ztask_ht; i++) {
 		if (!task_ht[i].oid) {
 			continue;
-		} else if (task_ht[i].t->t->owner != u) {
+		} else if (echs_task_owner(task_ht[i].t->t) != u) {
 			continue;
 		} else if (!inittedp) {
 			echs_instruc_t ins = {
@@ -1284,7 +1472,8 @@ chkpnta(void)
 
 		if (!task_ht[i].oid) {
 			continue;
-		} else if ((u = task_ht[i].t->t->owner) == (uid_t)-1) {
+		} else if ((u = echs_task_owner(
+				    task_ht[i].t->t)) == NOT_A_UID) {
 			/* grml, no owner */
 			continue;
 		} else if ((fd = seenp(&sntr, u)) >= 0) {
@@ -1501,7 +1690,9 @@ echs_http_send_sched(_task_t t, const char *tuid, size_t tusz)
 	char rng[64U];
 	size_t rnz;
 
-	rnz = range_strf(rng, sizeof(rng), t->cur);
+	with (echs_range_t r = {t->cur, echs_instant_add(t->cur, t->dur)}) {
+		rnz = range_strf(rng, sizeof(rng), r);
+	}
 	fdwrite(tuid, tusz);
 	fdputc('\t');
 	fdwrite(rng, rnz);
@@ -1520,8 +1711,6 @@ HTTP/1.1 404 Not Found\r\n\r\n";
 HTTP/1.1 500 Internal Server Error\r\n\r\n";
 	static const char rpl200[] = "\
 HTTP/1.1 200 Ok\r\n\r\n";
-	static const char rpl204[] = "\
-HTTP/1.1 204 Found\r\n\r\n";
 	const char *rpl;
 	size_t rpz;
 	ssize_t nwr = 0;
@@ -1618,7 +1807,7 @@ hdr:
 cannot find task: no task with oid 0x%x found", oid);
 				continue;
 			} else if (UNLIKELY(!echs_task_owned_by_p(t->t, u))) {
-				uid_t owner = t->t->owner;
+				uid_t owner = echs_task_owner(t->t);
 				ECHS_ERR_LOG("\
 requesting task from user %d as user %d failed: permission denied", u, owner);
 				continue;
@@ -1669,7 +1858,8 @@ requesting task from user %d as user %d failed: permission denied", u, owner);
 
 				if (!task_ht[i].oid) {
 					continue;
-				} else if (task_ht[i].t->t->owner != u) {
+				} else if (echs_task_owner(
+						   task_ht[i].t->t) != u) {
 					continue;
 				}
 				/* yep */
@@ -1714,8 +1904,6 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 	static time_t now;
 	static char stmp[32U];
 	static size_t nrpl = 0U;
-	struct tm tm;
-	time_t tmp;
 	ssize_t nwr = 0;
 
 	fdbang(ofd);
@@ -1733,16 +1921,8 @@ REQUEST-STATUS:5.1;Service unavailable\n\
 		nwr += fdwrite(rpl_rpl, strlenof(rpl_rpl));
 	}
 
-	if ((tmp = time(NULL), tmp > now && gmtime_r(&tmp, &tm) != NULL)) {
-		echs_instant_t nowi;
-
-		nowi.y = tm.tm_year + 1900,
-		nowi.m = tm.tm_mon + 1,
-		nowi.d = tm.tm_mday,
-		nowi.H = tm.tm_hour,
-		nowi.M = tm.tm_min,
-		nowi.S = tm.tm_sec,
-		nowi.ms = ECHS_ALL_SEC,
+	if_with (time_t tmp = time(NULL), tmp > now) {
+		echs_instant_t nowi = epoch_to_echs_instant(tmp);
 
 		dt_strf_ical(stmp, sizeof(stmp), nowi);
 		now = tmp;
@@ -1846,6 +2026,7 @@ feed_cmd(struct echs_cmdparam_s param[static 1U], const char *buf, size_t bsz)
 			break;
 		}
 	default:
+		r = ECHS_CMD_UNK;
 		break;
 	}
 	return param->cmd = r;
@@ -1970,7 +2151,7 @@ unsched(EV_P_ ev_periodic *w, int UNUSED(revents))
 	_task_t t = (void*)w;
 
 	ECHS_NOTI_LOG("taking event off of schedule");
-	add_chkpnt(t->t->owner);
+	add_chkpnt(echs_task_owner(t->t));
 	ev_periodic_stop(EV_A_ w);
 	free_task(t);
 	return;
@@ -2011,7 +2192,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 		/* indicate that we might want to reuse the loop */
 		ev_loop_fork(EV_A);
 
-		if (LIKELY((p = run_task(t, false)) > 0)) {
+		if (LIKELY((p = run_task(t)) > 0)) {
 			ev_child *c = make_chld();
 
 			/* consider us running already */
@@ -2027,7 +2208,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	} else {
 		/* ooooh, we can't run, call run task with the warning
 		 * flag and use fire and forget */
-		(void)run_task(t, true);
+		(void)run_task(t);
 	}
 
 	/* prepare for rescheduling */
@@ -2056,18 +2237,19 @@ resched(ev_periodic *w, ev_tstamp now)
 		ECHS_NOTI_LOG("event in the past, not scheduling");
 		w->reschedule_cb = NULL;
 		w->cb = unsched;
-		t->cur = (echs_range_t){echs_nul_instant()};
+		t->cur = echs_nul_instant();
 		return now;
 	} else if (UNLIKELY(echs_event_0_p(e))) {
 		/* we need to unschedule AFTER the next run */
 		ECHS_NOTI_LOG("event completed, will not reschedule");
 		w->reschedule_cb = NULL;
-		t->cur = (echs_range_t){echs_nul_instant()};
+		t->cur = echs_nul_instant();
 		return now + 1.e+30;
 	}
 
 	/* store the current event range and calculate tstamp for libev */
-	t->cur = (echs_range_t){e.from, e.till};
+	t->cur = e.from;
+	t->dur = e.dur;
 	soon = instant_to_tstamp(e.from);
 	t->nrun++;
 
@@ -2142,12 +2324,14 @@ sock_conn_cb(EV_P_ ev_io *w, int UNUSED(revents))
 	ncred_t cred;
 	int s;
 
-	if (UNLIKELY(get_peereuid(&cred, w->fd) < 0)) {
-		ECHS_ERR_LOG("\
-authenticity of connection %d cannot be established: %s", w->fd, STRERR);
-		return;
-	} else if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
+	if ((s = accept(w->fd, (struct sockaddr*)&sa, &z)) < 0) {
 		ECHS_ERR_LOG("connection vanished: %s", STRERR);
+		return;
+	} else if (UNLIKELY(set_peereuid(s) < 0) ||
+		   UNLIKELY(get_peereuid(&cred, s) < 0)) {
+		ECHS_ERR_LOG("\
+authenticity of connection %d cannot be established: %s", s, STRERR);
+		close(s);
 		return;
 	}
 
@@ -2283,30 +2467,50 @@ static int
 _inject_task1(EV_P_ echs_task_t t, uid_t u)
 {
 	_task_t res;
-	ncred_t c;
+	ncred_t uc;
+	ncred_t oc;
 
-	if (meself.uid && !u) {
+	/* massage owner and u
+	 * we allow U to be set to NOT_A_UID in which case the
+	 * uid will be taken from the compl'd T->owner slot */
+	oc = compl_owner(t->owner);
+	uc = compl_uid(u);
+
+	/* big checking */
+	if (uc.u == NOT_A_UID && oc.u == NOT_A_UID) {
+		/* can't have both unset, bugger off */
 		ECHS_ERR_LOG("\
-need root privileges to run task as user %d", u);
+ignoring task update with no user nor owner specified");
 		return -1;
-	} else if (UNLIKELY((c = compl_uid(u),
-			     c.sh == NULL || c.wd == NULL))) {
-		/* user doesn't exist, do they */
+	} else if (uc.u == NOT_A_UID && meself.uid && oc.u != meself.uid) {
 		ECHS_ERR_LOG("\
-ignoring task update for (non-existing) user %u", u);
+need root privileges to run task as user %d", oc.u);
+			return -1;
+	} else if (oc.u == NOT_A_UID && meself.uid && uc.u != meself.uid) {
+		ECHS_ERR_LOG("\
+need root privileges to run task as user %d", uc.u);
 		return -1;
-	} else if (!echs_task_owned_by_p(t, c.u)) {
+	} else if (uc.u != NOT_A_UID && oc.u != uc.u) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     u, t->owner);
+			     uc.u, oc.u);
+		return -1;
+	} else if (oc.u == NOT_A_UID && (oc.u = uc.u, false)) {
+		/* not reached */
+
+	} else if (uc.u == NOT_A_UID && (uc.u = oc.u, false)) {
+		/* not reached */
+
+	} else if (UNLIKELY(t->strm == NULL)) {
+		ECHS_ERR_LOG("submitted ical object is not a task");
 		return -1;
 	} else if ((res = get_task(t->oid)) != NULL &&
-		   !echs_task_owned_by_p(res->t, c.u)) {
+		   !echs_task_owned_by_p(res->t, oc.u)) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     u, res->t->owner);
+			     uc.u, echs_task_owner(res->t));
 		return -1;
 	} else if (res != NULL) {
 		ECHS_NOTI_LOG("task update, unscheduling old task");
@@ -2318,20 +2522,24 @@ task update from user %d for task from user %d failed: permission denied",
 		ECHS_ERR_LOG("cannot submit new task");
 		return -1;
 	}
-
+	/* refresh the actual credentials again */
+	if (UNLIKELY((uc = compl_uid(uc.u)).u == NOT_A_UID)) {
+		ECHS_ERR_LOG("user %u has vanished", oc.u);
+		return -1;
+	}
 	/* massage away the owner in the task and
 	 * replace by the connection credentials */
-	echs_task_rset_ownr(t, u);
+	echs_task_rset_ownr(t, uc.u);
 	/* bang libechse task into our _task */
 	res->t = t;
 	/* run all tasks as U and the default group of U */
-	res->dflt_cred.u = c.u;
-	res->dflt_cred.g = c.g;
+	res->dflt_cred.u = uc.u;
+	res->dflt_cred.g = uc.g;
 	/* also, by default, in U's home dir using U's shell */
-	res->dflt_cred.wd = strdup(c.wd);
-	res->dflt_cred.sh = strdup(c.sh);
+	res->dflt_cred.wd = strdup(uc.wd);
+	res->dflt_cred.sh = strdup(uc.sh);
 
-	ECHS_NOTI_LOG("scheduling task for user %u(%u)", c.u, c.g);
+	ECHS_NOTI_LOG("scheduling task for user %u(%u)", uc.u, uc.g);
 	ev_periodic_init(&res->w, task_cb, 0./*ignored*/, 0., resched);
 	ev_periodic_start(EV_A_ &res->w);
 	return 0;
@@ -2350,7 +2558,7 @@ cannot update task: no task with oid 0x%x found", oid);
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
-			     uid, res->t->owner);
+			     uid, echs_task_owner(res->t));
 		return -1;
 	}
 	/* otherwise proceed with the evacuation */
@@ -2392,11 +2600,12 @@ more:
 			} else if (UNLIKELY(ins.t == NULL)) {
 				continue;
 			} else if (UNLIKELY(!ins.t->oid)) {
+				/* not even an OID */
 				free_echs_task(ins.t);
 				continue;
 			}
 			/* and otherwise inject him */
-			_inject_task1(ctx->loop, ins.t, ins.t->owner);
+			_inject_task1(ctx->loop, ins.t, NOT_A_UID);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -2473,7 +2682,6 @@ main(int argc, char *argv[])
 	yuck_t argi[1U];
 	struct _echsd_s *ctx;
 	const char *qdir;
-	const char *sdir;
 	int esok = -1;
 	int rc = 0;
 
@@ -2486,9 +2694,17 @@ main(int argc, char *argv[])
 	}
 
 	/* who are we? */
-	meself.pid = getpid();
 	meself.uid = geteuid();
 	meself.gid = getegid();
+
+	/* populate with hostname we're running on */
+	if (UNLIKELY(gethostname(hname, sizeof(hname)) < 0)) {
+		perror("Error: cannot get hostname");
+		rc = 1;
+		goto out;
+	} else {
+		hnamez = strlen(hname);
+	}
 
 	/* try and find our execution helper */
 	if (UNLIKELY((echsx = get_echsx()) == NULL)) {
@@ -2502,25 +2718,22 @@ main(int argc, char *argv[])
 		perror("Error: cannot obtain local state directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY | O_CLOEXEC)) < 0)) {
+	} else if (UNLIKELY((qdirfd = open(qdir, O_RDONLY)) < 0)) {
 		perror("Error: cannot open echsd spool directory");
 		rc = 1;
 		goto out;
-	} else if (UNLIKELY((sdir = get_sockdir()) == NULL)) {
-		perror("Error: cannot find directory to put the socket in");
+	} else if (UNLIKELY(fd_cloexec(qdirfd) < 0)) {
+		perror("Error: cannot set FD_CLOEXEC on spool directory");
 		rc = 1;
 		goto out;
-	}
-
-	if (UNLIKELY((esok = make_socket(sdir)) < 0)) {
+	} else if (UNLIKELY((esok = make_socket()) < 0)) {
 		perror("Error: cannot create socket file");
 		rc = 1;
 		goto out;
 	}
 
-	if (argi->dry_run_flag) {
+	if (argi->foreground_flag) {
 		echs_log = echs_errlog;
-		mockp = true;
 	} else if (daemonise() < 0) {
 		perror("Error: daemonisation failed");
 		rc = 1;
@@ -2530,10 +2743,34 @@ main(int argc, char *argv[])
 	/* start them log files */
 	echs_openlog();
 
+	/* we need to get to know ourself  */
+	if ((meself.pid = getpid()) < (pid_t)0) {
+		ECHS_ERR_LOG("cannot obtain current pid %d", meself.pid);
+		rc = 2;
+		goto clo;
+	}
+
 	/* obtain our context */
 	if (UNLIKELY((ctx = make_echsd()) == NULL)) {
 		ECHS_ERR_LOG("cannot instantiate echsd context");
 		goto clo;
+	}
+
+	/* write pid file if requested */
+	if (argi->pidfile_arg) {
+		const int fl = O_CREAT | O_TRUNC | O_WRONLY;
+		const char *pfn = argi->pidfile_arg;
+		int pfd;
+
+		if (UNLIKELY((pfd = open(pfn, fl, 0666)) < 0)) {
+			/* right, so this fails and we quit? */
+			ECHS_ERR_LOG("cannot write pid file `%s'", pfn);
+			rc = 1;
+			goto fre;
+		}
+		/* otherwise */
+		dprintf(pfd, "%d\n", meself.pid);
+		close(pfd);
 	}
 
 	/* inject the echsd socket */
@@ -2552,8 +2789,13 @@ main(int argc, char *argv[])
 		block_sigs();
 	}
 
+fre:
 	/* free context and associated resources */
 	free_echsd(ctx);
+	/* remove pidfile */
+	if (argi->pidfile_arg) {
+		(void)unlink(argi->pidfile_arg);
+	}
 
 clo:
 	/* stop them log files */
@@ -2561,7 +2803,7 @@ clo:
 
 out:
 	if (esok >= 0) {
-		(void)free_socket(esok, sdir);
+		(void)free_socket(esok);
 	}
 	if (qdirfd >= 0) {
 		close(qdirfd);

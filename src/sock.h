@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** sock.h -- handy socket helpers
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2009-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,40 +33,14 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_sock_h_
+#define INCLUDED_sock_h_
 
-#include <stddef.h>
-#include "instant.h"
-#include "range.h"
+static inline int
+fd_cloexec(int fd)
+{
+	return fcntl(fd, F_SETFD, FD_CLOEXEC);
+}
 
-/**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str, char **on, size_t len);
-
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
-
-/**
- * Print INST into BUF (of size BSZ) in ical format and return its length. */
-extern size_t dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst);
-
-/**
- * Parse ISO 8601 durations as idiff object. */
-extern echs_idiff_t idiff_strp(const char *str, char **on, size_t len);
-
-/**
- * Print IDIFF into BUF (of size BSZ) in ISO format and return its length. */
-extern size_t idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff);
-
-/**
- * Parse STR as range with the standard parser. */
-extern echs_range_t range_strp(const char *str, char **on, size_t len);
-
-/**
- * Print RANGE into BUF (of size BSZ) in ISO format and return its length. */
-extern size_t range_strf(char *restrict buf, size_t bsz, echs_range_t range);
-
-#endif	/* INCLUDED_dt_strpf_h_ */
+#endif	/* INCLUDED_sock_h_ */

@@ -28,9 +28,12 @@ Features
 * [X] Per-task configuration of working directory and shell
 * [X] Per-task configuration of simultaneity
 * [X] Automatic and shell-independent capture of timing information
-* [ ] Per-task configuration of timezones
+* [X] Per-task configuration of timezones
+* [X] Built-in timeouts by constraining a task through DTEND
+* [X] Built-in timeouts by constraining a task through DURATION
+* [X] Custom task templates
+* [X] Job metadata logging as VJOURNAL
 * [ ] Per-task configuration of the environment
-* [ ] Built-in timeouts by constraining a task through DTEND/DURATION
 
 
 iCalendar extensions
@@ -86,6 +89,10 @@ X-ECHS-MAIL-OUT
 
 X-ECHS-MAIL-ERR
 : If set to non-0 any output written on stderr is included in the mail.
+
+X-ECHS-MAIL-RUN
+: If set to non-0 send a mail with the status information, this flag is
+  implied when X-ECHS-MAIL-OUT or X-ECHS-MAIL-ERR is set.
 
 X-ECHS-MAX-SIMUL
 : A job is only run this many times simultaneously.

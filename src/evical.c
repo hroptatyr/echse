@@ -104,8 +104,18 @@ struct urlst_s {
 	size_t zu;
 };
 
+/* this one can capture
+ * - vtodo recurrences (orders)
+ * - vtodo executions
+ * - vtodo reports */
 struct ical_vevent_s {
-	echs_event_t e;
+	echs_instant_t from;
+	echs_instant_t till;
+	echs_instant_t comp;
+	echs_instant_t due;
+	echs_idiff_t dur;
+
+	echs_state_t sts;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -208,18 +218,29 @@ free_ical_vevent(struct ical_vevent_s *restrict ve)
 	return;
 }
 
-static inline echs_event_t
-echs_event_utc(echs_event_t e)
+static inline echs_instant_t
+echs_instant_to_utc(echs_instant_t i)
 {
 	echs_tzob_t z;
 
-	if (UNLIKELY(z = echs_instant_tzob(e.from))) {
-		e.from = echs_instant_utc(e.from, z);
+	if (UNLIKELY(z = echs_instant_tzob(i))) {
+		i = echs_instant_utc(i, z);
 	}
-	if (UNLIKELY((z = echs_instant_tzob(e.till)))) {
-		e.till = echs_instant_utc(e.till, z);
-	}
+	return i;
+}
+
+static inline echs_event_t
+echs_event_to_utc(echs_event_t e)
+{
+	e.from = echs_instant_to_utc(e.from);
 	return e;
+}
+
+static inline echs_instant_t
+echs_tzob_shift(echs_instant_t i, int off_from, int off_to)
+{
+	echs_idiff_t df = {.d = (off_to - off_from) * 1000};
+	return echs_instant_add(i, df);
 }
 
 
@@ -404,30 +425,32 @@ snarf_rrule(const char *s, size_t z)
 		case BY_MIN:
 		case BY_SEC:
 			do {
+				long unsigned int tmu;
+
 				on = NULL;
 				/* tmp == 0U is explicitly allowed sometimes
 				 * so do the naught check where it matters */
-				tmp = strtoul(++kv, &on, 10);
+				tmu = strtoul(++kv, &on, 10);
 
 				switch (c->key) {
 				case BY_MON:
-					if (LIKELY(tmp && tmp <= 12U)) {
-						rr.mon = ass_bui31(rr.mon, tmp);
+					if (LIKELY(tmu && tmu <= 12U)) {
+						rr.mon = ass_bui31(rr.mon, tmu);
 					}
 					break;
 				case BY_HOUR:
-					if (LIKELY(tmp <= 24U)) {
-						rr.H = ass_bui31(rr.H, tmp);
+					if (LIKELY(tmu <= 24U)) {
+						rr.H = ass_bui31(rr.H, tmu);
 					}
 					break;
 				case BY_MIN:
-					if (LIKELY(tmp < 60U)) {
-						rr.M = ass_bui63(rr.M, tmp);
+					if (LIKELY(tmu < 60U)) {
+						rr.M = ass_bui63(rr.M, tmu);
 					}
 					break;
 				case BY_SEC:
-					if (LIKELY(tmp <= 60U)) {
-						rr.S = ass_bui63(rr.S, tmp);
+					if (LIKELY(tmu <= 60U)) {
+						rr.S = ass_bui63(rr.S, tmu);
 					}
 					break;
 				}
@@ -605,7 +628,7 @@ static struct dtlst_s
 snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
-	echs_tzob_t z;
+	echs_tzob_t z = 0U;
 
 	if (*eof++ == ';') {
 		/* we've got a field modifier, the only modifier
@@ -662,28 +685,48 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 	  ical_fld_t fld, const char *eof, const char *vp, const char *const ep)
 {
 /* vevent field parser */
+	if (UNLIKELY(!(ep - vp))) {
+		/* don't want empty values */
+		return -1;
+	}
+
 	switch (fld) {
+		char *on;
+
 	default:
 	case FLD_UNK:
 		/* how did we get here */
 		return -1;
 	case FLD_DTSTART:
 	case FLD_DTEND:
+	case FLD_DUE:
+	case FLD_COMPL:
 		with (echs_instant_t i = snarf_dt(eof, vp, ep)) {
 			switch (fld) {
 			case FLD_DTSTART:
-				ve->e.from = i;
-				if (!echs_nul_instant_p(ve->e.till)) {
-					break;
-				}
-				/* otherwise also set the TILL slot to I,
-				 * as kind of a sane default value */
+				ve->from = i;
+				break;
+			case FLD_COMPL:
+				ve->comp = i;
+				break;
 			case FLD_DTEND:
-				ve->e.till = i;
+				ve->till = i;
+				break;
+			case FLD_DUE:
+				ve->due = i;
 				break;
 			}
 		}
 		break;
+	case FLD_DURA:
+		with (echs_idiff_t i = idiff_strp(vp, &on, ep - vp)) {
+			if (on >= ep) {
+				/* keep track of it and do the maths later */
+				ve->dur = i;
+			}
+		}
+		break;
+
 	case FLD_XDATE:
 	case FLD_RDATE:
 		/* otherwise snarf */
@@ -734,7 +777,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 			if (!(st = add_state(vp, eos - vp))) {
 				continue;
 			}
-			ve->e.sts = stset_add_state(ve->e.sts, st);
+			ve->sts = stset_add_state(ve->sts, st);
 		}
 		break;
 	case FLD_MFILE:
@@ -742,7 +785,7 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		 * too bad we had to turn these off (b480f83 still has them) */
 		break;
 	case FLD_UID:
-		ve->t.oid = ve->e.oid = intern(vp, ep - vp);
+		ve->t.oid = intern(vp, ep - vp);
 		break;
 	case FLD_SUMM:
 		if (ve->t.cmd != NULL) {
@@ -827,6 +870,23 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		}
 		break;
 
+	case FLD_MRUN:
+		if (vp < ep) {
+			switch (*vp) {
+			case '0':
+			case 'f':
+			case 'F':
+				ve->t.mailrun = 0U;
+				ve->t.mrunset = 1U;
+				break;
+			default:
+				ve->t.mailrun = 1U;
+				ve->t.mrunset = 1U;
+				break;
+			}
+		}
+		break;
+
 	case FLD_SHELL:
 		if (ve->t.run_as.sh != NULL) {
 			/* only the first shell wins */
@@ -858,11 +918,67 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
-				ve->t.max_simul = 0U;
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
+				/* can't use that value, can we? */
+				;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
+			}
+		}
+		break;
+
+	case FLD_UMASK:
+		with (long int i = strtol(vp, &on, 8)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i > 0777)) {
+				/* not a umask we want */
+				;
+			} else {
+				/* off by one assignment */
+				ve->t.umsk = i + 1U;
+			}
+		}
+		break;
+
+	case FLD_OWNER:
+	case FLD_SUID:
+	case FLD_SGID:
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* nope */
+				const char *s = strndup(vp, ep - vp);
+
+				switch (fld) {
+				case FLD_OWNER:
+					ve->t.owner = nummapstr_bang_str(s);
+					break;
+				case FLD_SUID:
+					ve->t.run_as.u = nummapstr_bang_str(s);
+					break;
+				case FLD_SGID:
+					ve->t.run_as.g = nummapstr_bang_str(s);
+					break;
+				}
+				break;
+			}
+			/* numerical assignments here */
+			switch (fld) {
+			case FLD_OWNER:
+				ve->t.owner = nummapstr_bang_num(i);
+				break;
+			case FLD_SUID:
+				ve->t.run_as.u = nummapstr_bang_num(i);
+				break;
+			case FLD_SGID:
+				ve->t.run_as.g = nummapstr_bang_num(i);
+				break;
 			}
 		}
 		break;
@@ -875,13 +991,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_RECURID:
-		ve->e.from = dt_strp(vp, NULL, 0U);
+		ve->from = dt_strp(vp, NULL, 0U);
 		if (ep[-1] == '+') {
 			/* oh, they want to cancel all from then on */
-			ve->e.till = echs_max_instant();
+			ve->till = echs_max_instant();
 		} else {
 			/* they're just cancelling this one instance */
-			ve->e.till = echs_nul_instant();
+			ve->till = echs_nul_instant();
 		}
 		break;
 	}
@@ -895,8 +1011,15 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 /* prologue snarfer, should only be called whilst being in VCAL state */
 	(void)eof;
 
+	if (UNLIKELY(!(ep - vp))) {
+		/* don't want empty values */
+		return -1;
+	}
+
 	/* inspect the field */
 	switch (fld) {
+		char *on;
+
 	case FLD_MFILE:
 		/* aah, a file-wide MFILE directive,
 		 * too bad we had to turn these off (b480f83 still has them) */
@@ -915,20 +1038,25 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_MAX_SIMUL:
-		with (long int i = strtol(vp, NULL, 0)) {
-			if (UNLIKELY(i < 0 || i >= 63)) {
-				ve->t.max_simul = 0U;
+		with (long int i = strtol(vp, &on, 0)) {
+			if (UNLIKELY(on < ep)) {
+				/* couldn't read it */
+				;
+			} else if (UNLIKELY(i < 0 || i >= 077)) {
+				/* can't use that value, can we? */
+				;
 			} else {
+				/* off-by-one assignment */
 				ve->t.max_simul = i + 1;
 			}
 		}
 		break;
 
 	case FLD_OWNER:
-		with (long int i = strtol(vp, NULL, 0)) {
-			/* off-by-one assignment here */
-			ve->t.owner = i + 1;
-		}
+	case FLD_UMASK:
+	case FLD_SUID:
+	case FLD_SGID:
+		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
 	default:
@@ -943,8 +1071,8 @@ struct ical_parser_s {
 	enum {
 		ST_UNK,
 		ST_VCAL,
-		ST_VEVENT,
-		ST_VOTHER,
+		ST_VTOD,
+		ST_VOTH,
 	} st;
 	struct ical_vevent_s ve;
 	struct ical_vevent_s globve;
@@ -1069,8 +1197,11 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			/* oh oh oh, looks promising innit? */
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
 			    comp->comp != COMP_VCAL) {
-				p->st = ST_VOTHER;
+				p->st = ST_VOTH;
 			} else {
+				/* rinse our bucket */
+				memset(&p->globve, 0, sizeof(p->globve));
+				/* switch state */
 				p->st = ST_VCAL;
 			}
 			break;
@@ -1078,7 +1209,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		break;
 
 	default:
-	case ST_VOTHER:
+	case ST_VOTH:
 		switch (c->fld) {
 			const struct ical_comp_cell_s *comp;
 
@@ -1094,7 +1225,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
 			    comp->comp != COMP_VCAL) {
 				/* just down the depth tracker */
-				if (p->st-- == ST_VOTHER) {
+				if (p->st-- == ST_VOTH) {
 					/* and fall back to VCAL */
 					p->st = ST_VCAL;
 				}
@@ -1130,12 +1261,13 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					break;
 				} else if (c->fld == FLD_BEGIN) {
 					/* ah something else is starting */
-					p->st = ST_VOTHER;
+					p->st = ST_VOTH;
 					break;
 				}
 				/* not reached */
 			}
 			switch (comp->comp) {
+			case COMP_VTOD:
 			case COMP_VEVT:
 				if (LIKELY(c->fld == FLD_BEGIN)) {
 					/* FINALLY a vevent thing */
@@ -1144,7 +1276,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					/* copy global task properties */
 					p->ve.t = p->globve.t;
 					/* and set state to vevent */
-					p->st = ST_VEVENT;
+					p->st = ST_VTOD;
 					break;
 				}
 				/* otherwise we've ended a VEVENT whilst
@@ -1172,7 +1304,7 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		}
 		break;
 
-	case ST_VEVENT:
+	case ST_VTOD:
 		/* check for globals */
 		switch (c->fld) {
 			const struct ical_comp_cell_s *comp;
@@ -1195,7 +1327,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 		case FLD_END:
 			/* yep, that might be legit */
 			if ((comp = __evical_comp(vp, ep - vp)) == NULL ||
-			    comp->comp != COMP_VEVT) {
+			    !(comp->comp == COMP_VEVT ||
+			      comp->comp == COMP_VTOD)) {
 				/* nope it wasn't legit */
 				p->st = ST_UNK;
 				res = ICAL_EOP;
@@ -1203,9 +1336,22 @@ _ical_proc(struct ical_parser_s p[static 1U])
 			}
 			/* return to VCAL state so we can be looking forward
 			 * to other vevents as well */
-
-			/* bang vital globals: owner, etc. */
-			p->ve.t.owner = p->globve.t.owner;
+			if (!p->ve.t.owner) {
+				/* bang owner */
+				p->ve.t.owner = p->globve.t.owner;
+			}
+			if (!p->ve.t.umsk) {
+				/* bang umask */
+				p->ve.t.umsk = p->globve.t.umsk;
+			}
+			if (!p->ve.t.max_simul) {
+				/* bang umask */
+				p->ve.t.max_simul = p->globve.t.max_simul;
+			}
+			if (!p->ve.t.run_as.u) {
+				/* bang run_as */
+				p->ve.t.run_as = p->globve.t.run_as;
+			}
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -1305,7 +1451,7 @@ _ical_fini(struct ical_parser_s p[static 1U])
  * need cleaning up as well, otherwise assume our
  * ctors (make_evrrul(), etc.) free unneeded resources */
 
-	if (UNLIKELY(p->st == ST_VEVENT)) {
+	if (UNLIKELY(p->st == ST_VTOD)) {
 		free_ical_vevent(&p->ve);
 	}
 	/* free the globve */
@@ -1334,6 +1480,39 @@ send_task(int whither, echs_task_t t)
 		/* it's mandatory, so generate one */
 		fdprintf("UID:echse_merged_vevent_%u\n", auto_uid);
 	}
+	switch (t->vtod_typ) {
+	default:
+	case VTOD_TYP_UNK:
+		/* nothing to print */
+		break;
+	case VTOD_TYP_TIMEOUT: {
+		char stmp[32U] = "TIMEOUT:";
+		size_t n = strlenof("TIMEOUT:");
+
+		n += idiff_strf(stmp + n, sizeof(stmp) - n, t->timeout);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_DUE: {
+		char stmp[32U] = "DUE:";
+		size_t n = strlenof("DUE:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->due);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	case VTOD_TYP_COMPL: {
+		char stmp[32U] = "COMPLETED:";
+		size_t n = strlenof("COMPLETED:");
+
+		n += dt_strf_ical(stmp + n, sizeof(stmp) - n, t->compl);
+		stmp[n++] = '\n';
+		fdwrite(stmp, n);
+		break;
+	}
+	}
 	if (t->cmd) {
 		fdprintf("SUMMARY:%s\n", t->cmd);
 	}
@@ -1354,11 +1533,37 @@ send_task(int whither, echs_task_t t)
 	if (t->err) {
 		fdprintf("X-ECHS-EFILE:%s\n", t->err);
 	}
+	with (nummapstr_t u = t->run_as.u) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(u))) {
+			fdprintf("X-ECHS-SETUID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(u)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETUID:%u\n", (unsigned int)tmpn);
+		}
+	}
+	with (nummapstr_t g = t->run_as.g) {
+		const char *tmps;
+		uintptr_t tmpn;
+
+		if ((tmps = nummapstr_str(g))) {
+			fdprintf("X-ECHS-SETGID:%s\n", tmps);
+		} else if ((tmpn = nummapstr_num(g)) != NUMMAPSTR_NAN) {
+			fdprintf("X-ECHS-SETGID:%u\n", (unsigned int)tmpn);
+		}
+	}
 	if (t->run_as.sh) {
 		fdprintf("X-ECHS-SHELL:%s\n", t->run_as.sh);
 	}
 	if (t->run_as.wd) {
 		fdprintf("LOCATION:%s\n", t->run_as.wd);
+	}
+	if (t->umsk <= 0777) {
+		fdprintf("X-ECHS-UMASK:0%o\n", t->umsk);
+	}
+	if (t->mrunset) {
+		fdprintf("X-ECHS-MAIL-RUN:%u\n", (unsigned int)t->mailrun);
 	}
 	if (t->moutset) {
 		fdprintf("X-ECHS-MAIL-OUT:%u\n", (unsigned int)t->mailout);
@@ -1366,43 +1571,42 @@ send_task(int whither, echs_task_t t)
 	if (t->merrset) {
 		fdprintf("X-ECHS-MAIL-ERR:%u\n", (unsigned int)t->mailerr);
 	}
-	if (t->max_simul) {
-		fdprintf("X-ECHS-MAX-SIMUL:%u\n", t->max_simul - 1U);
+	if (t->max_simul < 077U) {
+		fdprintf("X-ECHS-MAX-SIMUL:%d\n", t->max_simul);
 	}
 	return;
 }
 
 static void
-send_ical_hdr(int whither)
+send_ical_hdr(int whither, bool vtodop)
 {
-	static const char beg[] = "BEGIN:VEVENT\n";
+	static const char bege[] = "BEGIN:VEVENT\n";
+	static const char begt[] = "BEGIN:VTODO\n";
 	static char stmp[32U] = "DTSTAMP:";
 	static size_t ztmp = strlenof("DTSTAMP:");
 	/* singleton, there's only one now */
 	static time_t now;
+	const char *beg = bege;
+	size_t nbeg = strlenof(bege);
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
 
-	fdwrite(beg, strlenof(beg));
+	if (vtodop) {
+		beg = begt;
+		nbeg = strlenof(begt);
+	}
+	fdwrite(beg, nbeg);
 	if (UNLIKELY(now <= 0)) {
-		struct tm tm;
 		echs_instant_t nowi;
 
-		if (UNLIKELY(time(&now) <= 0 || gmtime_r(&now, &tm) == NULL)) {
+		if (UNLIKELY(time(&now) <= 0)) {
 			/* screw up the singleton */
 			now = 0;
 			return;
 		}
 		/* otherwise fill in now and materialise */
-		nowi.y = tm.tm_year + 1900,
-			nowi.m = tm.tm_mon + 1,
-			nowi.d = tm.tm_mday,
-			nowi.H = tm.tm_hour,
-			nowi.M = tm.tm_min,
-			nowi.S = tm.tm_sec,
-			nowi.ms = ECHS_ALL_SEC;
-
+		nowi = epoch_to_echs_instant(time(&now));
 		ztmp += dt_strf_ical(stmp + ztmp, sizeof(stmp) - ztmp, nowi);
 		stmp[ztmp++] = '\n';
 	}
@@ -1411,13 +1615,21 @@ send_ical_hdr(int whither)
 }
 
 static void
-send_ical_ftr(int whither)
+send_ical_ftr(int whither, bool vtodp)
 {
-	static const char end[] = "END:VEVENT\n";
+	static const char ende[] = "END:VEVENT\n";
+	static const char endt[] = "END:VTODO\n";
+	const char *end = ende;
+	size_t nend = strlenof(ende);
+
+	if (vtodp) {
+		end = endt;
+		nend = strlenof(endt);
+	}
 
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
-	fdwrite(end, strlenof(end));
+	fdwrite(end, nend);
 	/* that's the last thing in line, just send it off */
 	fdflush();
 	return;
@@ -1454,10 +1666,11 @@ send_stset(int whither, echs_stset_t sts)
 }
 
 static void
-send_ev(int whither, echs_event_t e)
+send_ev(int whither, echs_event_t e, echs_tzob_t z)
 {
 	char stmp[32U] = {':'};
 	size_t ztmp = 1U;
+	const char *zn;
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
 		return;
@@ -1466,24 +1679,27 @@ send_ev(int whither, echs_event_t e)
 	/* tell the bufferer we want to write to WHITHER */
 	fdbang(whither);
 
-	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
-	stmp[ztmp++ + 1U] = '\n';
+	/* never wrong with this one */
 	fdwrite("DTSTART", strlenof("DTSTART"));
 	if (echs_instant_all_day_p(e.from)) {
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
+	} else if (z && (zn = echs_zone(z))) {
+		size_t zz = strlen(zn);
+
+		fdwrite(";TZID=", strlenof(";TZID="));
+		fdwrite(zn, zz);
+
+		/* also convert e.from to local Z-time */
+		e.from = echs_instant_loc(e.from, z);
 	}
+	/* the actual stamp */
+	ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.from);
+	stmp[ztmp++ + 1U] = '\n';
 	fdwrite(stmp, ztmp + 1U);
 
-	if (LIKELY(!echs_nul_instant_p(e.till))) {
-		ztmp = dt_strf_ical(stmp + 1U, sizeof(stmp) - 1U, e.till);
-		stmp[ztmp++ + 1U] = '\n';
-	} else {
-		e.till = e.from;
-	}
-	fdwrite("DTEND", strlenof("DTEND"));
-	if (echs_instant_all_day_p(e.till)) {
-		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
-	}
+	ztmp = idiff_strf(stmp + 1U, sizeof(stmp) - 1U, e.dur);
+	stmp[++ztmp] = '\n';
+	fdwrite("DURATION", strlenof("DURATION"));
 	fdwrite(stmp, ztmp + 1U);
 	if (e.sts) {
 		fdwrite("X-GA-STATE:", strlenof("X-GA-STATE:"));
@@ -1740,7 +1956,7 @@ send_evical_vevent(int whither, echs_const_evstrm_t s)
 	if (UNLIKELY(this->i >= this->nev)) {
 		return;
 	}
-	send_ev(whither, this->ev[this->i]);
+	send_ev(whither, this->ev[this->i], 0U);
 	return;
 }
 
@@ -1761,8 +1977,7 @@ instant_soup(echs_instant_t broth, echs_instant_t water, echs_tzob_t z, int eof)
 
 		if (fof != eof) {
 			/* we need to add the discrepancy onto from */
-			echs_idiff_t df = {.msd = (eof - fof) * 1000U};
-			soup = echs_instant_add(soup, df);
+			soup = echs_tzob_shift(soup, fof, eof);
 		}
 	} else if (UNLIKELY((fz = echs_instant_tzob(water)))) {
 		soup = echs_instant_utc(water, fz);
@@ -1778,7 +1993,6 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
-	echs_idiff_t dur;
 	echs_tzob_t z;
 	int eof;
 
@@ -1792,14 +2006,12 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 
 	/* let the work begin */
 	z = echs_instant_tzob(e.from);
-	e = echs_event_utc(e);
+	e.from = echs_instant_to_utc(e.from);
 	eof = echs_instant_tzof(e.from, z);
-	dur = echs_instant_diff(e.till, e.from);
 
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
 		e.from = instant_soup(e.from, d[0U], z, eof);
-		e.till = echs_instant_add(e.from, dur);
 		res->ev[0U] = e;
 	} else {
 		/* blimey, use the bottom bit of res->ev to sort the
@@ -1820,7 +2032,6 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 		/* now spread out the instants as echs events */
 		for (size_t i = 0U; i < nd; i++) {
 			e.from = rd[i];
-			e.till = echs_instant_add(e.from, dur);
 			res->ev[i] = e;
 		}
 	}
@@ -1834,7 +2045,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 static echs_evstrm_t
 __make_evvevt(echs_event_t e)
 {
-	e = echs_event_utc(e);
+	e = echs_event_to_utc(e);
 	return make_evical_vevent(&e, 1U);
 }
 
@@ -1847,8 +2058,6 @@ struct evrrul_s {
 
 	/* proto-event */
 	echs_event_t e;
-	/* proto-duration */
-	echs_idiff_t dur;
 	/* proto-zone */
 	echs_tzob_t zon;
 	/* proto-offset */
@@ -1900,13 +2109,8 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 
 	this->class = &evrrul_cls;
 	this->zon = zon = echs_instant_tzob(e.from);
-	this->e = e = echs_event_utc(e);
+	this->e = e = echs_event_to_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
-	if (echs_instant_le_p(e.from, e.till)) {
-		this->dur = echs_instant_diff(e.till, e.from);
-	} else {
-		this->dur = (echs_idiff_t){0};
-	}
 
 	/* bang the first one */
 	this->rrul = rr[0U];
@@ -2030,8 +2234,8 @@ refill(struct evrrul_s *restrict strm)
 
 		if (UNLIKELY(eof != strm->pof)) {
 			/* discrepancy, convert defo */
-			echs_idiff_t d = {.msd = (strm->pof - eof) * 1000U};
-			strm->cch[i] = echs_instant_add(strm->cch[i], d);
+			strm->cch[i] = echs_tzob_shift(
+				strm->cch[i], eof, strm->pof);
 		}
 	}
 	/* otherwise sort the array, just in case */
@@ -2057,7 +2261,6 @@ next_evrrul(echs_evstrm_t s, bool popp)
 	/* construct the result */
 	res = this->e;
 	res.from = this->cch[this->rdi];
-	res.till = echs_instant_add(res.from, this->dur);
 	if (popp) {
 		this->rdi++;
 	}
@@ -2095,9 +2298,7 @@ send_evrrul(int whither, echs_const_evstrm_t s)
 				e.from = cand;
 			}
 		}
-		/* calc the corresponding TILL instant */
-		e.till = echs_instant_add(e.from, this->dur);
-		send_ev(whither, e);
+		send_ev(whither, e, this->zon);
 	}
 	send_rrul(whither, &this->rrul, this->ncch - this->rdi);
 	return;
@@ -2134,10 +2335,10 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	send_ical_hdr(STDOUT_FILENO);
-	send_ev(STDOUT_FILENO, ev);
+	send_ical_hdr(STDOUT_FILENO, t->vtod_typ);
+	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
-	send_ical_ftr(STDOUT_FILENO);
+	send_ical_ftr(STDOUT_FILENO, t->vtod_typ);
 	return;
 }
 
@@ -2187,17 +2388,56 @@ make_task(struct ical_vevent_s *ve)
 
 	/* generate a uid on the fly */
 	if (UNLIKELY(!ve->t.oid)) {
-		ve->t.oid = ve->e.oid = echs_toid_gen(&ve->t);
+		ve->t.oid = echs_toid_gen(&ve->t);
 	}
-	/* off-by-one correction of owner, this is to indicate
-	 * an unset owner by the value of -1 */
-	ve->t.owner--;
+	/* off-by-one correction of umask, this is to indicate
+	 * an unset umask by the value of -1 */
+	ve->t.umsk--;
+	/* off-by-one correction of max_simul, this is to indicate
+	 * an unset max_simul by the value of -1 */
+	ve->t.max_simul--;
 
-	if (!ve->rrul.nr && !ve->rdat.ndt) {
+	with (echs_instant_t i = echs_instant_to_utc(ve->from)) {
+		ve->till = echs_instant_to_utc(ve->till);
+		/* transform e.from + e.till into e.dur */
+		if (echs_nul_idiff_p(ve->dur) &&
+		    echs_instant_lt_p(i, ve->till)) {
+			/* turn absolute till into duration */
+			ve->dur = echs_instant_diff(ve->till, i);
+		} else if (ve->dur.d < 0) {
+			/* negative durations are bullshit */
+			ve->dur = echs_nul_idiff();
+		}
+	}
+
+	if (!echs_nul_instant_p(ve->comp)) {
+		/* this one's a reporting vtodo/vjournal */
+		s = NULL;
+		ve->t.compl = ve->comp;
+		ve->t.vtod_typ = VTOD_TYP_COMPL;
+
+	} else if (echs_nul_instant_p(ve->from)) {
+		/* oooh must be one of them execution vtodos */
+		s = NULL;
+
+		if (!echs_nul_idiff_p(ve->dur)) {
+			ve->t.timeout = ve->dur;
+			ve->t.vtod_typ = VTOD_TYP_TIMEOUT;
+		} else if (!echs_nul_instant_p(ve->due)) {
+			ve->t.due = ve->due;
+			ve->t.vtod_typ = VTOD_TYP_DUE;
+		}
+	} else if (!ve->rrul.nr && !ve->rdat.ndt) {
 		/* not an rrule but a normal vevent */
-
 		/* free all the bits and bobs that
 		 * might have been added */
+		echs_event_t e = {
+			.from = ve->from,
+			.dur = ve->dur,
+			.oid = ve->t.oid,
+			.sts = ve->sts,
+		};
+
 		if (ve->xrul.nr) {
 			free(ve->xrul.r);
 		}
@@ -2209,9 +2449,15 @@ make_task(struct ical_vevent_s *ve)
 		}
 		assert(ve->rrul.r == NULL);
 		assert(ve->rdat.dt == NULL);
-		s = __make_evvevt(ve->e);
+		s = __make_evvevt(e);
 	} else {
 		/* it's an rrule */
+		echs_event_t e = {
+			.from = ve->from,
+			.dur = ve->dur,
+			.oid = ve->t.oid,
+			.sts = ve->sts,
+		};
 		/* rrule stream (struct evrrul_s* really) */
 		echs_evstrm_t sr;
 		/* exception stream */
@@ -2220,8 +2466,8 @@ make_task(struct ical_vevent_s *ve)
 		/* get a proto exrule stream, composed of all exrules
 		 * in a nicely evmux'd stream */
 		with (echs_evstrm_t xr, x1) {
-			xr = __make_evrrul(ve->e, ve->xrul.r, ve->xrul.nr);
-			x1 = __make_evrdat(ve->e, ve->xdat.dt, ve->xdat.ndt);
+			xr = __make_evrrul(e, ve->xrul.r, ve->xrul.nr);
+			x1 = __make_evrdat(e, ve->xdat.dt, ve->xdat.ndt);
 
 			if (xr != NULL && x1 != NULL) {
 				/* mux them into one */
@@ -2234,8 +2480,8 @@ make_task(struct ical_vevent_s *ve)
 		}
 
 		with (echs_evstrm_t rr, r1) {
-			rr = __make_evrrul(ve->e, ve->rrul.r, ve->rrul.nr);
-			r1 = __make_evrdat(ve->e, ve->rdat.dt, ve->rdat.ndt);
+			rr = __make_evrrul(e, ve->rrul.r, ve->rrul.nr);
+			r1 = __make_evrdat(e, ve->rdat.dt, ve->rdat.ndt);
 
 			if (rr != NULL && r1 != NULL) {
 				/* mux them into one */
@@ -2328,7 +2574,7 @@ echs_evical_pull(ical_parser_t p[static 1U])
 		case METH_CANCEL:
 			i.v = INSVERB_UNSC;
 			i.o = ve->t.oid;
-			i.rng = echs_event_range(ve->e);
+			i.rng = (echs_range_t){ve->from, ve->till};
 			break;
 		default:
 		case METH_ADD:
@@ -2362,16 +2608,18 @@ echs_task_icalify(int whither, echs_task_t t)
 
 	if (UNLIKELY((s = t->strm) == NULL)) {
 		/* do fuckall */
-		return;
+		;
 	} else if (UNLIKELY(echs_nul_event_p(echs_evstrm_next(s)))) {
 		/* doesn't make sense to put this guy on the wire does it */
 		return;
 	}
 
-	send_ical_hdr(whither);
+	send_ical_hdr(whither, s == NULL);
 	send_task(whither, t);
-	echs_evstrm_seria(whither, s);
-	send_ical_ftr(whither);
+	if (s != NULL) {
+		echs_evstrm_seria(whither, s);
+	}
+	send_ical_ftr(whither, s == NULL);
 	return;
 }
 
@@ -2400,10 +2648,18 @@ CALSCALE:GREGORIAN\n";
 		}
 		/* use specifics in T to declare defaults */
 		if (i.t->max_simul) {
-			fdprintf("X-ECHS-MAX-SIMUL:%u\n", i.t->max_simul - 1U);
+			fdprintf("X-ECHS-MAX-SIMUL:%d\n", i.t->max_simul);
 		}
-		if (i.t->owner) {
-			fdprintf("X-ECHS-OWNER:%d\n", i.t->owner);
+		with (nummapstr_t o = i.t->owner) {
+			const char *p;
+			uintptr_t n;
+
+			if ((p = nummapstr_str(o))) {
+				fdprintf("X-ECHS-OWNER:%s\n", p);
+			} else if ((n = nummapstr_num(o)) < NUMMAPSTR_NAN &&
+				   (unsigned int)n < -1U) {
+				fdprintf("X-ECHS-OWNER:%u\n", (unsigned int)n);
+			}
 		}
 		break;
 	case INSVERB_UNSC:

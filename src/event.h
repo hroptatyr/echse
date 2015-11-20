@@ -48,7 +48,7 @@ typedef struct echs_event_s echs_event_t;
 
 struct echs_event_s {
 	echs_instant_t from;
-	echs_instant_t till;
+	echs_idiff_t dur;
 	echs_oid_t oid;
 	echs_stset_t sts;
 };
@@ -91,7 +91,7 @@ echs_nul_event(void)
 {
 	static const echs_event_t nul = {
 		.from = {.u = 0UL},
-		.till = {.u = 0UL}
+		.dur = {0}
 	};
 	return nul;
 }
@@ -105,7 +105,7 @@ echs_nul_event_p(echs_event_t e)
 static inline __attribute__((const, pure)) echs_range_t
 echs_event_range(echs_event_t e)
 {
-	return (echs_range_t){e.from, e.till};
+	return (echs_range_t){e.from, echs_instant_add(e.from, e.dur)};
 }
 
 #endif	/* INCLUDED_event_h_ */

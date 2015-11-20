@@ -1,6 +1,6 @@
-/*** dt-strpf.h -- parser and formatter funs for echse
+/*** nummapstr.h -- numerically mapped strings
  *
- * Copyright (C) 2011-2014 Sebastian Freundt
+ * Copyright (C) 2014-2015 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -33,40 +33,46 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- **/
-#if !defined INCLUDED_dt_strpf_h_
-#define INCLUDED_dt_strpf_h_
+ ***/
+#if !defined INCLUDED_nummapstr_h_
+#define INCLUDED_nummapstr_h_
+#include <stdint.h>
+#include <stdbool.h>
 
-#include <stddef.h>
-#include "instant.h"
-#include "range.h"
+typedef uintptr_t nummapstr_t;
+#define NUMMAPSTR_NAN	((nummapstr_t)-1)
+#define NUMMAPSTR_WID	(sizeof(nummapstr_t) * 8U)
+#define NUMMAPSTR_MSK	((nummapstr_t)1 << (NUMMAPSTR_WID - 1U))
+#define NUMMAPSTR_MIN	((nummapstr_t)0)
+#define NUMMAPSTR_MAX	((nummapstr_t)INTPTRMAX)
 
-/**
- * Parse STR with the standard parser. */
-extern echs_instant_t dt_strp(const char *str, char **on, size_t len);
+
+static inline char*
+nummapstr_str(nummapstr_t x)
+{
+/* Return the string in X as char*, or NULL if X is a number. */
+	return x & NUMMAPSTR_MSK ? NULL : (void*)x;
+}
 
-/**
- * Print INST into BUF (of size BSZ) and return its length. */
-extern size_t dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst);
+static inline uintptr_t
+nummapstr_num(nummapstr_t x)
+{
+/* Return the number in X as uintptr_t, or NUMMAPSTR_NAN if X is a string. */
+	return x & NUMMAPSTR_MSK ? x ^ NUMMAPSTR_MSK : NUMMAPSTR_NAN;
+}
 
-/**
- * Print INST into BUF (of size BSZ) in ical format and return its length. */
-extern size_t dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst);
+static inline nummapstr_t
+nummapstr_bang_num(uintptr_t n)
+{
+/* Return N as nummapstr_t */
+	return n | NUMMAPSTR_MSK;
+}
 
-/**
- * Parse ISO 8601 durations as idiff object. */
-extern echs_idiff_t idiff_strp(const char *str, char **on, size_t len);
+static inline nummapstr_t
+nummapstr_bang_str(const char *s)
+{
+/* Return S as nummapstr_t */
+	return (uintptr_t)s;
+}
 
-/**
- * Print IDIFF into BUF (of size BSZ) in ISO format and return its length. */
-extern size_t idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff);
-
-/**
- * Parse STR as range with the standard parser. */
-extern echs_range_t range_strp(const char *str, char **on, size_t len);
-
-/**
- * Print RANGE into BUF (of size BSZ) in ISO format and return its length. */
-extern size_t range_strf(char *restrict buf, size_t bsz, echs_range_t range);
-
-#endif	/* INCLUDED_dt_strpf_h_ */
+#endif	/* INCLUDED_nummapstr_h_ */

@@ -44,17 +44,35 @@
 #include "strlst.h"
 #include "evstrm.h"
 #include "oid.h"
+#include "nummapstr.h"
 
 typedef const struct echs_task_s *echs_task_t;
 typedef echs_oid_t echs_toid_t;
 
 typedef struct {
-	const char *u;
-	const char *g;
+	nummapstr_t u;
+	nummapstr_t g;
 	const char *wd;
 	const char *sh;
 } cred_t;
 
+/**
+ * Task structure, this is one of the two work horse structures in echse.
+ *
+ * This structure can capture and represent
+ * - a VTODO/VEVENT recurrence (orders)
+ * - a VTODO execution
+ * - a VTODO/VJOURNAL report
+ *
+ * Recurring VTODOs or VEVENTs are determined by having a DTSTART
+ * in the ical representation whereas executional VTODOs mustn't
+ * have that but can of course have a DUE date or a DURATION.
+ *
+ * Recurring VTODOs can be determined by non-NULL STRM,
+ * whereas non-recurring VTODOs have the VTOD_TYP slot set to non-0.
+ *
+ * Conversely, we serialise recurring VTODOs as VEVENTs and executional
+ * VTODOs as VTODO. */
 struct echs_task_s {
 	echs_toid_t oid;
 
@@ -65,9 +83,8 @@ struct echs_task_s {
 	const char *cmd;
 	struct strlst_s *env;
 
-	/* owner of the task, this is meant to be a uid with values <0
-	 * indicating that this has not been set */
-	int owner;
+	/* owner of the task */
+	nummapstr_t owner;
 	/* credentials we want this job run as */
 	cred_t run_as;
 
@@ -86,11 +103,36 @@ struct echs_task_s {
 	unsigned int moutset:1U;
 	unsigned int mailerr:1U;
 	unsigned int merrset:1U;
+	unsigned int mailrun:1U;
+	unsigned int mrunset:1U;
+	/* pad to next byte */
+	unsigned int:2U;
 
 	/* maximum number of simultaneous runs, upped by 1, i.e.
 	 * 0 means -1 means infinite, 1 means 0 means never run
 	 * 2 means 1 means don't run concurrently, etc. */
 	unsigned int max_simul:6U;
+	/* more padding */
+	enum {
+		VTOD_TYP_UNK,
+		VTOD_TYP_TIMEOUT,
+		VTOD_TYP_DUE,
+		VTOD_TYP_COMPL,
+	} vtod_typ:2U;
+
+	/* just an ordinary umask value as supported by umask(1) */
+	unsigned int umsk:10U;
+	/* padding */
+	unsigned int:6U;
+
+	/* due date or timeout value if this is a (non-recurring) VTODO
+	 * (i.e. the STRM slot will be NULL)
+	 * which one it is is determined by VTOD_TYP above */
+	union {
+		echs_idiff_t timeout;
+		echs_instant_t due;
+		echs_instant_t compl;
+	};
 };
 
 
@@ -104,7 +146,7 @@ extern int echs_task_rset_toid(echs_task_t t, echs_toid_t oid);
 /**
  * Forcefully change owner of T to UID.
  * Negative values of UID `unset' the owner field. */
-extern int echs_task_rset_ownr(echs_task_t t, int uid);
+extern int echs_task_rset_ownr(echs_task_t t, unsigned int uid);
 
 
 /* convenience */
@@ -112,12 +154,6 @@ static inline __attribute__((const, pure)) bool
 echs_task_eq_p(echs_task_t t1, echs_task_t t2)
 {
 	return t1 == t2 || (t1 && t2 && t1->oid == t2->oid);
-}
-
-static inline __attribute__((const, pure)) bool
-echs_task_owned_by_p(echs_task_t t, int uid)
-{
-	return (t->owner & uid) == uid;
 }
 
 #endif	/* INCLUDED_task_h_ */

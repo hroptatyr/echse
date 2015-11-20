@@ -40,6 +40,7 @@ libechse_la_SOURCES += event.c event.h
 libechse_la_SOURCES += oid.h
 libechse_la_SOURCES += instruc.h
 libechse_la_SOURCES += fdprnt.h
+libechse_la_SOURCES += nummapstr.h
 libechse_la_SOURCES += evstrm.c evstrm.h
 libechse_la_SOURCES += evical.c evical.h
 libechse_la_SOURCES += evrrul.c evrrul.h
@@ -51,6 +52,7 @@ libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += bitint.c bitint.h
 EXTRA_libechse_la_SOURCES += bitint-bobs.c
 libechse_la_SOURCES += nifty.h
+libechse_la_SOURCES += sock.h
 libechse_la_SOURCES += echse-genuid.c echse-genuid.c
 libechse_la_CPPFLAGS = $(AM_CPPFLAGS)
 libechse_la_CPPFLAGS += $(LTDLINCL)
@@ -97,13 +99,16 @@ if HAVE_LIBEV
 if HAVE_RT_FUNS
 bin_PROGRAMS += echsx
 echsx_SOURCES = echsx.c echsx.yuck
+echsx_SOURCES += version.h version.c
 echsx_SOURCES += logger.c logger.h
 echsx_SOURCES += nifty.h
 echsx_CPPFLAGS = $(AM_CPPFLAGS)
+echsx_CPPFLAGS += -DHAVE_VERSION_H
 echsx_LDFLAGS = $(AM_LDFLAGS)
 echsx_LDFLAGS += $(rt_LIBS)
 echsx_CPPFLAGS += $(ev_CFLAGS)
 echsx_LDFLAGS += $(ev_LIBS)
+echsx_LDADD = libechse.la
 BUILT_SOURCES += echsx.yucc
 endif  HAVE_RT_FUNS
 
@@ -112,6 +117,8 @@ echsd_SOURCES = echsd.c echsd.yuck
 echsd_SOURCES += logger.c logger.h
 echsd_SOURCES += nifty.h
 echsd_SOURCES += nedtrie.h
+echsd_SOURCES += $(top_srcdir)/debian/echse.init
+echsd_SOURCES += $(top_srcdir)/debian/echse.default
 echsd_CPPFLAGS = $(AM_CPPFLAGS)
 echsd_LDFLAGS = $(AM_LDFLAGS)
 echsd_CPPFLAGS += $(ev_CFLAGS)

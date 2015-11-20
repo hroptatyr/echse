@@ -45,44 +45,129 @@
 #include "dt-strpf.h"
 #include "nifty.h"
 
+#define HOURS_PER_DAY	(24U)
+#define MINS_PER_HOUR	(60U)
+#define SECS_PER_MIN	(60U)
+#define MSECS_PER_SEC	(1000U)
+#define SECS_PER_DAY	(HOURS_PER_DAY * MINS_PER_HOUR * SECS_PER_MIN)
+#define MSECS_PER_DAY	(SECS_PER_DAY * MSECS_PER_SEC)
+#define DAYS_PER_WEEK	(7U)
+#define DAYS_PER_YEAR	(365U)
+
+static __attribute__((const, pure)) unsigned int
+ilog2_ceil(unsigned int n)
+{
+/* return the next 2-power > N, at least 16 though */
+	static const uint8_t de_bruijns[] = {
+		1U, 10U, 2U, 11U, 14U, 22U, 3U, 30U,
+		12U, 15U, 17U, 19U, 23U, 26U, 4U, 31U,
+		9U, 13U, 21U, 29U, 16U, 18U, 25U, 8U,
+		20U, 28U, 24U, 7U, 27U, 6U, 5U, 32U,
+	};
+	n |= 0b1111U;
+	n |= n >> 1U;
+	n |= n >> 2U;
+	n |= n >> 4U;
+	n |= n >> 8U;
+	n |= n >> 16U;
+	return de_bruijns[(uint32_t)(n * 0x07c4acddu) >> 27U];
+}
+
+static __attribute__((const, pure)) unsigned int
+ilog10_ceil(unsigned int n)
+{
+	static unsigned int const _10_pows[] = {
+		1U, 10U, 100U, 1000U, 10000U, 100000U,
+		1000000U, 10000000U, 100000000U, 1000000000U,
+	};
+	unsigned int l2 = ilog2_ceil(n);
+
+	/* get estimate for 10-power */
+	l2 = l2 * 1233U >> 12U;
+	return l2 + (n >= _10_pows[l2]);
+}
+
+
 static size_t
-ui32tostr(char *restrict buf, size_t bsz, uint32_t d, int pad)
+ui32tpstr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 {
 /* all strings should be little */
-#define C(x, d)	(char)((x) / (d) % 10 + '0')
+#define C(x)	(char)((x) % 10U ^ '0'); x /= 10U
 	size_t res;
+	size_t i;
 
 	if (UNLIKELY(d > 1000000000)) {
-		return 0;
+		return 0U;
+	} else if ((res = (size_t)pad) > bsz) {
+		return 0U;
 	}
-	switch ((res = (size_t)pad) < bsz ? res : bsz) {
-	case 9:
+	switch ((i = res)) {
+	case 9U:
 		/* for nanoseconds */
-		buf[pad - 9] = C(d, 100000000);
-		buf[pad - 8] = C(d, 10000000);
-		buf[pad - 7] = C(d, 1000000);
-	case 6:
+		buf[--i] = C(d);
+		buf[--i] = C(d);
+		buf[--i] = C(d);
+	case 6U:
 		/* for microseconds */
-		buf[pad - 6] = C(d, 100000);
-		buf[pad - 5] = C(d, 10000);
-	case 4:
+		buf[--i] = C(d);
+		buf[--i] = C(d);
+	case 4U:
 		/* for western year numbers */
-		buf[pad - 4] = C(d, 1000);
-	case 3:
+		buf[--i] = C(d);
+	case 3U:
 		/* for milliseconds or doy et al. numbers */
-		buf[pad - 3] = C(d, 100);
-	case 2:
+		buf[--i] = C(d);
+	case 2U:
 		/* hours, mins, secs, doms, moys, etc. */
-		buf[pad - 2] = C(d, 10);
-	case 1:
-		buf[pad - 1] = C(d, 1);
+		buf[--i] = C(d);
+	case 1U:
+		buf[--i] = C(d);
 		break;
 	default:
 	case 0:
-		res = 0;
+		res = 0U;
 		break;
 	}
 	return res;
+}
+
+static size_t
+ui32tostr(char *restrict buf, size_t bsz, uint32_t d)
+{
+	unsigned int l = ilog10_ceil(d);
+	unsigned int i;
+
+	if (UNLIKELY(l >= bsz)) {
+		return 0U;
+	}
+	switch ((i = l)) {
+	case 10U:
+		buf[--i] = C(d);
+	case 9U:
+		buf[--i] = C(d);
+	case 8U:
+		buf[--i] = C(d);
+	case 7U:
+		buf[--i] = C(d);
+	case 6U:
+		buf[--i] = C(d);
+	case 5U:
+		buf[--i] = C(d);
+	case 4U:
+		buf[--i] = C(d);
+	case 3U:
+		buf[--i] = C(d);
+	case 2U:
+		buf[--i] = C(d);
+	case 1U:
+		buf[--i] = C(d);
+		break;
+	case 0U:
+	default:
+		break;
+	}
+	return l;
+#undef C
 }
 
 
@@ -282,22 +367,22 @@ dt_strf(char *restrict buf, size_t bsz, echs_instant_t inst)
 	char *restrict bp = buf;
 #define bz	(bsz - (bp - buf))
 
-	bp += ui32tostr(bp, bz, inst.y, 4);
+	bp += ui32tpstr(bp, bz, inst.y, 4);
 	*bp++ = '-';
-	bp += ui32tostr(bp, bz, inst.m, 2);
+	bp += ui32tpstr(bp, bz, inst.m, 2);
 	*bp++ = '-';
-	bp += ui32tostr(bp, bz, inst.d, 2);
+	bp += ui32tpstr(bp, bz, inst.d, 2);
 
 	if (LIKELY(!echs_instant_all_day_p(inst))) {
 		*bp++ = 'T';
-		bp += ui32tostr(bp, bz, inst.H, 2);
+		bp += ui32tpstr(bp, bz, inst.H, 2);
 		*bp++ = ':';
-		bp += ui32tostr(bp, bz, inst.M, 2);
+		bp += ui32tpstr(bp, bz, inst.M, 2);
 		*bp++ = ':';
-		bp += ui32tostr(bp, bz, inst.S, 2);
+		bp += ui32tpstr(bp, bz, inst.S, 2);
 		if (LIKELY(!echs_instant_all_sec_p(inst))) {
 			*bp++ = '.';
-			bp += ui32tostr(bp, bz, inst.ms, 3);
+			bp += ui32tpstr(bp, bz, inst.ms, 3);
 		}
 	}
 	*bp = '\0';
@@ -310,20 +395,224 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 	char *restrict bp = buf;
 #define bz	(bsz - (bp - buf))
 
-	bp += ui32tostr(bp, bz, inst.y, 4);
-	bp += ui32tostr(bp, bz, inst.m, 2);
-	bp += ui32tostr(bp, bz, inst.d, 2);
+	bp += ui32tpstr(bp, bz, inst.y, 4);
+	bp += ui32tpstr(bp, bz, inst.m, 2);
+	bp += ui32tpstr(bp, bz, inst.d, 2);
 
 	if (LIKELY(!echs_instant_all_day_p(inst))) {
 		*bp++ = 'T';
-		bp += ui32tostr(bp, bz, inst.H, 2);
-		bp += ui32tostr(bp, bz, inst.M, 2);
-		bp += ui32tostr(bp, bz, inst.S, 2);
+		bp += ui32tpstr(bp, bz, inst.H, 2);
+		bp += ui32tpstr(bp, bz, inst.M, 2);
+		bp += ui32tpstr(bp, bz, inst.S, 2);
 		*bp++ = 'Z';
 	}
 	*bp = '\0';
 	return bp - buf;
+#undef bz
 }
+
+
+echs_idiff_t
+idiff_strp(const char *str, char **on, size_t len)
+{
+/* Format Definition:  This value type is defined by the following
+ * notation:
+ *
+ * dur-value  = (["+"] / "-") "P" (dur-date / dur-time / dur-week)
+ *
+ * dur-date   = dur-day [dur-time]
+ * dur-time   = "T" (dur-hour / dur-minute / dur-second)
+ * dur-week   = 1*DIGIT "W"
+ * dur-hour   = 1*DIGIT "H" [dur-minute]
+ * dur-minute = 1*DIGIT "M" [dur-second]
+ * dur-second = 1*DIGIT "S"
+ * dur-day    = 1*DIGIT "D"
+ */
+	size_t i = 0U;
+	echs_idiff_t res = {0};
+	int dd = 0, msd = 0;
+	bool negp = false;
+	bool seen_D_p = false;
+	bool seen_W_p = false;
+	/* a special stepping to combine 'H'-seen, 'M'-seen, 'S'-seen
+	 * based on their ASCII values, 0x1, 0x11, 9x111 */
+	uint8_t step = 0U;
+	unsigned int val;
+
+	if (UNLIKELY(len < 3U)) {
+		goto out;
+	}
+	switch (str[i++]) {
+	case 'P':
+		break;
+	case '-':
+		negp = true;
+	case '+':
+		switch (str[i++]) {
+		case 'P':
+			break;
+		default:
+			/* nope */
+			goto out;
+		}
+	default:
+		goto out;
+	}
+
+more_date:
+	val = 0U;
+	for (; i < len; i++) {
+		unsigned int tmp;
+
+		if ((tmp = str[i] ^ '0') >= 10U) {
+			break;
+		}
+		/* add next 10-power */
+		val *= 10U;
+		val += tmp;
+	}
+	switch (str[i++]) {
+	case 'T':
+		/* switch to time snarfing */
+		break;
+	case 'W':
+		if (UNLIKELY(seen_W_p)) {
+			res = (echs_idiff_t){0};
+			goto out;
+		}
+		seen_W_p = true;
+		dd += val * 7U;
+		goto more_date;
+	case 'D':
+		if (UNLIKELY(seen_D_p)) {
+			res = (echs_idiff_t){0};
+			goto out;
+		}
+		seen_D_p = true;
+		dd += val;
+		goto more_date;
+	default:
+		goto out;
+	}
+
+more_time:
+	val = 0U;
+	for (; i < len; i++) {
+		unsigned int tmp;
+
+		if ((tmp = str[i] ^ '0') >= 10U) {
+			break;
+		}
+		/* add next 10-power */
+		val *= 10U;
+		val += tmp;
+	}
+	/* here we just deflect the true character by some bits
+	 * made up from STEP because 'M' | 0x1U == 'M', same for 'S'
+	 * and 'S' | 0x11U == 'S' */
+	switch (str[i++] | step) {
+	case 'H':
+		step |= 0x1U;
+		msd += val * 60U * 60U * 1000U;
+		goto more_time;
+	case 'M':
+		step |= 0x11U;
+		msd += val * 60U * 1000U;
+		goto more_time;
+	case 'S':
+		step |= 0x21U;
+		msd += val * 1000U;
+		goto more_time;
+	default:
+		goto out;
+	}
+
+out:
+	/* make up the idiff object */
+	res.d = dd * MSECS_PER_DAY + msd;
+	/* check for negativity, in reality we don't want negative durations
+	 * in our problem domain, ever.  they make no sense */
+	if (negp) {
+		/* keep a positive rest and negate the dd field */
+		res.d = -res.d;
+	}
+
+	if (on != NULL) {
+		*on = deconst(str + i);
+	}
+	return res;
+}
+
+size_t
+idiff_strf(char *restrict buf, size_t bsz, echs_idiff_t idiff)
+{
+	unsigned int tmp;
+	size_t i = 0U;
+
+	if (UNLIKELY(bsz < 4U)) {
+		return 0U;
+	}
+	if (UNLIKELY(idiff.d < 0)) {
+		buf[i++] = '-';
+		idiff.d = -idiff.d;
+	}
+	buf[i++] = 'P';
+	if (echs_nul_idiff_p(idiff)) {
+		buf[i++] = '0';
+		buf[i++] = 'D';
+		goto out;
+	}
+	if ((tmp = idiff.d / MSECS_PER_DAY)) {
+		idiff.d %= MSECS_PER_DAY;
+		i += ui32tostr(buf + i, bsz - i, tmp);
+		if (i >= bsz) {
+			goto out;
+		}
+		buf[i++] = 'D';
+	}
+	if (idiff.d && i < bsz) {
+		buf[i++] = 'T';
+
+		tmp = idiff.d / (60U * 60U * 1000U);
+		idiff.d %= 60U * 60U * 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'H';
+		}
+
+		tmp = idiff.d / (60U * 1000U);
+		idiff.d %= 60U * 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'M';
+		}
+
+		tmp = idiff.d / 1000U;
+		idiff.d %= 1000U;
+		if (tmp) {
+			i += ui32tostr(buf + i, bsz - i, tmp);
+			if (i >= bsz) {
+				goto out;
+			}
+			buf[i++] = 'S';
+		}
+	}
+
+out:
+	if (LIKELY(i < bsz)) {
+		buf[i] = '\0';
+	} else {
+		buf[--i] = '\0';
+	}
+	return i;
+}
+
 
 echs_range_t
 range_strp(const char *str, char **on, size_t len)
@@ -340,7 +629,7 @@ range_strp(const char *str, char **on, size_t len)
 		r.beg = dt_strp(str, &op, len);
 	}
 	switch (*op++) {
-	case '-':
+	case '/':
 		/* just a normal range then, innit? */
 		r.end = dt_strp(op, on, len - (op - str));
 		break;
@@ -373,7 +662,7 @@ range_strf(char *restrict str, size_t ssz, echs_range_t r)
 		n += dt_strf(str, ssz, r.beg);
 	}
 	if (n < ssz && !echs_max_instant_p(r.end)) {
-		str[n++] = '-';
+		str[n++] = '/';
 		n += dt_strf(str + n, ssz - n, r.end);
 	} else if (n < ssz) {
 		str[n++] = '+';

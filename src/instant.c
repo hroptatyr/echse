@@ -195,16 +195,16 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 		extra_df += df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
 	}
 
-	return (echs_idiff_t){extra_df, intra_df};
+	return (echs_idiff_t){extra_df * MSECS_PER_DAY + intra_df};
 }
 
 echs_instant_t
 echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 {
 	echs_instant_t res = bas;
-	int dd = add.dd;
-	int msd = add.msd;
-	int car;
+	int dd = add.d / (int)MSECS_PER_DAY;
+	int msd = add.d % (int)MSECS_PER_DAY;
+	int car, cdr;
 
 	if (UNLIKELY(echs_instant_all_day_p(bas))) {
 		/* just fix up the day, dom and year portion */
@@ -216,30 +216,51 @@ echs_instant_add(echs_instant_t bas, echs_idiff_t add)
 	}
 
 	car = (res.ms + msd) / (int)MSECS_PER_SEC;
-	res.ms = (res.ms + msd) % (int)MSECS_PER_SEC;
+	if ((cdr = (res.ms + msd) % (int)MSECS_PER_SEC) >= 0) {
+		res.ms = cdr;
+	} else {
+		res.ms = cdr + MSECS_PER_SEC;
+		car--;
+	}
 	msd = car;
 fixup_S:
 	car = (res.S + msd) / (int)SECS_PER_MIN;
-	res.S = (res.S + msd) % (int)SECS_PER_MIN;
+	if ((cdr = (res.S + msd) % (int)SECS_PER_MIN) >= 0) {
+		res.S = cdr;
+	} else {
+		res.S = cdr + SECS_PER_MIN;
+		car--;
+	}
 	msd = car;
 
-	car = (res.M + msd) / (int)MINS_PER_HOUR;
-	res.M = (res.M + msd) % (int)MINS_PER_HOUR;
+	car = ((int)res.M + msd) / (int)MINS_PER_HOUR;
+	if ((cdr = ((int)res.M + msd) % (int)MINS_PER_HOUR) >= 0) {
+		res.M = cdr;
+	} else {
+		res.M = cdr + MINS_PER_HOUR;
+		car--;
+	}
 	msd = car;
 
 	car = (res.H + msd) / (int)HOURS_PER_DAY;
-	res.H = (res.H + msd) % (int)HOURS_PER_DAY;
+	if ((cdr = (res.H + msd) % (int)HOURS_PER_DAY) >= 0) {
+		res.H = cdr;
+	} else {
+		res.H = cdr + HOURS_PER_DAY;
+		car--;
+	}
 	msd = car;
 
 	/* get ready to adjust the day */
 	if (UNLIKELY(msd)) {
+		dd += msd;
+	}
+	if (dd) {
 		int df_y;
 		int df_m;
 		int y;
 		int m;
 		int d;
-
-		dd += msd;
 
 	fixup_d:
 		y = bas.y + dd / (int)DAYS_PER_YEAR;
