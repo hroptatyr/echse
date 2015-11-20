@@ -630,7 +630,9 @@ END:VCALENDAR\n";
 	close(pd[0U]);
 
 	/* feed the shell */
-	write(pd[1U], cat, strlenof(cat));
+	fdbang(pd[1U]);
+	fdwrite(cat, strlenof(cat));
+	fdflush();
 	if (!(ifd < 0)) {
 #if defined HAVE_SENDFILE
 		for (ssize_t nsf;
@@ -657,7 +659,8 @@ END:VCALENDAR\n";
 		     tot += nwr);
 	}
 	/* feed more to shell */
-	write(pd[1U], eof, strlenof(eof));
+	fdwrite(eof, strlenof(eof));
+	fdflush();
 	close(pd[1U]);
 
 	/* let's hang around and have a beer */
