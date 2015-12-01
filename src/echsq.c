@@ -823,8 +823,7 @@ http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
 	long unsigned int rc;
 	const char *spc;
 
-	(void)bsz;
-	if (UNLIKELY((spc = strchr(buf, ' ')) == NULL)) {
+	if (UNLIKELY((spc = memchr(buf, ' ', bsz)) == NULL)) {
 		*cod = NULL;
 		return -1;
 	}
