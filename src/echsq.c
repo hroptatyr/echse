@@ -650,6 +650,7 @@ END:VCALENDAR\n";
 		}
 		(void)fz;
 #endif	/* HAVE_SENDFILE */
+		close(ifd);
 	} else {
 		/* just write the built-in proto */
 		const char *const bp = builtin_proto;
@@ -686,6 +687,9 @@ END:VCALENDAR\n";
 clo:
 	(void)umask(cur_msk);
 	unlink(tmpfn);
+	if (!(ifd < 0)) {
+		close(ifd);
+	}
 	close(pd[0U]);
 	close(pd[1U]);
 	close(tmpfd);
