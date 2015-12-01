@@ -705,10 +705,14 @@ massage(echs_task_t t)
 
 	if (_t->run_as.wd == NULL) {
 		/* fill in pwd */
-		size_t z = (size_t)pathconf(".", _PC_PATH_MAX);
+		long int lim = pathconf(".", _PC_PATH_MAX);
+		size_t z;
 		char *p;
 
-		if (LIKELY((p = malloc(z)) != NULL)) {
+		if (UNLIKELY(lim < 0)) {
+			/* oh well, next time maybe */
+			;
+		} else if (LIKELY((p = malloc(z = lim)) != NULL)) {
 			_t->run_as.wd = getcwd(p, z);
 		}
 	}
