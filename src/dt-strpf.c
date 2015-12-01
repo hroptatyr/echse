@@ -107,19 +107,24 @@ ui32tpstr(char *restrict buf, size_t bsz, uint32_t d, int pad)
 		buf[--i] = C(d);
 		buf[--i] = C(d);
 		buf[--i] = C(d);
+		/*@fallthrough@*/
 	case 6U:
 		/* for microseconds */
 		buf[--i] = C(d);
 		buf[--i] = C(d);
+		/*@fallthrough@*/
 	case 4U:
 		/* for western year numbers */
 		buf[--i] = C(d);
+		/*@fallthrough@*/
 	case 3U:
 		/* for milliseconds or doy et al. numbers */
 		buf[--i] = C(d);
+		/*@fallthrough@*/
 	case 2U:
 		/* hours, mins, secs, doms, moys, etc. */
 		buf[--i] = C(d);
+		/*@fallthrough@*/
 	case 1U:
 		buf[--i] = C(d);
 		break;
@@ -447,6 +452,7 @@ idiff_strp(const char *str, char **on, size_t len)
 		break;
 	case '-':
 		negp = true;
+		/*@fallthrough@*/
 	case '+':
 		switch (str[i++]) {
 		case 'P':
