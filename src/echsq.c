@@ -589,9 +589,9 @@ END:VCALENDAR\n";
 	} else {
 		struct stat st;
 
-		if (stat(fn, &st) < 0) {
+		if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
 			return -1;
-		} else if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
+		} else if (fstat(ifd, &st) < 0) {
 			return -1;
 		}
 		/* otherwise keep track of size */
