@@ -750,7 +750,7 @@ compl_owner(nummapstr_t o)
 	if ((tmps = nummapstr_str(o))) {
 		/* numerify owner */
 		return compl_user(tmps);
-	} else if ((tmpu = nummapstr_num(o)) < NUMMAPSTR_NAN) {
+	} else if ((tmpu = nummapstr_num(o)) != NUMMAPSTR_NAN) {
 		return compl_uid(tmpu);
 	}
 	/* else fucked */

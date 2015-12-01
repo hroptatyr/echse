@@ -1173,7 +1173,7 @@ DESCRIPTION:$?=%d  %ldkB mem\\n\n\
 flsh:
 	fdwrite(jftr, strlenof(jftr));
 	fdflush();
-	fdunlck(STDOUT_FILENO);
+	for (size_t i = 3U; i && fdunlck(STDOUT_FILENO) < 0; i--);
 	return 0;
 }
 

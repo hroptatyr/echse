@@ -575,6 +575,7 @@ END:VCALENDAR\n";
 		"sh", "-s", NULL
 	};
 	posix_spawn_file_actions_t fa;
+	mode_t cur_msk;
 	size_t fz;
 	int pd[2U] = {-1, -1};
 	int rc = 0;
@@ -589,9 +590,9 @@ END:VCALENDAR\n";
 	} else {
 		struct stat st;
 
-		if (stat(fn, &st) < 0) {
+		if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
 			return -1;
-		} else if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
+		} else if (fstat(ifd, &st) < 0) {
 			return -1;
 		}
 		/* otherwise keep track of size */
@@ -599,6 +600,7 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
+	cur_msk = umask(0700);
 	if ((tmpfd = mkstemp(tmpfn)) < 0) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
@@ -648,6 +650,7 @@ END:VCALENDAR\n";
 		}
 		(void)fz;
 #endif	/* HAVE_SENDFILE */
+		close(ifd);
 	} else {
 		/* just write the built-in proto */
 		const char *const bp = builtin_proto;
@@ -682,10 +685,16 @@ END:VCALENDAR\n";
 	lseek(tmpfd, 0, SEEK_SET);
 	return tmpfd;
 clo:
+	(void)umask(cur_msk);
 	unlink(tmpfn);
+	if (!(ifd < 0)) {
+		close(ifd);
+	}
 	close(pd[0U]);
 	close(pd[1U]);
-	close(tmpfd);
+	if (!(tmpfd < 0)) {
+		close(tmpfd);
+	}
 	return -1;
 }
 
@@ -696,10 +705,14 @@ massage(echs_task_t t)
 
 	if (_t->run_as.wd == NULL) {
 		/* fill in pwd */
-		size_t z = (size_t)pathconf(".", _PC_PATH_MAX);
+		long int lim = pathconf(".", _PC_PATH_MAX);
+		size_t z;
 		char *p;
 
-		if (LIKELY((p = malloc(z)) != NULL)) {
+		if (UNLIKELY(lim < 0)) {
+			/* oh well, next time maybe */
+			;
+		} else if (LIKELY((p = malloc(z = lim)) != NULL)) {
 			_t->run_as.wd = getcwd(p, z);
 		}
 	}
@@ -823,8 +836,7 @@ http_ret_cod(const char *buf, char *cod[static 1U], size_t bsz)
 	long unsigned int rc;
 	const char *spc;
 
-	(void)bsz;
-	if (UNLIKELY((spc = strchr(buf, ' ')) == NULL)) {
+	if (UNLIKELY((spc = memchr(buf, ' ', bsz)) == NULL)) {
 		*cod = NULL;
 		return -1;
 	}
@@ -1001,7 +1013,7 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 #define BUF	(buf + bix)
 #define BSZ	(sizeof(buf) - bix)
 #define CHK_BIX()				\
-	if (UNLIKELY(bix > sizeof(buf))) {	\
+	if (UNLIKELY(bix >= sizeof(buf))) {	\
 		goto reqstr_err;		\
 	} else (void)0				\
 
@@ -1220,6 +1232,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char vers[] = " HTTP/1.1\r\n\r\n";
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
+	mode_t cur_msk = umask(0700);
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
@@ -1231,16 +1244,19 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 		return 1;
 	} else if (UNLIKELY((tmpfd = mkstemp(tmpfn)) < 0)) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
-		return 1;
+		goto rset_msk_err;
 	} else if ((s = get_esock(realm)) < 0 && (s = get_esock(++realm)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
-		return 1;
+		goto rset_msk_err;
 	}
+
+	/* reset umask */
+	(void)umask(cur_msk);
 
 #define BUF	(buf + bix)
 #define BSZ	(sizeof(buf) - bix)
 #define CHK_BIX()				\
-	if (UNLIKELY(bix > sizeof(buf))) {	\
+	if (UNLIKELY(bix >= sizeof(buf))) {	\
 		goto reqstr_err;		\
 	} else (void)0				\
 
@@ -1317,6 +1333,11 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 reqstr_err:
 	serror("\
 Error: cannot build request string");
+	free_conn(s);
+	return 1;
+
+rset_msk_err:
+	(void)umask(cur_msk);
 	return 1;
 }
 
