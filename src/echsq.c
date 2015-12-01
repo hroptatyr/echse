@@ -1007,7 +1007,7 @@ cmd_list(struct yuck_cmd_list_s argi[static 1U])
 #define BUF	(buf + bix)
 #define BSZ	(sizeof(buf) - bix)
 #define CHK_BIX()				\
-	if (UNLIKELY(bix > sizeof(buf))) {	\
+	if (UNLIKELY(bix >= sizeof(buf))) {	\
 		goto reqstr_err;		\
 	} else (void)0				\
 
@@ -1250,7 +1250,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 #define BUF	(buf + bix)
 #define BSZ	(sizeof(buf) - bix)
 #define CHK_BIX()				\
-	if (UNLIKELY(bix > sizeof(buf))) {	\
+	if (UNLIKELY(bix >= sizeof(buf))) {	\
 		goto reqstr_err;		\
 	} else (void)0				\
 
