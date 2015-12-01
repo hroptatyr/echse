@@ -51,14 +51,14 @@ static inline char*
 nummapstr_str(nummapstr_t x)
 {
 /* Return the string in X as char*, or NULL if X is a number. */
-	return x & NUMMAPSTR_MSK ? NULL : (void*)x;
+	return (x & NUMMAPSTR_MSK) ? NULL : (void*)x;
 }
 
 static inline uintptr_t
 nummapstr_num(nummapstr_t x)
 {
 /* Return the number in X as uintptr_t, or NUMMAPSTR_NAN if X is a string. */
-	return x & NUMMAPSTR_MSK ? x ^ NUMMAPSTR_MSK : NUMMAPSTR_NAN;
+	return (x & NUMMAPSTR_MSK) ? x ^ NUMMAPSTR_MSK : NUMMAPSTR_NAN;
 }
 
 static inline nummapstr_t
