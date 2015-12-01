@@ -692,7 +692,9 @@ clo:
 	}
 	close(pd[0U]);
 	close(pd[1U]);
-	close(tmpfd);
+	if (!(tmpfd < 0)) {
+		close(tmpfd);
+	}
 	return -1;
 }
 
