@@ -575,6 +575,7 @@ END:VCALENDAR\n";
 		"sh", "-s", NULL
 	};
 	posix_spawn_file_actions_t fa;
+	mode_t cur_msk;
 	size_t fz;
 	int pd[2U] = {-1, -1};
 	int rc = 0;
@@ -599,6 +600,7 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
+	cur_msk = umask(0700);
 	if ((tmpfd = mkstemp(tmpfn)) < 0) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
@@ -682,6 +684,7 @@ END:VCALENDAR\n";
 	lseek(tmpfd, 0, SEEK_SET);
 	return tmpfd;
 clo:
+	(void)umask(cur_msk);
 	unlink(tmpfn);
 	close(pd[0U]);
 	close(pd[1U]);
@@ -1219,6 +1222,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char vers[] = " HTTP/1.1\r\n\r\n";
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
+	mode_t cur_msk = umask(0700);
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
@@ -1230,11 +1234,14 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 		return 1;
 	} else if (UNLIKELY((tmpfd = mkstemp(tmpfn)) < 0)) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
-		return 1;
+		goto rset_msk_err;
 	} else if ((s = get_esock(realm)) < 0 && (s = get_esock(++realm)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
-		return 1;
+		goto rset_msk_err;
 	}
+
+	/* reset umask */
+	(void)umask(cur_msk);
 
 #define BUF	(buf + bix)
 #define BSZ	(sizeof(buf) - bix)
@@ -1316,6 +1323,10 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 reqstr_err:
 	serror("\
 Error: cannot build request string");
+	return 1;
+
+rset_msk_err:
+	(void)umask(cur_msk);
 	return 1;
 }
 
