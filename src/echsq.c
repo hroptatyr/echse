@@ -1323,6 +1323,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 reqstr_err:
 	serror("\
 Error: cannot build request string");
+	free_conn(s);
 	return 1;
 
 rset_msk_err:
