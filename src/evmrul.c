@@ -189,7 +189,6 @@ next_evmrul_past(echs_evstrm_t s, bool popp)
 	 * check if RES is entirely before AUX we're on our way */
 	if (!echs_instant_le_p(res_til, aux.from)) {
 		/* ah, we need to move RES just before AUX.FROM */
-		res_til = aux.from;
 		res.from = echs_instant_add(aux.from, echs_idiff_neg(res.dur));
 	}
 out:
