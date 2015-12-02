@@ -622,7 +622,8 @@ END:VCALENDAR\n";
 
 	/* call /bin/sh with the above proto-task as here-document
 	 * and stdout redir'd to FD */
-	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+	if (UNLIKELY(rc < 0 ||
+		     posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
 		serror("Error: cannot run /bin/sh");
 		posix_spawn_file_actions_destroy(&fa);
 		goto clo;
@@ -714,8 +715,12 @@ massage(echs_task_t t)
 		if (UNLIKELY(lim < 0)) {
 			/* oh well, next time maybe */
 			;
-		} else if (LIKELY((p = malloc(z = lim)) != NULL)) {
-			_t->run_as.wd = getcwd(p, z);
+		} else if (UNLIKELY((p = malloc(z = lim)) == NULL)) {
+			/* nevermind, I had a tough life too */
+			;
+		} else if (UNLIKELY((_t->run_as.wd = getcwd(p, z)) == NULL)) {
+			/* nobody steals my memory cells! */
+			free(p);
 		}
 	}
 	if (_t->run_as.sh == NULL) {
@@ -1165,12 +1170,12 @@ static int
 cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	const bool ttyp = isatty(STDIN_FILENO);
+	const bool use_tmpl_p = !argi->nargs && isatty(STDIN_FILENO);
 	size_t i = 0U;
 	int fd;
 	int s;
 
-	if (!argi->nargs && ttyp) {
+	if (use_tmpl_p) {
 		/* ah, use a template and fire up an editor */
 		if (UNLIKELY((fd = use_tmpl()) < 0)) {
 			return 1;
@@ -1186,7 +1191,7 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 	}
 
 	write(s, vcal_hdr, strlenof(vcal_hdr));
-	if (!argi->nargs && ttyp) {
+	if (use_tmpl_p) {
 		/* template mode,
 		 * gcc might think we haven't init'd fd but fact is
 		 * we have a similar predicate to this one right at
