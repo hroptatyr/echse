@@ -715,8 +715,12 @@ massage(echs_task_t t)
 		if (UNLIKELY(lim < 0)) {
 			/* oh well, next time maybe */
 			;
-		} else if (LIKELY((p = malloc(z = lim)) != NULL)) {
-			_t->run_as.wd = getcwd(p, z);
+		} else if (UNLIKELY((p = malloc(z = lim)) == NULL)) {
+			/* nevermind, I had a tough life too */
+			;
+		} else if (UNLIKELY((_t->run_as.wd = getcwd(p, z)) == NULL)) {
+			/* nobody steals my memory cells! */
+			free(p);
 		}
 	}
 	if (_t->run_as.sh == NULL) {
