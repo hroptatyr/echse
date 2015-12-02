@@ -670,14 +670,14 @@ END:VCALENDAR\n";
 	with (int st) {
 		while (waitpid(p, &st, 0) != p);
 		if (!WIFEXITED(st) || WEXITSTATUS(st) != EXIT_SUCCESS) {
-			goto clo;
+			goto err;
 		}
 	}
 	/* now set the CLOEXEC bit so the editor isn't terribly confused */
 	(void)fd_cloexec(tmpfd);
 	/* launch the editor so the user can peruse the proto-task */
 	if (run_editor(tmpfn) < 0) {
-		goto clo;
+		goto err;
 	}
 	/* don't keep this file, we talk descriptors */
 	unlink(tmpfn);
@@ -685,13 +685,14 @@ END:VCALENDAR\n";
 	lseek(tmpfd, 0, SEEK_SET);
 	return tmpfd;
 clo:
-	(void)umask(cur_msk);
-	unlink(tmpfn);
 	if (!(ifd < 0)) {
 		close(ifd);
 	}
 	close(pd[0U]);
 	close(pd[1U]);
+err:
+	(void)umask(cur_msk);
+	unlink(tmpfn);
 	if (!(tmpfd < 0)) {
 		close(tmpfd);
 	}
