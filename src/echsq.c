@@ -1293,7 +1293,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	/* drain and close */
 	free_conn(s);
 	/* lest we molest our EDITOR child ... */
-	fd_cloexec(tmpfd);
+	(void)fd_cloexec(tmpfd);
 	/* now the editing bit */
 	run_editor(tmpfn);
 
