@@ -622,7 +622,8 @@ END:VCALENDAR\n";
 
 	/* call /bin/sh with the above proto-task as here-document
 	 * and stdout redir'd to FD */
-	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+	if (UNLIKELY(rc < 0 ||
+		     posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
 		serror("Error: cannot run /bin/sh");
 		posix_spawn_file_actions_destroy(&fa);
 		goto clo;
