@@ -8,21 +8,10 @@ echse
 =====
 
 In a nutshell: a cron daemon on [RFC 5545][1] calendar files
-(aka iCalendar aka ics) with execution resolution up to the
-second and which can be run as user daemon.
-
-
-Resources
----------
-
-echse is hosted primarily on github:
-
-+ github: <https://github.com/hroptatyr/echse>
-+ issues: <https://github.com/hroptatyr/echse/issues>
-+ releases: <https://github.com/hroptatyr/echse/releases>
-
-echse comes preloaded with a bunch of holiday files and trading hours in
-iCalendar format (see [echse beef][2] page for further information).
+<<<<<<< HEAD:index.md
+(aka iCalendar aka ics) with execution resolution up to one second,
+per-task configuration of everything, and which can be run in
+daemon mode by any user.
 
 
 Features
@@ -38,6 +27,18 @@ Features
 * Per-task configuration of the environment
 * Built-in timeouts by constraining a task through DTEND/DURATION
 * Job metadata logging as VJOURNAL
+
+
+Red tape
+--------
+
++ licence: [BSD3c][2]
++ github: <https://github.com/hroptatyr/echse>
++ issues: <https://github.com/hroptatyr/echse/issues>
++ releases: <https://github.com/hroptatyr/echse/releases>
+
+The [beef branch][4] contains iCal files for holidays and trading hours
+licensed under [CC BY 3.0][3].
 
 
 iCalendar extensions
@@ -128,4 +129,6 @@ Similar Projects
 None.
 
   [1]: http://tools.ietf.org/html/rfc5545
-  [2]: https://github.com/hroptatyr/echse/tree/beef
+  [2]: http://tldrlegal.com/license/bsd-3-clause-license-%28revised%29
+  [3]: http://creativecommons.org/licenses/by/3.0/
+  [4]: http://github.com/hroptatyr/echse/tree/beef
