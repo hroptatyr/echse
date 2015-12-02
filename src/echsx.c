@@ -1368,6 +1368,9 @@ void timeout value, job execution will be unbounded");
 	fatal:
 		ECHS_ERR_LOG("%s", xt.errmsg);
 		rc = -1;
+	} else {
+		/* finally, inherit task's return code */
+		rc = WEXITSTATUS(xt.xc);
 	}
 
 	/* no disruptions please */
@@ -1381,9 +1384,6 @@ void timeout value, job execution will be unbounded");
 		rc = 127;
 		goto clean_up;
 	}
-
-	/* finally, inherit task's return code */
-	rc = WEXITSTATUS(xt.xc);
 
 clean_up:
 	free_task(&xt);
