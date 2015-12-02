@@ -593,6 +593,7 @@ END:VCALENDAR\n";
 		if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
 			return -1;
 		} else if (fstat(ifd, &st) < 0) {
+			close(ifd);
 			return -1;
 		}
 		/* otherwise keep track of size */
