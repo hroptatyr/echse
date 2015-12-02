@@ -410,9 +410,14 @@ get_queudir(void)
 		if (LIKELY(di < sizeof(d))) {
 			d[di++] = '/';
 		}
-		di += xstrlncpy(
+		di = xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir + 1U, strlenof(appdir) - 1U);
+		/* check that we're actually making the directory we need */
+		if (UNLIKELY(di != strlenof(appdir) - 1U)) {
+			/* nope */
+			break;
+		}
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* bollocks */
@@ -452,8 +457,13 @@ get_queudir(void)
 			d[di++] = '/';
 		}
 		/* now the machine name */
-		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+		di = xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
 
+		/* check that we're actually making the directory we need */
+		if (UNLIKELY(di != hnamez)) {
+			/* frigg */
+			break;
+		}
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
