@@ -77,15 +77,6 @@ extern char **environ;
 # define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
-static const char vcal_hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:PUBLISH\n\
-CALSCALE:GREGORIAN\n";
-static const char vcal_ftr[] = "\
-END:VCALENDAR\n";
-
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -1244,6 +1235,10 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	mode_t cur_msk = umask(0700);
+	const struct echs_task_s proto = {
+		.max_simul = 63,
+		.owner = nummapstr_bang_num(geteuid()),
+	};
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
@@ -1320,9 +1315,9 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 		return 1;
 	}
 	/* ... and add the stuff back to echsd */
-	write(s, vcal_hdr, strlenof(vcal_hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE, .t = &proto});
 	add_fd(s, tmpfd);
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 	close(tmpfd);
 
 	if (argi->dry_run_flag) {
