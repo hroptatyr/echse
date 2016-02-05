@@ -689,6 +689,7 @@ err:
 	if (!(tmpfd < 0)) {
 		close(tmpfd);
 	}
+	(void)fdprintf;
 	return -1;
 }
 
@@ -1351,17 +1352,6 @@ static int
 cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	static const char hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:CANCEL\n\
-CALSCALE:GREGORIAN\n";
-	static const char ftr[] = "\
-END:VCALENDAR\n";
-	static const char beg[] = "BEGIN:VEVENT\n";
-	static const char end[] = "END:VEVENT\n";
-	static const char sta[] = "STATUS:CANCELLED\n";
 	int s;
 
 	/* let's try the local echsd and then the system-wide one */
@@ -1375,22 +1365,15 @@ END:VCALENDAR\n";
 		return 1;
 	}
 	/* we'll be writing to S, better believe it */
-	fdbang(s);
 
-	fdwrite(hdr, strlenof(hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_UNSC});
 	for (size_t i = 0U; i < argi->nargs; i++) {
 		const char *tuid = argi->args[i];
 
-		fdwrite(beg, strlenof(beg));
-		fdprintf("UID:%s\n", tuid);
-		fdwrite(sta, strlenof(sta));
-		fdwrite(end, strlenof(end));
+		echs_unsc_icalify(s, tuid);
 		nout++;
 	}
-	fdwrite(ftr, strlenof(ftr));
-
-	(void)fdputc;
-	fdflush();
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
