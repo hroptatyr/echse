@@ -1171,6 +1171,10 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
 	const bool use_tmpl_p = !argi->nargs && isatty(STDIN_FILENO);
+	const struct echs_task_s proto = {
+		.max_simul = 63,
+		.owner = nummapstr_bang_num(geteuid()),
+	};
 	size_t i = 0U;
 	int fd;
 	int s;
@@ -1190,7 +1194,7 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 		return 1;
 	}
 
-	write(s, vcal_hdr, strlenof(vcal_hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE, .t = &proto});
 	if (use_tmpl_p) {
 		/* template mode,
 		 * gcc might think we haven't init'd fd but fact is
@@ -1217,7 +1221,7 @@ Error: cannot open file `%s'", fn);
 		add_fd(s, fd);
 		close(fd);
 	}
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
