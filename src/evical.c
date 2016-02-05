@@ -2624,6 +2624,19 @@ echs_task_icalify(int whither, echs_task_t t)
 }
 
 void
+echs_unsc_icalify(int whither, const char *tuid)
+{
+	static const char sta[] = "STATUS:CANCELLED\n";
+
+	fdbang(whither);
+	send_ical_hdr(whither, false);
+	fdprintf("UID:%s\n", tuid);
+	fdwrite(sta, strlenof(sta));
+	send_ical_ftr(whither, false);
+	return;
+}
+
+void
 echs_icalify_init(int whither, echs_instruc_t i)
 {
 	static const char hdr[] = "\
