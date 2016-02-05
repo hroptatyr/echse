@@ -77,15 +77,6 @@ extern char **environ;
 # define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
-static const char vcal_hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:PUBLISH\n\
-CALSCALE:GREGORIAN\n";
-static const char vcal_ftr[] = "\
-END:VCALENDAR\n";
-
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -698,6 +689,7 @@ err:
 	if (!(tmpfd < 0)) {
 		close(tmpfd);
 	}
+	(void)fdprintf;
 	return -1;
 }
 
@@ -1171,6 +1163,10 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
 	const bool use_tmpl_p = !argi->nargs && isatty(STDIN_FILENO);
+	const struct echs_task_s proto = {
+		.max_simul = 63,
+		.owner = nummapstr_bang_num(geteuid()),
+	};
 	size_t i = 0U;
 	int fd;
 	int s;
@@ -1190,7 +1186,7 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 		return 1;
 	}
 
-	write(s, vcal_hdr, strlenof(vcal_hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE, .t = &proto});
 	if (use_tmpl_p) {
 		/* template mode,
 		 * gcc might think we haven't init'd fd but fact is
@@ -1217,7 +1213,7 @@ Error: cannot open file `%s'", fn);
 		add_fd(s, fd);
 		close(fd);
 	}
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
@@ -1240,6 +1236,10 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
 	mode_t cur_msk = umask(0700);
+	const struct echs_task_s proto = {
+		.max_simul = 63,
+		.owner = nummapstr_bang_num(geteuid()),
+	};
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
@@ -1316,9 +1316,9 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 		return 1;
 	}
 	/* ... and add the stuff back to echsd */
-	write(s, vcal_hdr, strlenof(vcal_hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE, .t = &proto});
 	add_fd(s, tmpfd);
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 	close(tmpfd);
 
 	if (argi->dry_run_flag) {
@@ -1352,17 +1352,6 @@ static int
 cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	static const char hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:CANCEL\n\
-CALSCALE:GREGORIAN\n";
-	static const char ftr[] = "\
-END:VCALENDAR\n";
-	static const char beg[] = "BEGIN:VEVENT\n";
-	static const char end[] = "END:VEVENT\n";
-	static const char sta[] = "STATUS:CANCELLED\n";
 	int s;
 
 	/* let's try the local echsd and then the system-wide one */
@@ -1376,22 +1365,15 @@ END:VCALENDAR\n";
 		return 1;
 	}
 	/* we'll be writing to S, better believe it */
-	fdbang(s);
 
-	fdwrite(hdr, strlenof(hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_UNSC});
 	for (size_t i = 0U; i < argi->nargs; i++) {
 		const char *tuid = argi->args[i];
 
-		fdwrite(beg, strlenof(beg));
-		fdprintf("UID:%s\n", tuid);
-		fdwrite(sta, strlenof(sta));
-		fdwrite(end, strlenof(end));
+		echs_unsc_icalify(s, tuid);
 		nout++;
 	}
-	fdwrite(ftr, strlenof(ftr));
-
-	(void)fdputc;
-	fdflush();
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */

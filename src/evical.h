@@ -66,6 +66,10 @@ extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
 extern void echs_task_icalify(int whither, echs_task_t t);
 
 /**
+ * Helper for echsq(1) et al */
+extern void echs_unsc_icalify(int whither, const char *tuid);
+
+/**
  * Send the ical header along with a method and other fields. */
 extern void echs_icalify_init(int whither, echs_instruc_t i);
 
