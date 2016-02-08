@@ -755,7 +755,7 @@ static ncred_t
 compl_owner(nummapstr_t o)
 {
 	const char *tmps;
-	uid_t tmpu;
+	uintptr_t tmpu;
 
 	if ((tmps = nummapstr_str(o))) {
 		/* numerify owner */
