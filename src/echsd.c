@@ -2500,7 +2500,7 @@ need root privileges to run task as user %d", oc.u);
 		ECHS_ERR_LOG("\
 need root privileges to run task as user %d", uc.u);
 		return -1;
-	} else if (uc.u != NOT_A_UID && oc.u != uc.u) {
+	} else if (uc.u != NOT_A_UID && oc.u != NOT_A_UID && oc.u != uc.u) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
