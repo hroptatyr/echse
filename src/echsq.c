@@ -592,7 +592,7 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
-	cur_msk = umask(0700);
+	cur_msk = umask(0077);
 	if ((tmpfd = mkstemp(tmpfn)) < 0) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
@@ -1231,7 +1231,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char vers[] = " HTTP/1.1\r\n\r\n";
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
-	mode_t cur_msk = umask(0700);
+	mode_t cur_msk = umask(0077);
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
