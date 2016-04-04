@@ -352,13 +352,17 @@ dt_strp(const char *str, char **on, size_t len)
 	}
 
 	/* millisecond part */
-	for (tmp = 100U; tmp < 100000U && (uint8_t)(*sp ^ '0') < 10U; sp++) {
+	for (tmp = 100U; (uint8_t)(*++sp ^ '0') < 10U && tmp < 100000U;) {
 		tmp *= 10U;
 		tmp += *sp ^ '0';
 	}
 	res.ms = tmp % 1000U;
 res:
 	if (on != NULL) {
+		/* always overread final Z */
+		if (LIKELY(*sp == 'Z')) {
+			sp++;
+		}
 		*on = deconst(sp);
 	}
 	return res;
@@ -641,6 +645,9 @@ range_strp(const char *str, char **on, size_t len)
 		break;
 	case '+':
 		r.end = echs_max_instant();
+		if (on != NULL) {
+			*on = op;
+		}
 		break;
 	default:
 		/* huh? */
