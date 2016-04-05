@@ -81,6 +81,17 @@ __doy(echs_instant_t i)
 	return res;
 }
 
+static inline __attribute__((const, pure)) unsigned int
+__jan00(unsigned int year)
+{
+	unsigned int by = year - 1601;
+
+	by = by * 365U + by / 4U;
+	by -= (year - 1601U) / 100U;
+	by += (year - 1601U) / 400U;
+	return by;
+}
+
 
 #define T	echs_instant_t
 
@@ -184,15 +195,13 @@ echs_instant_diff(echs_instant_t end, echs_instant_t beg)
 	}
 
 	{
-		unsigned int dom_end = __doy(end);
-		unsigned int dom_beg = __doy(beg);
-		int df_y = end.y - beg.y;
+		unsigned int dsi_end = __jan00(end.y);
+		unsigned int dsi_beg = __jan00(beg.y);
+		unsigned int doy_end = __doy(end);
+		unsigned int doy_beg = __doy(beg);
 
-		extra_df += dom_end - dom_beg;
-		if (echs_instant_lt_p(beg, end) && extra_df < 0) {
-			df_y--;
-		}
-		extra_df += df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
+		extra_df += dsi_end - dsi_beg;
+		extra_df += doy_end - doy_beg;
 	}
 
 	return (echs_idiff_t){extra_df * MSECS_PER_DAY + intra_df};
