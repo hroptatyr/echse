@@ -56,7 +56,7 @@ static const unsigned int doy[] = {
 #define DAYS_PER_YEAR	(365U)
 
 static __attribute__((const, pure)) inline unsigned int
-__get_ndom(unsigned int y, unsigned int m)
+__get_mdays(unsigned int y, unsigned int m)
 {
 /* return the number of days in month M in year Y. */
 	static const unsigned int mdays[] = {
@@ -151,7 +151,7 @@ refix_ym:
 		e.y += dy;
 	}
 
-	if (UNLIKELY(e.d > (md = __get_ndom(e.y, e.m)))) {
+	if (UNLIKELY(e.d > (md = __get_mdays(e.y, e.m)))) {
 		e.d -= md;
 		e.m++;
 		goto refix_ym;
@@ -256,36 +256,39 @@ fixup_S:
 		dd += msd;
 	}
 	if (dd) {
-		int df_y;
-		int df_m;
 		int y;
 		int m;
 		int d;
 
 	fixup_d:
-		y = bas.y + dd / (int)DAYS_PER_YEAR;
-		if ((df_y = y - bas.y)) {
-			dd -= df_y * (int)DAYS_PER_YEAR + (df_y - 1) / 4;
-		}
-
-		m = bas.m + dd / 31;
-		if ((df_m = m - bas.m)) {
-			dd -= doy[bas.m + df_m] - doy[bas.m + 1];
-		}
-
+		y = bas.y;
+		m = bas.m;
 		d = bas.d + dd;
-		while (d <= 0) {
-			while (--m <= 0) {
-				y--;
-				m = 12U;
-			}
-			d += __get_ndom(y, m);
-		}
-		while ((unsigned int)d > __get_ndom(y, m)) {
-			d -= __get_ndom(y, m);
-			while (++m > 12) {
-				y++;
-				m = 1U;
+
+		if (LIKELY(d >= 1 && d <= 28)) {
+			/* all months in our design range have 28 days */
+			;
+		} else if (d < 1) {
+			int mdays;
+
+			do {
+				if (UNLIKELY(--m < 1)) {
+					--y;
+					m = 12;
+				}
+				mdays = __get_mdays(y, m);
+				d += mdays;
+			} while (d < 1);
+
+		} else {
+			int mdays;
+
+			while (d > (mdays = __get_mdays(y, m))) {
+				d -= mdays;
+				if (UNLIKELY(++m > 12)) {
+					++y;
+					m = 1;
+				}
 			}
 		}
 
