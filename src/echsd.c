@@ -306,9 +306,14 @@ get_exewd(void)
 	return wd;
 #elif defined __FreeBSD__
 	static char wd[PATH_MAX];
-	size_t z = sizeof(wd);
+	size_t z = sizeof(wd) - 1U;
 	int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
-	sysctl(mib, countof(mib), wd, z, NULL, 0);
+
+	/* make sure that \0 terminator fits */
+	wd[z] = '\0';
+	if (UNLIKELY(sysctl(mib, countof(mib), wd, &z, NULL, 0) < 0)) {
+		return NULL;
+	}
 	return wd;
 #elif defined __sun || defined sun
 	static char wd[MAXPATHLEN];
@@ -316,7 +321,7 @@ get_exewd(void)
 
 	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
 
-	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+	if (UNLIKELY((z = readlink(wd, wd, sizeof(wd))) < 0)) {
 		return NULL;
 	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
 		return NULL;
