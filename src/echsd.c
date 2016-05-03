@@ -321,7 +321,7 @@ get_exewd(void)
 
 	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
 
-	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+	if (UNLIKELY((z = readlink(wd, wd, sizeof(wd))) < 0)) {
 		return NULL;
 	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
 		return NULL;
