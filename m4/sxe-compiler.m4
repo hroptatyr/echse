@@ -365,18 +365,6 @@ AC_DEFUN([SXE_OPTIFLAGS], [dnl
 		;;
 	esac
 
-	SXE_CHECK_COMPILER_FLAG([-ipo], [
-		optiflags="${optiflags} -ipo"
-
-		## fiddle with xiar and xild params, kick ansi aliasing warnings
-		if test "${ac_cv_prog_ac_ct_AR}" = "xiar"; then
-			AR="${AR} -qdiag-disable=2102"
-		fi
-		if test "${ac_cv_prog_ac_ct_LD}" = "xild"; then
-			LD="${LD} -qdiag-disable=2102"
-		fi
-	])
-
 	SXE_CHECK_COMPILER_FLAG([-no-prec-div], [
 		optiflags="${optiflags} -no-prec-div"])
 ])dnl SXE_OPTIFLAGS
