@@ -77,15 +77,6 @@ extern char **environ;
 # define _PATH_TMP	"/tmp/"
 #endif	/* _PATH_TMP */
 
-static const char vcal_hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:PUBLISH\n\
-CALSCALE:GREGORIAN\n";
-static const char vcal_ftr[] = "\
-END:VCALENDAR\n";
-
 
 static __attribute__((format(printf, 1, 2))) void
 serror(const char *fmt, ...)
@@ -593,6 +584,7 @@ END:VCALENDAR\n";
 		if (UNLIKELY((ifd = open(fn, O_RDONLY)) < 0)) {
 			return -1;
 		} else if (fstat(ifd, &st) < 0) {
+			close(ifd);
 			return -1;
 		}
 		/* otherwise keep track of size */
@@ -600,7 +592,7 @@ END:VCALENDAR\n";
 	}
 
 	/* get ourselves a temporary file */
-	cur_msk = umask(0700);
+	cur_msk = umask(0077);
 	if ((tmpfd = mkstemp(tmpfn)) < 0) {
 		serror("Error: cannot create temporary file `%s'", tmpfn);
 		goto clo;
@@ -621,7 +613,8 @@ END:VCALENDAR\n";
 
 	/* call /bin/sh with the above proto-task as here-document
 	 * and stdout redir'd to FD */
-	if (UNLIKELY(posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
+	if (UNLIKELY(rc < 0 ||
+		     posix_spawn(&p, sh, &fa, NULL, args, environ) < 0)) {
 		serror("Error: cannot run /bin/sh");
 		posix_spawn_file_actions_destroy(&fa);
 		goto clo;
@@ -670,14 +663,14 @@ END:VCALENDAR\n";
 	with (int st) {
 		while (waitpid(p, &st, 0) != p);
 		if (!WIFEXITED(st) || WEXITSTATUS(st) != EXIT_SUCCESS) {
-			goto clo;
+			goto err;
 		}
 	}
 	/* now set the CLOEXEC bit so the editor isn't terribly confused */
 	(void)fd_cloexec(tmpfd);
 	/* launch the editor so the user can peruse the proto-task */
 	if (run_editor(tmpfn) < 0) {
-		goto clo;
+		goto err;
 	}
 	/* don't keep this file, we talk descriptors */
 	unlink(tmpfn);
@@ -685,16 +678,18 @@ END:VCALENDAR\n";
 	lseek(tmpfd, 0, SEEK_SET);
 	return tmpfd;
 clo:
-	(void)umask(cur_msk);
-	unlink(tmpfn);
 	if (!(ifd < 0)) {
 		close(ifd);
 	}
 	close(pd[0U]);
 	close(pd[1U]);
+err:
+	(void)umask(cur_msk);
+	unlink(tmpfn);
 	if (!(tmpfd < 0)) {
 		close(tmpfd);
 	}
+	(void)fdprintf;
 	return -1;
 }
 
@@ -712,8 +707,12 @@ massage(echs_task_t t)
 		if (UNLIKELY(lim < 0)) {
 			/* oh well, next time maybe */
 			;
-		} else if (LIKELY((p = malloc(z = lim)) != NULL)) {
-			_t->run_as.wd = getcwd(p, z);
+		} else if (UNLIKELY((p = malloc(z = lim)) == NULL)) {
+			/* nevermind, I had a tough life too */
+			;
+		} else if (UNLIKELY((_t->run_as.wd = getcwd(p, z)) == NULL)) {
+			/* nobody steals my memory cells! */
+			free(p);
 		}
 	}
 	if (_t->run_as.sh == NULL) {
@@ -1163,12 +1162,12 @@ static int
 cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	const bool ttyp = isatty(STDIN_FILENO);
+	const bool use_tmpl_p = !argi->nargs && isatty(STDIN_FILENO);
 	size_t i = 0U;
 	int fd;
 	int s;
 
-	if (!argi->nargs && ttyp) {
+	if (use_tmpl_p) {
 		/* ah, use a template and fire up an editor */
 		if (UNLIKELY((fd = use_tmpl()) < 0)) {
 			return 1;
@@ -1183,8 +1182,8 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 		return 1;
 	}
 
-	write(s, vcal_hdr, strlenof(vcal_hdr));
-	if (!argi->nargs && ttyp) {
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE});
+	if (use_tmpl_p) {
 		/* template mode,
 		 * gcc might think we haven't init'd fd but fact is
 		 * we have a similar predicate to this one right at
@@ -1210,7 +1209,7 @@ Error: cannot open file `%s'", fn);
 		add_fd(s, fd);
 		close(fd);
 	}
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */
@@ -1232,7 +1231,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	static const char vers[] = " HTTP/1.1\r\n\r\n";
 	static const char queu[] = "queue";
 	static char tmpfn[] = "/tmp/taskXXXXXXXX";
-	mode_t cur_msk = umask(0700);
+	mode_t cur_msk = umask(0077);
 	char buf[4096U];
 	size_t bix = 0U;
 	bool realm = 0;
@@ -1292,7 +1291,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	/* drain and close */
 	free_conn(s);
 	/* lest we molest our EDITOR child ... */
-	fd_cloexec(tmpfd);
+	(void)fd_cloexec(tmpfd);
 	/* now the editing bit */
 	run_editor(tmpfn);
 
@@ -1309,9 +1308,9 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 		return 1;
 	}
 	/* ... and add the stuff back to echsd */
-	write(s, vcal_hdr, strlenof(vcal_hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_SCHE});
 	add_fd(s, tmpfd);
-	write(s, vcal_ftr, strlenof(vcal_ftr));
+	echs_icalify_fini(s);
 	close(tmpfd);
 
 	if (argi->dry_run_flag) {
@@ -1345,17 +1344,6 @@ static int
 cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
 {
 /* scan for BEGIN:VEVENT/END:VEVENT pairs */
-	static const char hdr[] = "\
-BEGIN:VCALENDAR\n\
-VERSION:2.0\n\
-PRODID:-//GA Financial Solutions//echse//EN\n\
-METHOD:CANCEL\n\
-CALSCALE:GREGORIAN\n";
-	static const char ftr[] = "\
-END:VCALENDAR\n";
-	static const char beg[] = "BEGIN:VEVENT\n";
-	static const char end[] = "END:VEVENT\n";
-	static const char sta[] = "STATUS:CANCELLED\n";
 	int s;
 
 	/* let's try the local echsd and then the system-wide one */
@@ -1369,22 +1357,15 @@ END:VCALENDAR\n";
 		return 1;
 	}
 	/* we'll be writing to S, better believe it */
-	fdbang(s);
 
-	fdwrite(hdr, strlenof(hdr));
+	echs_icalify_init(s, (echs_instruc_t){INSVERB_UNSC});
 	for (size_t i = 0U; i < argi->nargs; i++) {
 		const char *tuid = argi->args[i];
 
-		fdwrite(beg, strlenof(beg));
-		fdprintf("UID:%s\n", tuid);
-		fdwrite(sta, strlenof(sta));
-		fdwrite(end, strlenof(end));
+		echs_unsc_icalify(s, tuid);
 		nout++;
 	}
-	fdwrite(ftr, strlenof(ftr));
-
-	(void)fdputc;
-	fdflush();
+	echs_icalify_fini(s);
 
 	if (argi->dry_run_flag) {
 		/* nothing is outstanding in dry-run mode */

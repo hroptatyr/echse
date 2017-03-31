@@ -306,9 +306,14 @@ get_exewd(void)
 	return wd;
 #elif defined __FreeBSD__
 	static char wd[PATH_MAX];
-	size_t z = sizeof(wd);
+	size_t z = sizeof(wd) - 1U;
 	int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
-	sysctl(mib, countof(mib), wd, z, NULL, 0);
+
+	/* make sure that \0 terminator fits */
+	wd[z] = '\0';
+	if (UNLIKELY(sysctl(mib, countof(mib), wd, &z, NULL, 0) < 0)) {
+		return NULL;
+	}
 	return wd;
 #elif defined __sun || defined sun
 	static char wd[MAXPATHLEN];
@@ -316,7 +321,7 @@ get_exewd(void)
 
 	snprintf(wd, sizeof(wd), "/proc/%d/path/a.out", getpid());
 
-	if (UNLIKELY((z = readlink(myself, wd, sizeof(wd))) < 0)) {
+	if (UNLIKELY((z = readlink(wd, wd, sizeof(wd))) < 0)) {
 		return NULL;
 	} else if (UNLIKELY((size_t)z >= sizeof(wd))) {
 		return NULL;
@@ -410,9 +415,14 @@ get_queudir(void)
 		if (LIKELY(di < sizeof(d))) {
 			d[di++] = '/';
 		}
-		di += xstrlncpy(
+		di = xstrlncpy(
 			d + di, sizeof(d) - di,
 			appdir + 1U, strlenof(appdir) - 1U);
+		/* check that we're actually making the directory we need */
+		if (UNLIKELY(di != strlenof(appdir) - 1U)) {
+			/* nope */
+			break;
+		}
 		/* just mkdir the result and throw away errors */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* bollocks */
@@ -452,8 +462,13 @@ get_queudir(void)
 			d[di++] = '/';
 		}
 		/* now the machine name */
-		di += xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
+		di = xstrlncpy(d + di, sizeof(d) - di, hname, hnamez);
 
+		/* check that we're actually making the directory we need */
+		if (UNLIKELY(di != hnamez)) {
+			/* frigg */
+			break;
+		}
 		/* and mkdir it again, just in case */
 		if (mkdir(d, 0700) < 0 && errno != EEXIST) {
 			/* plain horseshit again */
@@ -745,7 +760,7 @@ static ncred_t
 compl_owner(nummapstr_t o)
 {
 	const char *tmps;
-	uid_t tmpu;
+	uintptr_t tmpu;
 
 	if ((tmps = nummapstr_str(o))) {
 		/* numerify owner */
@@ -2490,7 +2505,7 @@ need root privileges to run task as user %d", oc.u);
 		ECHS_ERR_LOG("\
 need root privileges to run task as user %d", uc.u);
 		return -1;
-	} else if (uc.u != NOT_A_UID && oc.u != uc.u) {
+	} else if (uc.u != NOT_A_UID && oc.u != NOT_A_UID && oc.u != uc.u) {
 		/* we've caught him, call the police!!! */
 		ECHS_ERR_LOG("\
 task update from user %d for task from user %d failed: permission denied",
