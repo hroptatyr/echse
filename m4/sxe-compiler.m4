@@ -1,6 +1,6 @@
 dnl compiler.m4 --- compiler magic
 dnl
-dnl Copyright (C) 2005-2013 Sebastian Freundt
+dnl Copyright (C) 2005-2015 Sebastian Freundt
 dnl Copyright (c) 2005 Steven G. Johnson
 dnl Copyright (c) 2005 Matteo Frigo
 dnl
@@ -48,7 +48,7 @@ dnl SXE_CHECK_COMPILER_FLAG([flag], [action-if-accepted], [action-if-not-accepte
 	AC_CACHE_VAL(AS_TR_SH(sxe_cv_[]_AC_LANG_ABBREV[]_flag_$1), [dnl
 		sxe_save_FLAGS="${[]_AC_LANG_PREFIX[]FLAGS}"
 		_AC_LANG_PREFIX[]FLAGS="$1"
-		AC_COMPILE_IFELSE([AC_LANG_PROGRAM()],
+		AC_COMPILE_IFELSE([AC_LANG_PROGRAM($4)],
 			eval AS_TR_SH(sxe_cv_[]_AC_LANG_ABBREV[]_flag_$1)="yes",
 			eval AS_TR_SH(sxe_cv_[]_AC_LANG_ABBREV[]_flag_$1)="no")
 		_AC_LANG_PREFIX[]FLAGS="${sxe_save_FLAGS}"
@@ -224,8 +224,15 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 
 	## too much at the moment, we rarely define protos
 	#warnflags="$warnflags -Wmissing-prototypes -Wstrict-prototypes"
+
+	## somehow clang seems to think -Wpacked is to inform me
+	## about how unnecessary the packed attr is, so conditionalise ...
 	SXE_CHECK_COMPILER_FLAG([-Wpacked], [
-		warnflags="$warnflags -Wpacked"])
+		warnflags="$warnflags -Wpacked"], [:], [[
+#if defined __clang__
+# error
+#endif  /* __clang__ */
+]])
 
 	## glibc is intentionally not `-Wpointer-arith'-clean.
 	## Ulrich Drepper has rejected patches to fix
@@ -307,6 +314,9 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 	dnl SXE_CHECK_COMPILER_FLAG([-Wp64], [
 	dnl 	warnflags="$warnflags -Wp64"])
 
+	SXE_CHECK_COMPILER_FLAG([-Wstrict-aliasing], [
+		warnflags="$warnflags -Wstrict-aliasing"])
+
 	SXE_CHECK_COMPILER_FLAG([-w3], [
 		warnflags="$warnflags -w3"])
 
@@ -314,6 +324,11 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 		warnflags="${warnflags} -diag-disable 10237"], [
 		SXE_CHECK_COMPILER_FLAG([-wd 10237], [dnl
 			warnflags="${warnflags} -wd 10237"])])
+
+	SXE_CHECK_COMPILER_FLAG([-diag-disable 2102], [dnl
+		warnflags="${warnflags} -diag-disable 2102"], [
+		SXE_CHECK_COMPILER_FLAG([-wd 2102], [dnl
+			warnflags="${warnflags} -wd 2102"])])
 
 	SXE_CHECK_COMPILER_FLAG([-debug inline-debug-info], [
 		warnflags="${warnflags} -debug inline-debug-info"])
@@ -330,14 +345,83 @@ AC_DEFUN([SXE_WARNFLAGS], [dnl
 ])dnl SXE_WARNFLAGS
 
 AC_DEFUN([SXE_OPTIFLAGS], [dnl
-	optiflags="-O3"
+	AC_REQUIRE([SXE_USER_CFLAGS])
+	AC_REQUIRE([SXE_WARNFLAGS])
 
-	SXE_CHECK_COMPILER_FLAG([-ipo256], [
-		optiflags="${optiflags} -ipo256"])
+	case " ${CFLAGS} ${EXTRA_CFLAGS} " in
+	(*" -O"[[0-9]]" "*)
+		;;
+	(*" -Os "*)
+		;;
+	(*" -Og "*)
+		;;
+	(*" -Ofast "*)
+		;;
+	(*" -O "*)
+		;;
+	(*)
+		SXE_CHECK_COMPILER_FLAG([-O3], [
+			optiflags="${optiflags} -O3"])
+		;;
+	esac
 
-	SXE_CHECK_COMPILER_FLAG([-ipo-jobs256], [
-		optiflags="${optiflags} -ipo-jobs256"])
+	SXE_CHECK_COMPILER_FLAG([-ipo], [
+		optiflags="${optiflags} -ipo"
+
+		## fiddle with xiar and xild params, kick ansi aliasing warnings
+		if test "${ac_cv_prog_ac_ct_AR}" = "xiar"; then
+			AR="${AR} -qdiag-disable=2102"
+		fi
+		if test "${ac_cv_prog_ac_ct_LD}" = "xild"; then
+			LD="${LD} -qdiag-disable=2102"
+		fi
+	])
+
+	SXE_CHECK_COMPILER_FLAG([-no-prec-div], [
+		optiflags="${optiflags} -no-prec-div"])
 ])dnl SXE_OPTIFLAGS
+
+AC_DEFUN([SXE_CC_NATIVE], [dnl
+dnl Usage: SXE_CC_NATIVE([yes|no])
+	AC_ARG_ENABLE([native], [dnl
+AS_HELP_STRING(m4_case([$1], [yes], [--disable-native], [--enable-native]), [
+Use code native to the build machine.])],
+		[enable_native="${enableval}"], [enable_native="$1"])
+
+	## -fast implies -static which is a dream but
+	## packager prefer dynamic binaries
+	dnl SXE_CHECK_COMPILER_FLAG([-fast], [
+	dnl 	optiflags="${optiflags} -fast"])
+
+	## auto-vectorisation
+	dnl SXE_CHECK_COMPILER_FLAG([-axMIC-AVX512,CORE-AVX2,CORE-AVX-I,AVX,SSSE3], [
+	dnl 	optiflags="${optiflags} -axMIC-AVX512,CORE-AVX2,CORE-AVX-I,AVX,SSSE3"])
+
+	if test "${enable_native}" = "yes"; then
+		case " ${CFLAGS} ${EXTRA_CFLAGS}" in
+		(*" -mtune"*)
+			## don't tune
+			;;
+		(*" -march"*)
+			## don't set march
+			;;
+		(*" -m32 "*)
+			## don't bother
+			;;
+		(*" -m64 "*)
+			## don't bother
+			;;
+		(*)
+			SXE_CHECK_COMPILER_FLAG([-xHost], [
+				optiflags="${optiflags} -xHost"], [
+				## non-icc
+				SXE_CHECK_COMPILER_FLAG([-mtune=native -march=native], [
+					optiflags="${optiflags} -mtune=native -march=native"])
+			])
+			;;
+		esac
+	fi
+])dnl SXE_CC_NATIVE
 
 AC_DEFUN([SXE_FEATFLAGS], [dnl
 	## default flags for needed features
@@ -352,28 +436,27 @@ AC_DEFUN([SXE_FEATFLAGS], [dnl
 	SXE_CHECK_COMPILER_FLAG([-nopie],
 		[featflags="$featflags -nopie"])
 
-	## it's utterly helpful to get the sse2 unit up
-	SXE_CHECK_COMPILER_FLAG([-msse2], [dnl
-		## sse2 is the cure
-		featflags="$featflags -msse2"], [dnl
-		## oh bugger
-		AC_DEFINE([FPMATH_NO_SSE], [1], [no sse2 support for floats])])
-
 	## icc and gcc related
 	## check if some stuff can be staticalised
 	## actually requires SXE_WARNFLAGS so warnings would be disabled
 	## that affect the outcome of the following tests
 	SXE_CHECK_COMPILER_FLAG([-static-intel], [
 		featflags="${featflags} -static-intel"
-		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -static-intel"], [:],
-		[${SXE_CFLAGS}])
+		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -static-intel"], [:])
 	SXE_CHECK_COMPILER_FLAG([-static-libgcc], [
 		featflags="${featflags} -static-libgcc"
-		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -static-libgcc"], [:],
-		[${SXE_CFLAGS}])
+		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -static-libgcc"], [:])
 
 	SXE_CHECK_COMPILER_FLAG([-intel-extensions], [dnl
 		featflags="${featflags} -intel-extensions"])
+
+	## also pass on some diags to the linker
+	if test "${sxe_cv_c_flag__diag_disable_10237}" = "yes"; then
+		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -diag-disable=10237"
+	fi
+	if test "${sxe_cv_c_flag__diag_disable_2102}" = "yes"; then
+		XCCLDFLAGS="${XCCLDFLAGS} \${XCCFLAG} -diag-disable=2102"
+	fi
 
 	AC_SUBST([XCCLDFLAGS])
 	AC_SUBST([XCCFLAG])
@@ -390,31 +473,53 @@ AC_DEFUN([SXE_CHECK_COMPILER_XFLAG], [dnl
 	AC_SUBST([XFLAG])
 ])dnl SXE_CHECK_COMPILER_XFLAG
 
+AC_DEFUN([SXE_USER_CFLAGS], [dnl
+	AC_MSG_CHECKING([for user provided CFLAGS/EXTRA_CFLAGS])
+
+	CFLAGS="${ac_cv_env_CFLAGS_value}"
+	AC_MSG_RESULT([${CFLAGS} ${EXTRA_CFLAGS}])
+])dnl SXE_USER_CFLAGS
+
 
 AC_DEFUN([SXE_CHECK_CFLAGS], [dnl
-	dnl #### This may need to be overhauled so that all of SXEMACS_CC's flags
-	dnl are handled separately, not just the xe_cflags_warning stuff.
+dnl Usage: SXE_CHECK_CFLAGS([option ...])
+dnl valid options include:
+dnl + native[=yes|no]  Emit the --enable-native flag
 
+	## those are passed on to our determined CFLAGS
+	AC_ARG_VAR([EXTRA_CFLAGS], [C compiler flags to be APPENDED.])
+
+	## check for user provided flags
+	AC_REQUIRE([SXE_USER_CFLAGS])
 	## Use either command line flag, environment var, or autodetection
-	CFLAGS=""
 	SXE_DEBUGFLAGS
 	SXE_WARNFLAGS
 	SXE_OPTIFLAGS
-	SXE_CFLAGS="$SXE_CFLAGS $debugflags $optiflags $warnflags"
+	m4_foreach_w([opt], [$1], [dnl
+		m4_case(opt,
+			[native], [SXE_CC_NATIVE],
+			[native=yes], [SXE_CC_NATIVE([yes])],
+			[native=no], [SXE_CC_NATIVE([no])])
+	])
+	SXE_CFLAGS="${SXE_CFLAGS} ${debugflags} ${optiflags} ${warnflags}"
 
 	SXE_FEATFLAGS
-	SXE_CFLAGS="$SXE_CFLAGS $featflags"
+	SXE_CFLAGS="${SXE_CFLAGS} ${featflags}"
 
 	save_ac_c_werror_flag="${ac_c_werror_flag}"
 
-	CFLAGS="${SXE_CFLAGS} ${ac_cv_env_CFLAGS_value}"
+	CFLAGS="${CFLAGS} ${SXE_CFLAGS} ${EXTRA_CFLAGS}"
 	AC_MSG_CHECKING([for preferred CFLAGS])
 	AC_MSG_RESULT([${CFLAGS}])
 
 	AC_MSG_NOTICE([
-If you wish to ADD your own flags you want to stop here and rerun the
+If you wish to APPEND your own flags you want to stop here and rerun the
 configure script like so:
-  configure CFLAGS=<to-be-added-flags>
+  configure EXTRA_CFLAGS=<to-be-added-flags>
+
+If you wish to OVERRIDE these flags you want to stop here too and rerun
+the configure script like this:
+  configure CFLAGS=<the-definitive-flags-I-want>
 
 You can always override the determined CFLAGS, partially or totally,
 using
@@ -436,6 +541,9 @@ dnl standards are flavours supported by the compiler chosen with AC_PROG_CC
 	AC_REQUIRE([AC_CANONICAL_BUILD])
 	AC_REQUIRE([AC_PROG_CPP])
 	AC_REQUIRE([AC_PROG_CC])
+
+	AC_CHECK_TOOLS([AR], [xiar ar], [false])
+	AC_CHECK_TOOLS([LD], [xild ld], [false])
 
 	AC_HEADER_STDC
 
@@ -600,5 +708,119 @@ Whether sloppy struct initialising works])
 	fi
 	AC_LANG_POP()
 ])dnl SXE_CHECK_SLOPPY_STRUCTS_INIT
+
+AC_DEFUN([SXE_CHECK_INTRINS], [dnl
+	AC_CHECK_HEADERS([immintrin.h])
+	AC_CHECK_HEADERS([x86intrin.h])
+	AC_CHECK_HEADERS([ia32intrin.h])
+	AC_CHECK_HEADERS([popcntintrin.h])
+	AC_CHECK_TYPES([__m128i], [], [], [[
+#if defined HAVE_X86INTRIN_H
+# include <x86intrin.h>
+#elif defined HAVE_IMMINTRIN_H
+# include <immintrin.h>
+#endif
+]])
+	AC_CHECK_TYPES([__m256i], [], [], [[
+#if defined HAVE_X86INTRIN_H
+# include <x86intrin.h>
+#elif defined HAVE_IMMINTRIN_H
+# include <immintrin.h>
+#endif
+]])
+	AC_CHECK_TYPES([__m512i], [], [], [[
+#if defined HAVE_X86INTRIN_H
+# include <x86intrin.h>
+#elif defined HAVE_IMMINTRIN_H
+# include <immintrin.h>
+#endif
+]])
+	AC_CHECK_TYPES([__mmask64], [], [], [[
+#if defined HAVE_X86INTRIN_H
+# include <x86intrin.h>
+#elif defined HAVE_IMMINTRIN_H
+# include <immintrin.h>
+#endif
+]])
+])dnl SXE_CHECK_INTRINS
+
+AC_DEFUN([SXE_CHECK_SIMD], [dnl
+dnl Usage: SXE_CHECK_SIMD([INTRIN], [[SNIPPET], [IF-FOUND], [IF-NOT-FOUND]])
+	AC_REQUIRE([SXE_CHECK_INTRINS])
+
+	AC_MSG_CHECKING([for SIMD routine $1])
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#if defined HAVE_IA32INTRIN_H
+# include <ia32intrin.h>
+#endif
+#if defined HAVE_X86INTRIN_H
+# include <x86intrin.h>
+#endif
+#if defined HAVE_IMMINTRIN_H
+# include <immintrin.h>
+#endif
+#if defined HAVE_POPCNTINTRIN_H
+# include <popcntintrin.h>
+#endif
+]], [ifelse([$2],[],[$1(0U)],[$2]);])], [
+	eval AS_TR_SH(ac_cv_func_$1)="yes"
+	AC_DEFINE(AS_TR_CPP([HAVE_$1]), [1], [dnl
+Define to 1 if you have the `$1' simd routine])
+	$3
+], [
+	eval AS_TR_SH(ac_cv_func_$1)="no"
+	$4
+])
+	AC_MSG_RESULT([${ac_cv_func_$1}])
+])dnl SXE_CHECK_SIMD
+
+AC_DEFUN([SXE_CHECK_CILK], [dnl
+dnl Usage: SXE_CHECK_CILK([ACTION-IF-FOUND], [ACTION-IF-NOT-FOUND])
+dnl defines sxe_cv_feat_cilk to "yes" if applicable, "no" otherwise
+dnl also AC_DEFINEs HAVE_CILK
+	AC_CHECK_HEADERS([cilk/cilk.h])
+
+	save_CFLAGS="${CFLAGS}"
+	SXE_CHECK_COMPILER_FLAG([-fcilkplus], [CFLAGS="${CFLAGS} -fcilkplus"])
+
+	AC_MSG_CHECKING([whether Cilk+ keywords work])
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#include <stdlib.h>
+#if defined HAVE_CILK_CILK_H
+# include <cilk/cilk.h>
+#else  /* !HAVE_CILK_CILK_H */
+# define cilk_spawn	_Cilk_spawn
+# define cilk_sync	_Cilk_sync
+# define cilk_for	_Cilk_for
+#endif /* HAVE_CILK_CILK_H */
+
+static char *trick;
+
+static int pcmp(const void *x, const void *y)
+{
+	return (const char*)x - (const char*)y;
+}
+]], [
+int x = 0;
+int j;
+
+cilk_spawn qsort(trick, 1, 2, pcmp);
+qsort(trick + 4, 1, 2, pcmp);
+cilk_sync;
+
+cilk_for(j = 0; j < 8; j++) {
+	x++;
+}
+])], [
+	AC_DEFINE([HAVE_CILK], [1], [define when compiler supports Cilk+ keywords])
+	sxe_cv_feat_cilk="yes"
+	$1
+], [
+	CFLAGS="${save_CFLAGS}"
+	sxe_cv_feat_cilk="no"
+	$2
+])
+	AC_MSG_RESULT([${sxe_cv_feat_cilk}])
+])dnl SXE_CHECK_CILK
 
 dnl sxe-compiler.m4 ends here
