@@ -1,6 +1,6 @@
 /*** yuck.c -- generate umbrella commands
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2016 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -61,6 +61,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <time.h>
 #if defined WITH_SCMVER
 # include <yuck-scmver.h>
@@ -79,6 +81,9 @@
 #if !defined countof
 # define countof(x)	(sizeof(x) / sizeof(*x))
 #endif	/* !countof */
+#if !defined strlenof
+# define strlenof(x)	(sizeof(x) - 1ULL)
+#endif	/* !strlenof */
 
 #define _paste(x, y)	x ## y
 #define paste(x, y)	_paste(x, y)
@@ -368,16 +373,21 @@ bbuf_cat(bbuf_t *restrict b, const char *str, size_t ssz)
 {
 	if (UNLIKELY(b->n + ssz + 1U/*\nul*/ > b->z)) {
 		const size_t nu = max_zu(yfls(b->n + ssz + 1U) + 1U, 6U);
+		char *tmp;
 
-		b->s = realloc(b->s, (b->z = (1ULL << nu) * sizeof(*b->s)));
-		if (UNLIKELY(b->s == NULL)) {
+		tmp = realloc(b->s, (b->z = (1ULL << nu) * sizeof(*b->s)));
+		if (UNLIKELY(tmp == NULL)) {
 			goto free;
 		}
+		/* all's good then? */
+		b->s = tmp;
 	}
 	xstrncpy(b->s + b->n, str, ssz);
 	b->n += ssz;
 	return b->s;
 free:
+	free(b->s);
+	b->s = NULL;
 	b->n = 0U;
 	b->z = 0U;
 	return NULL;
@@ -496,8 +506,9 @@ overread:
 	if (cur_usg.cmd && !strncasecmp(cur_usg.cmd, cp, sp - cp)) {
 		/* nothing new and fresh */
 		;
-	} else if ((*cp != '<' || (cp++, *--sp == '>')) &&
-		   !strncasecmp(cp, "command", sp - cp)) {
+	} else if (!strncasecmp(cp, "command", sp - cp) ||
+		   (cp[0] == '<' && sp[-1] == '>' &&
+		    !strncasecmp(cp + 1U, "command", sp - cp - 2))) {
 		/* special command COMMAND or <command> */
 		cur_usg.cmd = NULL;
 	} else if (*cp >= 'a' && *cp <= 'z' && umb_yldd_p) {
@@ -571,7 +582,7 @@ yield:
 			sp++;
 		}
 		if (!isspace(*sp)) {
-			/* dont know -x.SOMETHING? */
+			/* don't know -x.SOMETHING? */
 			return 0;
 		}
 		/* start over with the new option */
@@ -616,7 +627,7 @@ yield:
 		/* --option */
 		;
 	} else {
-		/* dont know what this is */
+		/* don't know what this is */
 		return 0;
 	}
 
@@ -660,7 +671,7 @@ yield:
 	;
 	/* space eater */
 	for (; sp < ep && isspace(*sp); sp++);
-	/* dont free but reset the old guy */
+	/* don't free but reset the old guy */
 	desc->n = 0U;
 desc:
 	with (size_t sz = llen - (sp - line)) {
@@ -1126,9 +1137,54 @@ get_myself(char *restrict buf, size_t bsz)
 	ssize_t off;
 	char *mp;
 
-	if ((off = readlink("/proc/self/exe", buf, bsz)) < 0) {
+#if defined __linux__
+	static const char myself[] = "/proc/self/exe";
+
+	if (UNLIKELY((off = readlink(myself, buf, bsz)) < 0)) {
+		/* shame */
 		return -1;
 	}
+#elif defined __NetBSD__
+	static const char myself[] = "/proc/curproc/exe";
+
+	if (UNLIKELY((off = readlink(myself, buf, bsz)) < 0)) {
+		/* nawww */
+		return -1;
+	}
+#elif defined __DragonFly__
+	static const char myself[] = "/proc/curproc/file";
+
+	if (UNLIKELY((off = readlink(myself, buf, bsz)) < 0)) {
+		/* blimey */
+		return -1;
+	}
+#elif defined __FreeBSD__
+	int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+
+	/* make sure that \0 terminator fits */
+	buf[--bsz] = '\0';
+	if (UNLIKELY(sysctl(mib, countof(mib), buf, &bsz, NULL, 0) < 0)) {
+		return -1;
+	}
+	/* we can be grateful they gave us the path, counting is our job */
+	off = strlen(buf);
+#elif defined __sun || defined sun
+
+	snprintf(buf, bsz, "/proc/%d/path/a.out", getpid());
+	if (UNLIKELY((off = readlink(buf, buf, bsz)) < 0)) {
+		return -1;
+	}
+#elif defined __APPLE__ && defined __MACH__
+	uint32_t z = --bsz;
+	if (_NSGetExecutablePath(buf, &z) != 0) {
+		return -1;
+	}
+	/* good, do the counting */
+	off = strlen(buf);
+#else
+	return -1;
+#endif
+
 	/* go back to the dir bit */
 	for (mp = buf + off - 1U; mp > buf && *mp != '/'; mp--);
 	/* should be bin/, go up one level */
@@ -1191,8 +1247,8 @@ find_aux(char *restrict buf, size_t bsz, const char *aux)
 	}
 #if defined YUCK_TEMPLATE_PATH
 	path = YUCK_TEMPLATE_PATH;
-	plen = sizeof(YUCK_TEMPLATE_PATH);
-	if (plen-- > 0U && aux_in_path_p(aux, path, plen)) {
+	plen = strlenof(YUCK_TEMPLATE_PATH);
+	if (aux_in_path_p(aux, path, plen)) {
 		goto bang;
 	}
 #endif	/* YUCK_TEMPLATE_PATH */
@@ -1282,8 +1338,10 @@ static __attribute__((noinline)) int
 run_m4(const char *outfn, ...)
 {
 	pid_t m4p;
-	/* to snarf off traffic from the child */
+	/* we need a bidirectional pipe (for the unmassaging) */
 	int intfd[2];
+	int outfd = STDOUT_FILENO;
+	int rc;
 
 	if (pipe(intfd) < 0) {
 		error("pipe setup to/from m4 failed");
@@ -1293,51 +1351,7 @@ run_m4(const char *outfn, ...)
 		return -1;
 	}
 
-	switch ((m4p = vfork())) {
-	case -1:
-		/* i am an error */
-		error("vfork for m4 failed");
-		return -1;
-
-	default:;
-		/* i am the parent */
-		int rc;
-		int st;
-
-		if (outfn != NULL) {
-			/* --output given */
-			const int outfl = O_RDWR | O_CREAT | O_TRUNC;
-			int outfd;
-
-			if ((outfd = open(outfn, outfl, 0666)) < 0) {
-				/* bollocks */
-				error("cannot open outfile `%s'", outfn);
-				goto bollocks;
-			}
-
-			/* really redir now */
-			dup2(outfd, STDOUT_FILENO);
-			close(outfd);
-		}
-
-		close(intfd[1]);
-		unmassage_fd(STDOUT_FILENO, intfd[0]);
-
-		rc = 2;
-		while (waitpid(m4p, &st, 0) != m4p);
-		if (WIFEXITED(st)) {
-			rc = WEXITSTATUS(st);
-		}
-		/* clean up the rest of the pipe */
-		close(intfd[0]);
-		return rc;
-
-	case 0:;
-		/* i am the child */
-		break;
-	}
-
-	/* child code here */
+	/* command-line prepping */
 	with (va_list vap) {
 		va_start(vap, outfn);
 		for (size_t i = cmdln_idx;
@@ -1346,13 +1360,55 @@ run_m4(const char *outfn, ...)
 		va_end(vap);
 	}
 
-	dup2(intfd[1], STDOUT_FILENO);
-	close(intfd[0]);
+	switch ((m4p = vfork())) {
+	case -1:
+		/* i am an error */
+		error("vfork for m4 failed");
+		return -1;
 
-	execvp(m4_cmdline[0U], m4_cmdline);
-	error("execvp(m4) failed");
-bollocks:
-	_exit(EXIT_FAILURE);
+	default:
+		break;
+
+	case 0:
+		/* redirect stdout -> intfd[1] */
+		dup2(intfd[1], STDOUT_FILENO);
+		close(intfd[1]);
+		close(intfd[0]);
+		/* i am the child */
+		execvp(m4_cmdline[0U], m4_cmdline);
+		error("execvp(m4) failed");
+		_exit(EXIT_FAILURE);
+	}
+
+	/* i am the parent */
+	close(intfd[1]);
+
+	/* prep redirection */
+	if (outfn != NULL) {
+		/* --output given */
+		const int outfl = O_RDWR | O_CREAT | O_TRUNC;
+
+		if ((outfd = open(outfn, outfl, 0666)) < 0) {
+			/* bollocks */
+			error("cannot open outfile `%s'", outfn);
+			return -1;
+		}
+	}
+
+	/* reroute m4's output */
+	unmassage_fd(outfd, intfd[0]);
+
+	rc = 2;
+	with (int st) {
+		while (waitpid(m4p, &st, 0) != m4p);
+		if (WIFEXITED(st)) {
+			rc = WEXITSTATUS(st);
+		}
+	}
+	if (outfn != NULL) {
+		close(outfd);
+	}
+	return rc;
 }
 
 
