@@ -448,7 +448,7 @@ get_queudir(void)
 			break;
 		}
 		di = xstrlcpy(d, pw->pw_dir, sizeof(d));
-		if (LIKELY(di < sizeof(d))) {
+		if (LIKELY(di + 1U < sizeof(d))) {
 			d[di++] = '/';
 		}
 		di += xstrlncpy(
