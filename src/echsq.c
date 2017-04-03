@@ -1,6 +1,6 @@
 /*** echsq.c -- echse queue manager
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -644,6 +644,7 @@ END:VCALENDAR\n";
 		(void)fz;
 #endif	/* HAVE_SENDFILE */
 		close(ifd);
+		ifd = -1;
 	} else {
 		/* just write the built-in proto */
 		const char *const bp = builtin_proto;
