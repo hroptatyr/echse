@@ -254,7 +254,7 @@ get_usock(int s, bool anonp)
 			return -1;
 		}
 		sz = xstrlcpy(sa.sun_path, pw->pw_dir, sizeof(sa.sun_path));
-		if (LIKELY(sz < sizeof(sa.sun_path))) {
+		if (LIKELY(sz + 1U < sizeof(sa.sun_path))) {
 			sa.sun_path[sz++] = '/';
 		}
 		/* append appdir */
