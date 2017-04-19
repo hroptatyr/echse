@@ -603,7 +603,7 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 	char *on = NULL;
 	echs_instant_t res = dt_strp(vp, &on, ep - vp);
 
-	if (*eof++ == ';') {
+	if (on && *eof++ == ';') {
 		/* we've got a field modifier, the only modifier
 		 * we can do with (atm) is TZID so try and read that */
 		static const char tzid[] = "TZID=";
@@ -652,7 +652,7 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 			eod = ep;
 		}
 		in = dt_strp(vp, &on, eod - vp);
-		if (UNLIKELY(echs_instant_0_p(in))) {
+		if (UNLIKELY(echs_instant_0_p(in) || on == NULL)) {
 			continue;
 		}
 		/* attach zone (if any) and only if there's no zone indicator */
