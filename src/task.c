@@ -78,6 +78,9 @@ echs_task_clone(echs_task_t t)
 	if (t->att != NULL) {
 		res->att = clone_strlst(t->att);
 	}
+	if (t->desc != NULL) {
+		res->desc = strdup(t->desc);
+	}
 	return res;
 }
 
@@ -116,6 +119,9 @@ free_echs_task(echs_task_t t)
 	}
 	if (tmpt->att) {
 		free_strlst(tmpt->att);
+	}
+	if (tmpt->desc) {
+		free(deconst(tmpt->desc));
 	}
 	free(tmpt);
 	return;

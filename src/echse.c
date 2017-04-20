@@ -76,6 +76,16 @@ serror(const char *fmt, ...)
 	return;
 }
 
+static inline size_t
+linlen(const char *str)
+{
+	const char *ep = strchr(str, '\n');
+	if (UNLIKELY(ep != NULL)) {
+		return ep - str;
+	}
+	return strlen(str);
+}
+
 
 /* global stream map */
 static echs_evstrm_t *strms;
@@ -342,6 +352,16 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 			case 'b':
 				i = e.from;
 				goto cpy_inst;
+			case 'd':
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->desc == NULL)) {
+					;
+				} else {
+					const size_t desz = linlen(t->desc);
+					fdwrite(t->desc, desz);
+				}
+				continue;
 			case 'e':
 				i = echs_instant_add(e.from, e.dur);
 				goto cpy_inst;

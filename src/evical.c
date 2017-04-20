@@ -798,6 +798,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_DESC:
+		if (ve->t.desc != NULL) {
+			/* only the first description wins */
+			break;
+		}
+		if (vp < ep) {
+			ve->t.desc = strndup(vp, ep - vp);
+		}
 		break;
 
 	case FLD_LOC:
@@ -1515,6 +1522,9 @@ send_task(int whither, echs_task_t t)
 	}
 	if (t->cmd) {
 		fdprintf("SUMMARY:%s\n", t->cmd);
+	}
+	if (t->desc) {
+		fdprintf("DESCRIPTION:%s\n", t->desc);
 	}
 	if (t->org) {
 		fdprintf("ORGANIZER:%s\n", t->org);
