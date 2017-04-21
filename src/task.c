@@ -81,6 +81,15 @@ echs_task_clone(echs_task_t t)
 	if (t->desc != NULL) {
 		res->desc = strdup(t->desc);
 	}
+	if (t->in != NULL) {
+		res->in = strdup(t->in);
+	}
+	if (t->out != NULL) {
+		res->out = strdup(t->out);
+	}
+	if (t->err != NULL) {
+		res->err = strdup(t->err);
+	}
 	return res;
 }
 
@@ -122,6 +131,15 @@ free_echs_task(echs_task_t t)
 	}
 	if (tmpt->desc) {
 		free(deconst(tmpt->desc));
+	}
+	if (tmpt->in) {
+		free(deconst(tmpt->in));
+	}
+	if (tmpt->out) {
+		free(deconst(tmpt->out));
+	}
+	if (tmpt->err) {
+		free(deconst(tmpt->err));
 	}
 	free(tmpt);
 	return;
