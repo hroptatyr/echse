@@ -76,6 +76,16 @@ serror(const char *fmt, ...)
 	return;
 }
 
+static inline size_t
+linlen(const char *str)
+{
+	const char *ep = strchr(str, '\n');
+	if (UNLIKELY(ep != NULL)) {
+		return ep - str;
+	}
+	return strlen(str);
+}
+
 
 /* global stream map */
 static echs_evstrm_t *strms;
@@ -253,6 +263,19 @@ again:
 	return 0;
 }
 
+static int
+put_name(echs_task_t t, const char *name)
+{
+	struct echs_task_s *tmpt = deconst(t);
+
+	/* record file name, we're reusing the IN slot for that */
+	if (tmpt->in) {
+		free(deconst(tmpt->in));
+	}
+	tmpt->in = strdup(name);
+	return 0;
+}
+
 static void
 free_task_ht(void)
 {
@@ -342,9 +365,29 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 			case 'b':
 				i = e.from;
 				goto cpy_inst;
+			case 'd':
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->desc == NULL)) {
+					;
+				} else {
+					const size_t desz = linlen(t->desc);
+					fdwrite(t->desc, desz);
+				}
+				continue;
 			case 'e':
 				i = echs_instant_add(e.from, e.dur);
 				goto cpy_inst;
+			case 'f':
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->in == NULL)) {
+					;
+				} else {
+					const size_t inz = strlen(t->in);
+					fdwrite(t->in, inz);
+				}
+				continue;
 			case 's':
 				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
 					;
@@ -439,7 +482,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 }
 
 static int
-_inject_fd(int fd)
+_inject_fd(int fd, const char *name)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -470,6 +513,8 @@ more:
 			}
 			/* and otherwise inject him */
 			put_task(ins.t->oid, ins.t);
+			/* record file name */
+			put_name(ins.t, name);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -619,12 +664,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_inject_fd(fd);
+		_inject_fd(fd, fn);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_inject_fd(STDIN_FILENO);
+		_inject_fd(STDIN_FILENO, "<stdin>");
 	}
 	/* there might be riff raff (NULLs) in the stream array */
 	condense_strms();

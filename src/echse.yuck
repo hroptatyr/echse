@@ -32,7 +32,9 @@ Print the resulting stream.
   --till=DT             Finish event streams by DT.
   --format=SPEC         Output according to SPEC, a format string where
                         - %b expands to the beginning of an event
+                        - %d expands to the first line of the description
                         - %e expands to the end of an event
+                        - %f expands to the filename currently processed
                         - %s expands to the summary
                         - %u expands to the uid
                         SPEC can also be "ical" in which case the
