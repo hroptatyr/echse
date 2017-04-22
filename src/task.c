@@ -90,6 +90,9 @@ echs_task_clone(echs_task_t t)
 	if (t->err != NULL) {
 		res->err = strdup(t->err);
 	}
+	if (t->src != NULL) {
+		res->src = strdup(t->src);
+	}
 	return res;
 }
 
@@ -140,6 +143,9 @@ free_echs_task(echs_task_t t)
 	}
 	if (tmpt->err) {
 		free(deconst(tmpt->err));
+	}
+	if (tmpt->src) {
+		free(deconst(tmpt->src));
 	}
 	free(tmpt);
 	return;
