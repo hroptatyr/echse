@@ -268,11 +268,11 @@ put_name(echs_task_t t, const char *name)
 {
 	struct echs_task_s *tmpt = deconst(t);
 
-	/* record file name, we're reusing the IN slot for that */
-	if (tmpt->in) {
-		free(deconst(tmpt->in));
+	/* record file name, we're the SRC slot for that
+	 * which should be otherwise unused */
+	if (tmpt->src == NULL) {
+		tmpt->src = strdup(name);
 	}
-	tmpt->in = strdup(name);
 	return 0;
 }
 
@@ -381,11 +381,11 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 			case 'f':
 				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
 					;
-				} else if (UNLIKELY(t->in == NULL)) {
+				} else if (UNLIKELY(t->src == NULL)) {
 					;
 				} else {
-					const size_t inz = strlen(t->in);
-					fdwrite(t->in, inz);
+					const size_t zrc = strlen(t->src);
+					fdwrite(t->src, zrc);
 				}
 				continue;
 			case 's':

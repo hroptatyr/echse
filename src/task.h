@@ -98,6 +98,9 @@ struct echs_task_s {
 	const char *org;
 	struct strlst_s *att;
 
+	/* what file did it come from? */
+	const char *src;
+
 	/* input and output files */
 	const char *in;
 	const char *out;
