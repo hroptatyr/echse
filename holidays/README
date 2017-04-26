@@ -1,1 +1,17 @@
+Directory iso-3166
+------------------
+
 Holidays are organised by iso-3166-1 or iso-3166-2 region files.
+
+
+Directory iso-4217
+------------------
+
+Holidays are organised by iso-4217 currency code.
+
+
+Directory iso-10383
+-------------------
+
+Holidays are organised by iso-10383 MIC operator code and,
+extending the operator-wide holidays, by MIC segment code.

@@ -4,6 +4,7 @@ echse beef
 Open data by-product of the echse execution scheduling daemon.
 
 + Holidays in iCal format grouped by countries and country divisions.
++ Holidays observed by national banks grouped by currency.
 + Trading hours and expiration schedules grouped by market operators
 and market segment.
 
