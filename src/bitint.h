@@ -148,6 +148,19 @@ bi31_has_bits_p(bitint31_t bi)
 }
 
 /**
+ * Check that bit X is assignd in BI. */
+static inline bool
+bui31_has_bit_p(bituint31_t bi, unsigned int x)
+{
+/* LSB set means we carry only an integer
+ * bi == 0 means we carry nothing */
+	if (bi & 0b1U) {
+		return (bi >> 1U) == x;
+	}
+	return (bi >> (x + 1U)) & 0b1U;
+}
+
+/**
  * Assign X to bitset/integer BI. */
 static inline bituint63_t
 ass_bui63(bituint63_t bi, unsigned int x)
@@ -164,6 +177,22 @@ ass_bui63(bituint63_t bi, unsigned int x)
 	}
 	bi |= 1ULL << (x + 1U);
 	return bi;
+}
+
+/**
+ * Check that bit X is assignd in BI. */
+static inline bool
+bi31_has_bit_p(bitint31_t bi, int x)
+{
+/* LSB set in pos: one integer (in neg)
+ * nothing set -> nothing set
+ * otherwise bitset */
+	if (bi.pos & 0b1U) {
+		return bi.neg == x;
+	} else if (x > 0) {
+		return (bi.pos >> (unsigned int)x) & 0b1U;
+	}
+	return (bi.neg >> (unsigned int)-x) & 0b1U;
 }
 
 /**

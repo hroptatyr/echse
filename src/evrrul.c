@@ -446,33 +446,20 @@ make_enum(struct enum_s *restrict tgt, echs_instant_t proto, rrulsp_t rr)
 }
 
 static bool
-md_match_p(
-	struct md_s md,
-	const unsigned int m[static 12U], size_t nm,
-	const int d[static 2U * 31U], size_t nd)
+md_match_p(struct md_s md, bituint31_t m, bitint31_t d)
 {
-	if (LIKELY(!nm && !nd)) {
+	const bool mp = bui31_has_bits_p(m);
+	const bool dp = bi31_has_bits_p(d);
+
+	if (LIKELY(!mp && !dp)) {
 		return true;
-	} else if (nm && nd) {
-		/* filter out month-days we don't want easter to occur on */
-		for (size_t i = 0U; i < nm; i++) {
-			if (md.m == m[i]) {
-				goto chk_day;
-			}
-		}
-	} else if (nm) {
-		for (size_t i = 0U; i < nm; i++) {
-			if (md.m == m[i]) {
-				return true;
-			}
-		}
-	}  else {
-	chk_day:
-		for (size_t j = 0U; j < nd; j++) {
-			if (md.d == d[j]) {
-				return true;
-			}
-		}
+	} else if (mp && dp) {
+		return bui31_has_bit_p(m, md.m) &&
+			bi31_has_bit_p(d, md.d);
+	} else if (mp) {
+		return bui31_has_bit_p(m, md.m);
+	} else if (dp) {
+		return bi31_has_bit_p(d, md.d);
 	}
 	return false;
 }
@@ -654,8 +641,7 @@ static void
 fill_yly_eastr(
 	bitint383_t *restrict cand,
 	unsigned int y, const bitint383_t *s,
-	const unsigned int m[static 12U], size_t nm,
-	const int d[static 2U * 31U], size_t nd,
+	bituint31_t m, bitint31_t d,
 	uint8_t wd_mask)
 {
 	int offs;
@@ -682,7 +668,7 @@ fill_yly_eastr(
 			continue;
 		} else if (!(md = yd_to_md(y, yd)).m) {
 			continue;
-		} else if (!md_match_p(md, m, nm, d, nd)) {
+		} else if (!md_match_p(md, m, d)) {
 			/* can't use this one, user wants it masked */
 			continue;
 		}
@@ -1001,16 +987,15 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* extend by yd */
 		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
-		/* extend by easter */
-		fill_yly_eastr(&cand, y, &rr->easter, m, nm, d, nd, wd_mask);
 
 		/* extend by ymd */
-		if (UNLIKELY(!nm && !nd)) {
-			/* don't fill up any ymds */
-			;
-		} else if (bi383_has_bits_p(&rr->easter)) {
-			/* MDs act as a filter in presence of BYEASTER */
-			;
+		if (UNLIKELY(!nm && !nd || bi383_has_bits_p(&rr->easter))) {
+			/* don't fill up any ymds
+			 * in presence of BYEASTER MDs act as a filter
+			 * so extend by easter now */
+			fill_yly_eastr(
+				&cand, y, &rr->easter,
+				rr->mon, rr->dom, wd_mask);
 		} else if (!nm) {
 			fill_yly_ymd_all_m(&cand, y, d, nd, wd_mask);
 		} else if (!nd) {
