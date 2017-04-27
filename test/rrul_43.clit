@@ -1,0 +1,7 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format '%b\t%s' "${srcdir}/sample_37.ics"
+2011-04-25	Easter Monday on April 25
+2022-04-15	Good Friday on April 15
+2033-04-15	Good Friday on April 15
+$
