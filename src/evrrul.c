@@ -47,6 +47,12 @@ struct md_s {
 	unsigned int d;
 };
 
+struct ymd_s {
+	unsigned int y;
+	unsigned int m;
+	unsigned int d;
+};
+
 static const unsigned int mdays[] = {
 	0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
 };
@@ -465,6 +471,96 @@ md_match_p(struct md_s md, bituint31_t m, bitint31_t d)
 }
 
 
+/* hijri calendar */
+#include "dat_ummulqura.c"
+
+typedef unsigned int jd_t;
+
+static inline __attribute__((const, pure)) jd_t
+h2jd(struct ymd_s h)
+{
+	const unsigned int i = (h.y - 1U) * 12U + (h.m - 1U) - 16261U/*1355AH*/;
+
+	if (UNLIKELY(i >= countof(dat_ummulqura))) {
+		return 0U;
+	}
+	return dat_ummulqura[i] + (h.d - 1U) + 2400000U/*jdn*/;
+}
+
+static inline __attribute__((const, pure, unused)) jd_t
+g2jd(struct ymd_s g)
+{
+	const unsigned int b = g.y + 100100U + ((int)g.m - 8) / 6;
+	unsigned int d = (b * 1461U) / 4U;
+
+	d += (153U * ((g.m + 9U) % 12U) + 2U) / 5U + g.d;
+	return d - ((b / 100U) * 3U) / 4U + 752U - 34840408U;
+}
+
+static inline __attribute__((pure, const)) unsigned int
+__get_ndohm(unsigned int hy, unsigned int hm)
+{
+/* return the number of days in (hijri) month M in (hijri) year Y. */
+	const unsigned int i = (hy - 1U) * 12U + (hm - 1U) - 16260U/*1355AH*/;
+
+	if (UNLIKELY(!i || i >= countof(dat_ummulqura))) {
+		return 0U;
+	}
+	return dat_ummulqura[i - 0U] - dat_ummulqura[i - 1U];
+}
+
+static __attribute__((const, pure)) struct ymd_s
+jd2g(jd_t d)
+{
+/* turn julian day number into gregorian date */
+	unsigned int j;
+	unsigned int i;
+	unsigned int gd, gm, gy;
+
+	j = 4U * d + 139361631U;
+	j += ((((4U * d + 183187720U) / 146097U) * 3U) / 4U) * 4U - 3908U;
+	i = ((j % 1461U) / 4U) * 5U + 308U;
+	gd = ((i % 153U) / 5U) + 1U;
+	gm = ((i / 153U) % 12U) + 1U;
+	gy = j / 1461U - 100100U + (8 - gm) / 6U;
+	return (struct ymd_s){gy, gm, gd};
+}
+
+static __attribute__((const, pure, unused)) struct ymd_s
+jd2h(jd_t d)
+{
+/* turn julian day number into hijri date,
+ * this one does a scan over the ummulqura array, so use seldom */
+	size_t i;
+	unsigned int m;
+
+	/* use modified julian day number */
+	if (UNLIKELY((d -= 2400000U) < *dat_ummulqura)) {
+		/* that's before our time */
+		goto nil;
+	}
+	for (i = 0U; i < countof(dat_ummulqura) && dat_ummulqura[i] <= d; i++);
+	if (UNLIKELY(i >= countof(dat_ummulqura))) {
+		/* that's beyond our time */
+		goto nil;
+	}
+	/* M is the month count */
+	m = i + 16260/*1355AH*/;
+
+	return (struct ymd_s){
+		(m - 1U) / 12U + 1U, (m - 1U) % 12U + 1U,
+			d - dat_ummulqura[i - 1U] + 1U};
+nil:
+	return (struct ymd_s){};
+}
+
+static echs_wday_t
+jd_get_wday(jd_t d)
+{
+	return (echs_wday_t)((d % 7U) ?: SUN);
+}
+
+
 /* recurrence helpers */
 static void
 fill_yly_ywd(
@@ -709,6 +805,54 @@ fill_mly_ymd(
 }
 
 static void
+fill_mly_hij(
+	bitint383_t *restrict cand,
+	const unsigned int hy, const unsigned int hm,
+	const int hd[static 2U * 31U], size_t nhd,
+	bituint31_t mon, bitint31_t dom,
+	uint8_t wd_mask)
+{
+	for (size_t j = 0UL; j < nhd; j++) {
+		unsigned int ndohm = __get_ndohm(hy, hm);
+		int dd = hd[j];
+		jd_t jd;
+		struct ymd_s g;
+
+		if (dd > 0 && (unsigned int)dd <= ndohm) {
+			;
+		} else if (dd < 0 && ndohm + 1U + dd > 0) {
+			dd += ndohm + 1U;
+		} else {
+			continue;
+		}
+		/* convert to JDN */
+		if (UNLIKELY(!(jd = h2jd((struct ymd_s){hy, hm, dd})))) {
+			continue;
+		}
+
+		/* check wd_mask */
+		if (wd_mask >> 1U &&
+		    !((wd_mask >> jd_get_wday(jd)) & 0b1U)) {
+			/* nope, it's filtered out */
+			continue;
+		}
+
+		/* convert to gregorian dates */
+		g = jd2g(jd);
+
+		/* match against gregorian dates */
+		if (!md_match_p((struct md_s){g.m, g.d}, mon, dom)) {
+			/* can't use this one, user wants it masked */
+			continue;
+		}
+
+		/* it's a candidate */
+		ass_bi383(cand, pack_cand(g.m, g.d));
+	}
+	return;
+}
+
+static void
 fill_yly_ymd(
 	bitint383_t *restrict cand, unsigned int y,
 	const unsigned int m[static 12U], size_t nm,
@@ -717,6 +861,20 @@ fill_yly_ymd(
 {
 	for (size_t i = 0UL; i < nm; i++) {
 		fill_mly_ymd(cand, y, m[i], d, nd, wd_mask);
+	}
+	return;
+}
+
+static void
+fill_yly_hij(
+	bitint383_t *restrict cand, unsigned int hy,
+	const unsigned int hm[static 12U], size_t nm,
+	const int hd[static 2U * 31U], size_t nd,
+	bituint31_t mon, bitint31_t dom,
+	uint8_t wd_mask)
+{
+	for (size_t i = 0UL; i < nm; i++) {
+		fill_mly_hij(cand, hy, hm[i], hd, nd, mon, dom, wd_mask);
 	}
 	return;
 }
