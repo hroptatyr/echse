@@ -48,7 +48,9 @@ union echs_instant_u {
 	struct {
 #if BYTE_ORDER == BIG_ENDIAN
 		uint32_t y:16;
+		/* top 4 bits carry tz info */
 		uint32_t m:8;
+		/* top 2 bits carry tz info */
 		uint32_t d:8;
 		uint32_t H:8;
 		uint32_t M:8;

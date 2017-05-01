@@ -1,6 +1,6 @@
 /*** tzob.c -- timezone interning system
  *
- * Copyright (C) 2014-2015 Sebastian Freundt
+ * Copyright (C) 2014-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -67,7 +67,7 @@ static size_t obz;
 static size_t obn;
 
 /* the hx obarray, specs and size just like the string obarray */
-static hash_t hxa[256U];
+static hash_t hxa[64U];
 static size_t hxn;
 
 /* MFU cache of zifs */
@@ -116,14 +116,13 @@ bang_zone(const char *str, size_t len)
 static inline echs_tzob_t
 make_tzob(size_t x)
 {
-	x &= 0xffU;
-	return ((x << 6U) ^ (x << 10U) ^ (x << 24U)) & 0xffffffffU;
+	return ((x & 0b11U) << 6U) ^ ((x & 0b111100) << 10U);
 }
 
 static inline size_t
 make_size(echs_tzob_t z)
 {
-	return ((z >> 24U) ^ (z >> 10U) ^ (z >> 6U)) & 0xffU;
+	return ((z >> 8U) & 0b111100U) ^ ((z >> 6U) & 0b11U);
 }
 
 static echs_tzob_t
@@ -133,7 +132,7 @@ bang_tzob(hash_t hx)
  * readily shifted to the needs of ECHS_DMASK and ECHS_IMASK */
 	if (UNLIKELY(hxn >= countof(hxa))) {
 		/* nope, let's do fuckall instead
-		 * more than 256 timezones?  we're not THAT international */
+		 * more than 64 timezones?  we're not THAT international */
 		return 0U;
 	}
 	/* just push the hx in question and advance the counter */
