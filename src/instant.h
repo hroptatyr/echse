@@ -1,6 +1,6 @@
 /*** instant.h -- some echs_instant_t functionality
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -47,6 +47,7 @@ typedef union echs_instant_u echs_instant_t;
 union echs_instant_u {
 	struct {
 #if BYTE_ORDER == BIG_ENDIAN
+		/* top 4 bits carry scale info */
 		uint32_t y:16;
 		/* top 4 bits carry tz info */
 		uint32_t m:8;

@@ -1,6 +1,6 @@
 /*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -65,6 +65,7 @@
 #include "fdprnt.h"
 #include "echse-genuid.h"
 #include "tzob.h"
+#include "scale.h"
 
 #if !defined assert
 # define assert(x)
@@ -603,23 +604,51 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 	char *on = NULL;
 	echs_instant_t res = dt_strp(vp, &on, ep - vp);
 
-	if (on && *eof++ == ';') {
-		/* we've got a field modifier, the only modifier
-		 * we can do with (atm) is TZID so try and read that */
+	if (UNLIKELY(on == NULL)) {
+		return res;
+	}
+	while (*eof++ == ';') {
+		/* we've got a field modifier */
 		static const char tzid[] = "TZID=";
+		static const char scal[] = "SCALE=";
+		/* next EOF */
+		const char *const neo = strpbrk(eof, ":;") ?: vp - 1U;
 
-		if (on < ep && *on == 'Z') {
-			/* don't worry about the zone spec */
+		if (0) {
 			;
 		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
 			/* yep, got him */
-			const char *const zn = eof + strlenof(tzid);
-			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
-			const size_t nzn = eoz - zn;
-			echs_tzob_t z = echs_tzob(zn, nzn);
+			if (on < ep && *on == 'Z') {
+				/* don't worry about the zone spec */
+				;
+			} else {
+				const char *const zn = eof + strlenof(tzid);
+				const size_t nzn = neo - zn;
+				echs_tzob_t z = echs_tzob(zn, nzn);
 
-			res = echs_instant_attach_tzob(res, z);
+				res = echs_instant_attach_tzob(res, z);
+			}
+		} else if (!strncmp(eof, scal, strlenof(scal))) {
+			/* very nice */
+			const char *const zn = eof + strlenof(scal);
+			echs_scale_t s = SCALE_GREGORIAN;
+
+			switch (*zn) {
+			default:
+			case 'G':
+				/* gregorian */
+				break;
+			case 'H':
+				/* one of the Hijris */
+				s = SCALE_HIJRI_UMMULQURA;
+				break;
+			}
+
+			res = echs_instant_attach_scale(res, s);
 		}
+
+		/* set eof for next round */
+		eof = neo;
 	}
 	return res;
 }
@@ -629,20 +658,41 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
 	echs_tzob_t z = 0U;
+	echs_scale_t s = SCALE_GREGORIAN;
 
-	if (*eof++ == ';') {
+	while (*eof++ == ';') {
 		/* we've got a field modifier, the only modifier
 		 * we can do with (atm) is TZID so try and read that */
 		static const char tzid[] = "TZID=";
+		static const char scal[] = "SCALE=";
+		const char *const neo = strpbrk(eof, ":;") ?: vp - 1U;
 
-		if (!strncmp(eof, tzid, strlenof(tzid))) {
+		if (0) {
+			;
+		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
 			/* yep, got him */
 			const char *const zn = eof + strlenof(tzid);
-			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
-			const size_t nzn = eoz - zn;
+			const size_t nzn = neo - zn;
 
 			z = echs_tzob(zn, nzn);
+		} else if (!strncmp(eof, scal, strlenof(scal))) {
+			/* very nice */
+			const char *const zn = eof + strlenof(scal);
+
+			switch (*zn) {
+			default:
+			case 'G':
+				/* gregorian */
+				break;
+			case 'H':
+				/* one of the Hijris */
+				s = SCALE_HIJRI_UMMULQURA;
+				break;
+			}
 		}
+
+		/* get ready for the next round */
+		eof = neo;
 	}
 	for (const char *eod; vp < ep; vp = eod + 1U) {
 		echs_instant_t in;
@@ -659,6 +709,8 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 		if (on >= eod || *on != 'Z') {
 			in = echs_instant_attach_tzob(in, z);
 		}
+		/* attach scale */
+		in = echs_instant_attach_scale(in, s);
 		add1_to_dtlst(&dl, in);
 	}
 	return dl;
@@ -2442,7 +2494,7 @@ make_task(struct ical_vevent_s *ve)
 		/* free all the bits and bobs that
 		 * might have been added */
 		echs_event_t e = {
-			.from = ve->from,
+			.from = echs_instant_rescale(ve->from, SCALE_GREGORIAN),
 			.dur = ve->dur,
 			.oid = ve->t.oid,
 			.sts = ve->sts,

@@ -47,12 +47,6 @@ struct md_s {
 	unsigned int d;
 };
 
-struct ymd_s {
-	unsigned int y;
-	unsigned int m;
-	unsigned int d;
-};
-
 static const unsigned int mdays[] = {
 	0U, 31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U,
 };
@@ -471,96 +465,6 @@ md_match_p(struct md_s md, bituint31_t m, bitint31_t d)
 }
 
 
-/* hijri calendar */
-#include "dat_ummulqura.c"
-
-typedef unsigned int jd_t;
-
-static inline __attribute__((const, pure)) jd_t
-h2jd(struct ymd_s h)
-{
-	const unsigned int i = (h.y - 1U) * 12U + (h.m - 1U) - 16261U/*1355AH*/;
-
-	if (UNLIKELY(i >= countof(dat_ummulqura))) {
-		return 0U;
-	}
-	return dat_ummulqura[i] + (h.d - 1U) + 2400000U/*jdn*/;
-}
-
-static inline __attribute__((const, pure, unused)) jd_t
-g2jd(struct ymd_s g)
-{
-	const unsigned int b = g.y + 100100U + ((int)g.m - 8) / 6;
-	unsigned int d = (b * 1461U) / 4U;
-
-	d += (153U * ((g.m + 9U) % 12U) + 2U) / 5U + g.d;
-	return d - ((b / 100U) * 3U) / 4U + 752U - 34840408U;
-}
-
-static inline __attribute__((pure, const)) unsigned int
-__get_ndohm(unsigned int hy, unsigned int hm)
-{
-/* return the number of days in (hijri) month M in (hijri) year Y. */
-	const unsigned int i = (hy - 1U) * 12U + (hm - 1U) - 16260U/*1355AH*/;
-
-	if (UNLIKELY(!i || i >= countof(dat_ummulqura))) {
-		return 0U;
-	}
-	return dat_ummulqura[i - 0U] - dat_ummulqura[i - 1U];
-}
-
-static __attribute__((const, pure)) struct ymd_s
-jd2g(jd_t d)
-{
-/* turn julian day number into gregorian date */
-	unsigned int j;
-	unsigned int i;
-	unsigned int gd, gm, gy;
-
-	j = 4U * d + 139361631U;
-	j += ((((4U * d + 183187720U) / 146097U) * 3U) / 4U) * 4U - 3908U;
-	i = ((j % 1461U) / 4U) * 5U + 308U;
-	gd = ((i % 153U) / 5U) + 1U;
-	gm = ((i / 153U) % 12U) + 1U;
-	gy = j / 1461U - 100100U + (8 - gm) / 6U;
-	return (struct ymd_s){gy, gm, gd};
-}
-
-static __attribute__((const, pure, unused)) struct ymd_s
-jd2h(jd_t d)
-{
-/* turn julian day number into hijri date,
- * this one does a scan over the ummulqura array, so use seldom */
-	size_t i;
-	unsigned int m;
-
-	/* use modified julian day number */
-	if (UNLIKELY((d -= 2400000U) < *dat_ummulqura)) {
-		/* that's before our time */
-		goto nil;
-	}
-	for (i = 0U; i < countof(dat_ummulqura) && dat_ummulqura[i] <= d; i++);
-	if (UNLIKELY(i >= countof(dat_ummulqura))) {
-		/* that's beyond our time */
-		goto nil;
-	}
-	/* M is the month count */
-	m = i + 16260/*1355AH*/;
-
-	return (struct ymd_s){
-		(m - 1U) / 12U + 1U, (m - 1U) % 12U + 1U,
-			d - dat_ummulqura[i - 1U] + 1U};
-nil:
-	return (struct ymd_s){};
-}
-
-static echs_wday_t
-jd_get_wday(jd_t d)
-{
-	return (echs_wday_t)((d % 7U) ?: SUN);
-}
-
-
 /* recurrence helpers */
 static void
 fill_yly_ywd(
@@ -804,6 +708,7 @@ fill_mly_ymd(
 	return;
 }
 
+#if 0
 static void
 fill_mly_hij(
 	bitint383_t *restrict cand,
@@ -813,7 +718,8 @@ fill_mly_hij(
 	uint8_t wd_mask)
 {
 	for (size_t j = 0UL; j < nhd; j++) {
-		unsigned int ndohm = __get_ndohm(hy, hm);
+		const unsigned int ndohm =
+			echs_scale_ndim(hy, hm, SCALE_HIJRI_UMMULQURA);
 		int dd = hd[j];
 		jd_t jd;
 		struct ymd_s g;
@@ -851,6 +757,7 @@ fill_mly_hij(
 	}
 	return;
 }
+#endif
 
 static void
 fill_yly_ymd(
@@ -865,6 +772,7 @@ fill_yly_ymd(
 	return;
 }
 
+#if 0
 static void
 fill_yly_hij(
 	bitint383_t *restrict cand, unsigned int hy,
@@ -878,6 +786,7 @@ fill_yly_hij(
 	}
 	return;
 }
+#endif
 
 static void
 fill_yly_ymd_all_m(
