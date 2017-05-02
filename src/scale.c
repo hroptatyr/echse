@@ -152,6 +152,26 @@ __ndim_greg(unsigned int y, unsigned int m)
 	return res;
 }
 
+static __attribute__((const, pure)) echs_wday_t
+__wday_greg(unsigned int y, unsigned int m, unsigned int d)
+{
+/* sakamoto method, stolen from dateutils */
+	static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+	unsigned int res;
+
+	y -= m < 3;
+	res = y + y / 4U - y / 100U + y / 400U;
+	res += t[m - 1U] + d;
+	return (echs_wday_t)(((unsigned int)res % 7U) ?: SUN);
+}
+
+static __attribute__((const, pure)) echs_wday_t
+__wday_hij(unsigned int y, unsigned int m, unsigned int d)
+{
+	const jd_t j = h2jd((struct ymd_s){y, m, d});
+	return (echs_wday_t)((j % 7U) + 1U);
+}
+
 
 __attribute__((pure, const)) unsigned int
 echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m)
@@ -166,6 +186,18 @@ echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m)
 		break;
 	}
 	return 0U;
+}
+
+__attribute__((pure, const)) echs_wday_t
+echs_scale_wday(echs_scale_t s, unsigned int y, unsigned int m, unsigned int d)
+{
+	switch (s) {
+	case SCALE_GREGORIAN:
+		return __wday_greg(y, m, d);
+	case SCALE_HIJRI_UMMULQURA:
+		return __wday_hij(y, m, d);
+	}
+	return MIR;
 }
 
 echs_instant_t

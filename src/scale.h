@@ -46,6 +46,17 @@ typedef enum {
 	SCALE_HIJRI_UMMULQURA = 1,
 } echs_scale_t;
 
+typedef enum {
+	MIR = (0U),
+	MON = (1U),
+	TUE = (2U),
+	WED = (3U),
+	THU = (4U),
+	FRI = (5U),
+	SAT = (6U),
+	SUN = (7U),
+} echs_wday_t;
+
 /**
  * echs_instants are 64bit values with some bits unused to facilitate
  * aligned access, we now put the bits of echs_scale_t onto echs_instant
@@ -73,6 +84,11 @@ extern echs_instant_t echs_instant_rescale(echs_instant_t i, echs_scale_t s);
  * Return the number of days in month M in year Y according to scale S. */
 extern __attribute__((pure, const)) unsigned int
 echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m);
+
+/**
+ * Return the weekday of Y-M-D according to scale S. */
+extern __attribute__((pure, const)) echs_wday_t
+echs_scale_wday(echs_scale_t s, unsigned int y, unsigned int m, unsigned int d);
 
 /**
  * Extract scale information from instant I. */

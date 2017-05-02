@@ -708,56 +708,38 @@ fill_mly_ymd(
 	return;
 }
 
-#if 0
 static void
 fill_mly_hij(
 	bitint383_t *restrict cand,
 	const unsigned int hy, const unsigned int hm,
 	const int hd[static 2U * 31U], size_t nhd,
-	bituint31_t mon, bitint31_t dom,
 	uint8_t wd_mask)
 {
-	for (size_t j = 0UL; j < nhd; j++) {
-		const unsigned int ndohm =
-			echs_scale_ndim(hy, hm, SCALE_HIJRI_UMMULQURA);
-		int dd = hd[j];
-		jd_t jd;
-		struct ymd_s g;
+	const echs_scale_t hs = SCALE_HIJRI_UMMULQURA;
 
-		if (dd > 0 && (unsigned int)dd <= ndohm) {
+	for (size_t j = 0UL; j < nhd; j++) {
+		const unsigned int ndim = echs_scale_ndim(hs, hy, hm);
+		int dd = hd[j];
+
+		if (dd > 0 && (unsigned int)dd <= ndim) {
 			;
-		} else if (dd < 0 && ndohm + 1U + dd > 0) {
-			dd += ndohm + 1U;
+		} else if (dd < 0 && ndim + 1U + dd > 0) {
+			dd += ndim + 1U;
 		} else {
 			continue;
 		}
-		/* convert to JDN */
-		if (UNLIKELY(!(jd = h2jd((struct ymd_s){hy, hm, dd})))) {
-			continue;
-		}
-
 		/* check wd_mask */
 		if (wd_mask >> 1U &&
-		    !((wd_mask >> jd_get_wday(jd)) & 0b1U)) {
+		    !((wd_mask >> echs_scale_wday(hs, hy, hm, dd)) & 0b1U)) {
 			/* nope, it's filtered out */
 			continue;
 		}
 
-		/* convert to gregorian dates */
-		g = jd2g(jd);
-
-		/* match against gregorian dates */
-		if (!md_match_p((struct md_s){g.m, g.d}, mon, dom)) {
-			/* can't use this one, user wants it masked */
-			continue;
-		}
-
 		/* it's a candidate */
-		ass_bi383(cand, pack_cand(g.m, g.d));
+		ass_bi383(cand, pack_cand(hm, dd));
 	}
 	return;
 }
-#endif
 
 static void
 fill_yly_ymd(
@@ -772,21 +754,18 @@ fill_yly_ymd(
 	return;
 }
 
-#if 0
 static void
 fill_yly_hij(
 	bitint383_t *restrict cand, unsigned int hy,
 	const unsigned int hm[static 12U], size_t nm,
 	const int hd[static 2U * 31U], size_t nd,
-	bituint31_t mon, bitint31_t dom,
 	uint8_t wd_mask)
 {
 	for (size_t i = 0UL; i < nm; i++) {
-		fill_mly_hij(cand, hy, hm[i], hd, nd, mon, dom, wd_mask);
+		fill_mly_hij(cand, hy, hm[i], hd, nd, wd_mask);
 	}
 	return;
 }
-#endif
 
 static void
 fill_yly_ymd_all_m(
@@ -943,8 +922,8 @@ add_poss(bitint383_t *restrict cand, const unsigned int y, const bitint383_t *p)
 	return;
 }
 
-size_t
-rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+static size_t
+rrul_fill_yly_greg(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
 	const echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
@@ -1054,7 +1033,6 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* extend by yd */
 		fill_yly_yd(&cand, y, &rr->doy, wd_mask);
 
-
 		/* extend by ymd */
 		if (UNLIKELY(!nm && !nd || bi383_has_bits_p(&rr->easter))) {
 			/* don't fill up any ymds
@@ -1108,8 +1086,145 @@ fin:
 	return res;
 }
 
+static size_t
+rrul_fill_yly_hij(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t protr = echs_instant_rescale(*tgt, rr->scale);
+	const echs_instant_t proto = echs_instant_detach_scale(protr);
+	unsigned int y = proto.y;
+	/* unrolled month bui31 bitset */
+	unsigned int m[12U];
+	size_t nm;
+	/* unrolled day bi31, we use 2 * 31 because by monthdays can
+	 * also be denoted negatively, thus 1, -1, 2, -2, ..., 31, -31 is
+	 * the biggest possible BYMONTHDAY value */
+	int d[2U * 31U];
+	size_t nd;
+	size_t res = 0UL;
+	size_t tries;
+	uint8_t wd_mask = 0U;
+	bool ymdp;
+	struct enum_s e;
+
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	}
+
+	/* check if we're ymd only */
+	ymdp = !bi447_has_bits_p(&rr->dow) &&
+		!bi31_has_bits_p(rr->dom);
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	with (unsigned int tmpm) {
+		nm = 0UL;
+		for (bitint_iter_t mi = 0U;
+		     nm < countof(m) && (tmpm = bui31_next(&mi, rr->mon), mi);
+		     m[nm++] = tmpm);
+
+		/* fill up with a default */
+		if (!nm && ymdp && proto.m) {
+			m[nm++] = proto.m;
+		}
+	}
+	with (int tmpd) {
+		nd = 0UL;
+		for (bitint_iter_t di = 0U;
+		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
+		     d[nd++] = tmpd);
+
+		/* fill up with the default */
+		if (!nd && ymdp && proto.d) {
+			d[nd++] = proto.d;
+		}
+	}
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* use lsb of wd_mask to indicate
+				 * non-0 wday counts, as in nMO,nTU, etc. */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1355U || y > 1500U)) {
+		goto fin;
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
+		bitint383_t cand = {0U};
+		int yd;
+
+		/* fill yearly in the hijri-year sense */
+		fill_yly_hij(&cand, y, m, nm, d, nd, wd_mask);
+
+		/* limit by setpos */
+		clr_poss(&cand, &rr->pos);
+
+		/* add/subtract days */
+		add_poss(&cand, y, &rr->add);
+
+		/* now check the bitset */
+		for (bitint_iter_t all = 0UL;
+		     res < nti && (yd = bi383_next(&all, &cand), all);) {
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+					.ms = proto.ms,
+				};
+
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				/* attach scale and convert back to greg */
+				x = echs_instant_attach_scale(x, rr->scale);
+				x = echs_instant_rescale(x, SCALE_GREGORIAN);
+
+				tries = 64U;
+				tgt[res++] = x;
+			}
+		}
+	}
+fin:
+	return res;
+}
+
 size_t
-rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	switch (rr->scale) {
+	case SCALE_GREGORIAN:
+		return rrul_fill_yly_greg(tgt, nti, rr);
+	case SCALE_HIJRI_UMMULQURA:
+		return rrul_fill_yly_hij(tgt, nti, rr);
+	default:
+		break;
+	}
+	return 0UL;
+}
+
+static size_t
+rrul_fill_mly_greg(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
 	const echs_instant_t proto = *tgt;
 	unsigned int y = proto.y;
@@ -1237,6 +1352,140 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 fin:
 	return res;
+}
+
+static size_t
+rrul_fill_mly_hij(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	const echs_instant_t protr = echs_instant_rescale(*tgt, rr->scale);
+	const echs_instant_t proto = echs_instant_detach_scale(protr);
+	unsigned int y = proto.y;
+	unsigned int m = proto.m;
+	/* unrolled day bi31, we use 2 * 31 because by monthdays can
+	 * also be denoted negatively, thus 1, -1, 2, -2, ..., 31, -31 is
+	 * the biggest possible BYMONTHDAY value */
+	int d[2U * 31U];
+	size_t nd;
+	size_t res = 0UL;
+	size_t tries;
+	uint8_t wd_mask = 0U;
+	bool ymdp;
+	struct enum_s e;
+
+	if (UNLIKELY((unsigned int)rr->count < nti)) {
+		if (UNLIKELY((nti = rr->count) == 0UL)) {
+			goto fin;
+		}
+	} else if (UNLIKELY(bui31_has_bits_p(rr->mon))) {
+		/* upgrade to YEARLY */
+		return rrul_fill_yly(tgt, nti, rr);
+	}
+
+	/* check if we're ymd only */
+	ymdp = !bi31_has_bits_p(rr->dom);
+
+	/* generate a set of minutes and seconds */
+	(void)make_enum(&e, proto, rr);
+
+	with (int tmpd) {
+		nd = 0UL;
+		for (bitint_iter_t di = 0U;
+		     nd < nti && (tmpd = bi31_next(&di, rr->dom), di);
+		     d[nd++] = tmpd);
+
+		/* fill up with the default */
+		if (!nd && ymdp && proto.d) {
+			d[nd++] = proto.d;
+		}
+	}
+	/* set up the wday mask */
+	with (int tmp) {
+		for (bitint_iter_t dowi = 0UL;
+		     (tmp = bi447_next(&dowi, &rr->dow), dowi);) {
+			if (tmp >= (int)MON && tmp <= (int)SUN) {
+				wd_mask |= (uint8_t)(1U << (unsigned int)tmp);
+			} else {
+				/* use lsb of wd_mask to indicate
+				 * non-0 wday counts, as in nMO,nTU, etc. */
+				wd_mask |= 0b1U;
+			}
+		}
+	}
+
+	/* check ranges before filling */
+	if (UNLIKELY(y < 1355U || y > 1500U || !m || m > 12U)) {
+		goto fin;
+	}
+
+	/* fill up the array the hard way */
+	for (res = 0UL, tries = 64U; res < nti && --tries;
+	     ({
+		     if ((m += rr->inter) > 12U) {
+			     y += m / 12U;
+			     m %= 12U;
+		     }
+	     })) {
+		bitint383_t cand = {0U};
+		int yd;
+
+		/* extend by ymd */
+		if (nd) {
+			fill_mly_hij(&cand, y, m, d, nd, wd_mask);
+		}
+
+		/* limit by setpos */
+		clr_poss(&cand, &rr->pos);
+
+		/* add/subtract days */
+		add_poss(&cand, y, &rr->add);
+
+		/* now check the bitset */
+		for (bitint_iter_t all = 0UL;
+		     res < nti && (yd = bi383_next(&all, &cand), all);) {
+			for (ENUM_INIT(e, iS, iM, iH);
+			     ENUM_COND(e, iS, iM, iH);
+			     ENUM_ITER(e, iS, iM, iH)) {
+				echs_instant_t x = {
+					.y = y,
+					.m = yd / 32U + 1U,
+					.d = yd % 32U,
+					.H = e.H[iH],
+					.M = e.M[iM],
+					.S = e.S[iS],
+					.ms = proto.ms,
+				};
+
+				if (UNLIKELY(echs_instant_lt_p(rr->until, x))) {
+					goto fin;
+				}
+				if (UNLIKELY(echs_instant_lt_p(x, proto))) {
+					continue;
+				}
+				/* attach scale and convert back to greg */
+				x = echs_instant_attach_scale(x, rr->scale);
+				x = echs_instant_rescale(x, SCALE_GREGORIAN);
+
+				tries = 64U;
+				tgt[res++] = x;
+			}
+		}
+	}
+fin:
+	return res;
+}
+
+size_t
+rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
+{
+	switch (rr->scale) {
+	case SCALE_GREGORIAN:
+		return rrul_fill_mly_greg(tgt, nti, rr);
+	case SCALE_HIJRI_UMMULQURA:
+		return rrul_fill_mly_hij(tgt, nti, rr);
+	default:
+		break;
+	}
+	return 0UL;
 }
 
 size_t

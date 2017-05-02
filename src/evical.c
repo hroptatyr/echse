@@ -403,6 +403,19 @@ snarf_rrule(const char *s, size_t z)
 			rr.until = dt_strp(++kv, NULL, 0U);
 			break;
 
+		case KEY_SCALE:
+			/* just recognise HIJRI and GREGORIAN for now */
+			switch (*++kv) {
+			default:
+			case 'G':
+				rr.scale = SCALE_GREGORIAN;
+				break;
+			case 'H':
+				rr.scale = SCALE_HIJRI_UMMULQURA;
+				break;
+			}
+			break;
+
 		case BY_WDAY:
 			/* this one's special in that weekday names
 			 * are allowed to follow the indicator number */
