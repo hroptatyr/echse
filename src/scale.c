@@ -131,10 +131,10 @@ __ndim_hij(unsigned int y, unsigned int m)
 /* return the number of days in (hijri) month M in (hijri) year Y. */
 	const unsigned int i = (y - 1U) * 12U + (m - 1U) - 16260U/*1355AH*/;
 
-	if (UNLIKELY(!i || i >= countof(dat_ummulqura))) {
+	if (UNLIKELY(i + 1U >= countof(dat_ummulqura))) {
 		return 0U;
 	}
-	return dat_ummulqura[i - 0U] - dat_ummulqura[i - 1U];
+	return dat_ummulqura[i + 1U] - dat_ummulqura[i + 0U];
 }
 
 static __attribute__((const, pure)) inline unsigned int
