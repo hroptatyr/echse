@@ -1046,6 +1046,9 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				/* attach scale and convert back to greg */
 				x = echs_instant_attach_scale(x, srcsca);
 				x = echs_instant_rescale(x, tgtsca);
+				if (UNLIKELY(echs_nul_instant_p(x))) {
+					continue;
+				}
 
 				tries = 64U;
 				tgt[res++] = x;
