@@ -44,6 +44,7 @@
 typedef enum {
 	SCALE_GREGORIAN = 0,
 	SCALE_HIJRI_UMMULQURA = 1,
+	SCALE_HIJRI_DIYANET = 2,
 } echs_scale_t;
 
 typedef enum {
@@ -56,6 +57,15 @@ typedef enum {
 	SAT = (6U),
 	SUN = (7U),
 } echs_wday_t;
+
+/* monthly transitions for calendars with fixed number of months in year */
+#define SM(x)	(x[0U])
+/* number of months in a year */
+#define NMIY(x)	(x[1U])
+/* the actual month transitions data */
+#define MT(x)	(x + 2U)
+/* determine number of months in the MT array */
+#define NM(x)	(sizeof(x) / sizeof(unsigned int) - 2U)
 
 /**
  * echs_instants are 64bit values with some bits unused to facilitate

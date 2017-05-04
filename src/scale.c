@@ -49,8 +49,9 @@
 
 /* hijri calendar */
 #include "dat_ummulqura.c"
+#include "dat_diyanet.c"
 
-typedef unsigned int jd_t;
+typedef unsigned int mjd_t;
 
 struct ymd_s {
 	unsigned int y;
@@ -59,35 +60,37 @@ struct ymd_s {
 };
 
 
-static inline __attribute__((const, pure)) jd_t
-h2jd(struct ymd_s h)
+static inline __attribute__((const, pure)) mjd_t
+fm2mjd(const unsigned int *cal, size_t nm, struct ymd_s h)
 {
-	const unsigned int i = (h.y - 1U) * 12U + (h.m - 1U) - 16260U/*1355AH*/;
+	const unsigned int i = (h.y - 1U) * NMIY(cal) + (h.m - 1U) - SM(cal);
 
-	if (UNLIKELY(i >= countof(dat_ummulqura))) {
+	if (UNLIKELY(i >= nm)) {
 		return 0U;
 	}
-	return dat_ummulqura[i] + (h.d - 1U) + 2400000U/*jdn*/;
+	return MT(cal)[i] + (h.d - 1U);
 }
 
-static inline __attribute__((const, pure)) jd_t
-g2jd(struct ymd_s g)
+static inline __attribute__((const, pure)) mjd_t
+g2mjd(struct ymd_s g)
 {
 	const unsigned int b = g.y + 100100U + ((int)g.m - 8) / 6;
 	unsigned int d = (b * 1461U) / 4U;
 
 	d += (153U * ((g.m + 9U) % 12U) + 2U) / 5U + g.d;
-	return d - ((b / 100U) * 3U) / 4U + 752U - 34840408U;
+	return d - ((b / 100U) * 3U) / 4U + 752U - 34840408U - 2400000U;
 }
 
 static __attribute__((const, pure)) struct ymd_s
-jd2g(jd_t d)
+mjd2g(mjd_t d)
 {
 /* turn julian day number into gregorian date */
 	unsigned int j;
 	unsigned int i;
 	unsigned int gd, gm, gy;
 
+	/* this one uses julian day numbers */
+	d += 2400000U;
 	j = 4U * d + 139361631U;
 	j += ((((4U * d + 183187720U) / 146097U) * 3U) / 4U) * 4U - 3908U;
 	i = ((j % 1461U) / 4U) * 5U + 308U;
@@ -98,43 +101,40 @@ jd2g(jd_t d)
 }
 
 static __attribute__((const, pure)) struct ymd_s
-jd2h(jd_t d)
+mjd2fm(const unsigned int *cal, size_t nm, mjd_t d)
 {
 /* turn julian day number into hijri date,
- * this one does a scan over the ummulqura array, so use seldom */
+ * this one does a scan over the month transitions array, so use seldom */
 	size_t i;
 	unsigned int m;
 
-	/* use modified julian day number */
-	if (UNLIKELY((d -= 2400000U) < *dat_ummulqura)) {
-		/* that's before our time */
-		goto nil;
-	}
-	for (i = 0U; i < countof(dat_ummulqura) && dat_ummulqura[i] <= d; i++);
-	if (UNLIKELY(i >= countof(dat_ummulqura))) {
+	for (i = 0U; i < nm && MT(cal)[i] <= d; i++);
+	if (UNLIKELY(i >= nm)) {
 		/* that's beyond our time */
 		goto nil;
 	}
 	/* M is the month count */
-	m = i + 16260/*1355AH*/;
+	m = i + SM(cal);
 
 	return (struct ymd_s){
-		(m - 1U) / 12U + 1U, (m - 1U) % 12U + 1U,
-			d - dat_ummulqura[i - 1U] + 1U};
+		.y = (m - 1U) / 12U + 1U,
+		.m = (m - 1U) % 12U + 1U,
+		.d = d - MT(cal)[i - 1U] + 1U
+	};
 nil:
 	return (struct ymd_s){};
 }
 
 static __attribute__((pure, const)) unsigned int
-__ndim_hij(unsigned int y, unsigned int m)
+__ndim_hij(const unsigned int *cal, size_t nm, unsigned int y, unsigned int m)
 {
 /* return the number of days in (hijri) month M in (hijri) year Y. */
-	const unsigned int i = (y - 1U) * 12U + (m - 1U) - 16260U/*1355AH*/;
+	const unsigned int i = (y - 1U) * NMIY(cal) + (m - 1U) - SM(cal);
 
-	if (UNLIKELY(i + 1U >= countof(dat_ummulqura))) {
+	if (UNLIKELY(i + 1U >= nm)) {
 		return 0U;
 	}
-	return dat_ummulqura[i + 1U] - dat_ummulqura[i + 0U];
+	return MT(cal)[i + 1U] - MT(cal)[i + 0U];
 }
 
 static __attribute__((const, pure)) inline unsigned int
@@ -166,21 +166,25 @@ __wday_greg(unsigned int y, unsigned int m, unsigned int d)
 }
 
 static __attribute__((const, pure)) echs_wday_t
-__wday_hij(unsigned int y, unsigned int m, unsigned int d)
+__wday_hij(
+	const unsigned int *cal, size_t nm,
+	unsigned int y, unsigned int m, unsigned int d)
 {
-	const jd_t j = h2jd((struct ymd_s){y, m, d});
-	return (echs_wday_t)((j % 7U) + 1U);
+	const mjd_t j = fm2mjd(cal, nm, (struct ymd_s){y, m, d});
+	return (echs_wday_t)(((j + 1U) % 7U) + 1U);
 }
 
 
 unsigned int echs_scale_min[] = {
 	[SCALE_GREGORIAN] = 1600U,
 	[SCALE_HIJRI_UMMULQURA] = 1355U,
+	[SCALE_HIJRI_DIYANET] = 1318U,
 };
 
 unsigned int echs_scale_max[] = {
 	[SCALE_GREGORIAN] = 4095U,
 	[SCALE_HIJRI_UMMULQURA] = 1500U,
+	[SCALE_HIJRI_DIYANET] = 1444U,
 };
 
 __attribute__((pure, const)) unsigned int
@@ -191,7 +195,9 @@ echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m)
 	case SCALE_GREGORIAN:
 		return __ndim_greg(y, m);
 	case SCALE_HIJRI_UMMULQURA:
-		return __ndim_hij(y, m);
+		return __ndim_hij(dat_ummulqura, NM(dat_ummulqura), y, m);
+	case SCALE_HIJRI_DIYANET:
+		return __ndim_hij(dat_diyanet, NM(dat_diyanet), y, m);
 	default:
 		break;
 	}
@@ -205,7 +211,9 @@ echs_scale_wday(echs_scale_t s, unsigned int y, unsigned int m, unsigned int d)
 	case SCALE_GREGORIAN:
 		return __wday_greg(y, m, d);
 	case SCALE_HIJRI_UMMULQURA:
-		return __wday_hij(y, m, d);
+		return __wday_hij(dat_ummulqura, NM(dat_ummulqura), y, m, d);
+	case SCALE_HIJRI_DIYANET:
+		return __wday_hij(dat_diyanet, NM(dat_diyanet), y, m, d);
 	}
 	return MIR;
 }
@@ -218,62 +226,54 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 	echs_instant_t tmp =
 		echs_instant_detach_scale(echs_instant_detach_tzob(i));
 
-	switch (src) {
-	case SCALE_GREGORIAN:
+	if (src != tgt) {
+		mjd_t d;
+		struct ymd_s tgg;
+
+		switch (src) {
+		case SCALE_GREGORIAN:
+			d = g2mjd((struct ymd_s){tmp.y, tmp.m, tmp.d});;
+			break;
+		case SCALE_HIJRI_UMMULQURA:
+			d = fm2mjd(
+				dat_ummulqura, NM(dat_ummulqura),
+				(struct ymd_s){tmp.y, tmp.m, tmp.d});
+			break;
+		case SCALE_HIJRI_DIYANET:
+			d = fm2mjd(
+				dat_diyanet, NM(dat_diyanet),
+				(struct ymd_s){tmp.y, tmp.m, tmp.d});
+			break;
+		default:
+			goto nul;
+		}
+		/* now convert to TGT scale */
 		switch (tgt) {
 		case SCALE_GREGORIAN:
-			/* nothing to do */
+			tgg = mjd2g(d);
+			if (UNLIKELY(!tgg.y)) {
+				goto nul;
+			}
 			break;
-		case SCALE_HIJRI_UMMULQURA: {
-			/* oh no */
-			jd_t d = g2jd((struct ymd_s){tmp.y, tmp.m, tmp.d});
-			struct ymd_s h;
-
-			if (UNLIKELY(!d)) {
-				goto nul;
-			}
-			/* and back to hijri */
-			h = jd2h(d);
-			if (UNLIKELY(!h.y)) {
-				goto nul;
-			}
-			/* assign to tgt instant */
-			tmp.y = h.y;
-			tmp.m = h.m;
-			tmp.d = h.d;
-			break;
-		}
-		default:
-			goto nul;
-		}
-		break;
-	case SCALE_HIJRI_UMMULQURA:
-		switch (tgt) {
-		case SCALE_GREGORIAN: {
-			jd_t d = h2jd((struct ymd_s){tmp.y, tmp.m, tmp.d});
-			struct ymd_s g;
-
-			if (UNLIKELY(!d)) {
-				goto nul;
-			}
-			/* and back to gregorian */
-			g = jd2g(d);
-			if (UNLIKELY(!g.y)) {
-				goto nul;
-			}
-			/* assign to tgt instant */
-			tmp.y = g.y;
-			tmp.m = g.m;
-			tmp.d = g.d;
-			break;
-		}
 		case SCALE_HIJRI_UMMULQURA:
-			/* nothing to do, is there */
+			tgg = mjd2fm(dat_ummulqura, NM(dat_ummulqura), d);
+			if (UNLIKELY(!tgg.y)) {
+				goto nul;
+			}
+			break;
+		case SCALE_HIJRI_DIYANET:
+			tgg = mjd2fm(dat_diyanet, NM(dat_diyanet), d);
+			if (UNLIKELY(!tgg.y)) {
+				goto nul;
+			}
 			break;
 		default:
 			goto nul;
 		}
-		break;
+		/* assign to tgt instant */
+		tmp.y = tgg.y;
+		tmp.m = tgg.m;
+		tmp.d = tgg.d;
 	}
 	return echs_instant_attach_tzob(echs_instant_attach_scale(tmp, tgt), z);
 nul:
