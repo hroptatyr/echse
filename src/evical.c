@@ -412,6 +412,16 @@ snarf_rrule(const char *s, size_t z)
 				break;
 			case 'H':
 				rr.scale = SCALE_HIJRI_UMMULQURA;
+				if (UNLIKELY(kv + 6U < ep && kv[5U] == '.')) {
+					/* one of the Hijris */
+					switch (kv[6U]) {
+					default:
+						break;
+					case 'D':
+						rr.scale = SCALE_HIJRI_DIYANET;
+						break;
+					}
+				}
 				break;
 			}
 			break;
@@ -652,8 +662,20 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 				/* gregorian */
 				break;
 			case 'H':
-				/* one of the Hijris */
-				s = SCALE_HIJRI_UMMULQURA;
+				if (UNLIKELY(zn + 6U >= ep)) {
+					s = SCALE_HIJRI_UMMULQURA;
+				} else {
+					/* one of the Hijris */
+					switch (zn[6U]) {
+					default:
+					case 'U':
+						s = SCALE_HIJRI_UMMULQURA;
+						break;
+					case 'D':
+						s = SCALE_HIJRI_DIYANET;
+						break;
+					}
+				}
 				break;
 			}
 
@@ -698,8 +720,20 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 				/* gregorian */
 				break;
 			case 'H':
-				/* one of the Hijris */
-				s = SCALE_HIJRI_UMMULQURA;
+				if (UNLIKELY(zn + 6U >= ep)) {
+					s = SCALE_HIJRI_UMMULQURA;
+				} else {
+					/* one of the Hijris */
+					switch (zn[6U]) {
+					default:
+					case 'U':
+						s = SCALE_HIJRI_UMMULQURA;
+						break;
+					case 'D':
+						s = SCALE_HIJRI_DIYANET;
+						break;
+					}
+				}
 				break;
 			}
 		}
