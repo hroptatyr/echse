@@ -59,11 +59,21 @@ struct ymd_s {
 	unsigned int d;
 };
 
+/* for table based hijri calendars */
+/* monthly transitions for calendars with fixed number of months in year */
+#define SM(x)	(x[0U])
+/* number of months in a year */
+#define EM(x)	(x[1U])
+/* the actual month transitions data */
+#define MT(x)	(x + 2U)
+/* determine number of months in the MT array */
+#define NM(x)	(sizeof(x) / sizeof(unsigned int) - 2U)
+
 
 static inline __attribute__((const, pure)) mjd_t
-fm2mjd(const unsigned int *cal, size_t nm, struct ymd_s h)
+ht2mjd(const unsigned int *cal, size_t nm, struct ymd_s h)
 {
-	const unsigned int i = (h.y - 1U) * NMIY(cal) + (h.m - 1U) - SM(cal);
+	const unsigned int i = (h.y - 1U) * 12U + (h.m - 1U) - SM(cal);
 
 	if (UNLIKELY(i >= nm)) {
 		return 0U;
@@ -101,7 +111,7 @@ mjd2g(mjd_t d)
 }
 
 static __attribute__((const, pure)) struct ymd_s
-mjd2fm(const unsigned int *cal, size_t nm, mjd_t d)
+mjd2ht(const unsigned int *cal, size_t nm, mjd_t d)
 {
 /* turn julian day number into hijri date,
  * this one does a scan over the month transitions array, so use seldom */
@@ -129,7 +139,7 @@ static __attribute__((pure, const)) unsigned int
 __ndim_hij(const unsigned int *cal, size_t nm, unsigned int y, unsigned int m)
 {
 /* return the number of days in (hijri) month M in (hijri) year Y. */
-	const unsigned int i = (y - 1U) * NMIY(cal) + (m - 1U) - SM(cal);
+	const unsigned int i = (y - 1U) * 12U + (m - 1U) - SM(cal);
 
 	if (UNLIKELY(i + 1U >= nm)) {
 		return 0U;
@@ -170,7 +180,7 @@ __wday_hij(
 	const unsigned int *cal, size_t nm,
 	unsigned int y, unsigned int m, unsigned int d)
 {
-	const mjd_t j = fm2mjd(cal, nm, (struct ymd_s){y, m, d});
+	const mjd_t j = ht2mjd(cal, nm, (struct ymd_s){y, m, d});
 	return (echs_wday_t)(((j + 1U) % 7U) + 1U);
 }
 
@@ -235,12 +245,12 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 			d = g2mjd((struct ymd_s){tmp.y, tmp.m, tmp.d});;
 			break;
 		case SCALE_HIJRI_UMMULQURA:
-			d = fm2mjd(
+			d = ht2mjd(
 				dat_ummulqura, NM(dat_ummulqura),
 				(struct ymd_s){tmp.y, tmp.m, tmp.d});
 			break;
 		case SCALE_HIJRI_DIYANET:
-			d = fm2mjd(
+			d = ht2mjd(
 				dat_diyanet, NM(dat_diyanet),
 				(struct ymd_s){tmp.y, tmp.m, tmp.d});
 			break;
@@ -256,13 +266,13 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 			}
 			break;
 		case SCALE_HIJRI_UMMULQURA:
-			tgg = mjd2fm(dat_ummulqura, NM(dat_ummulqura), d);
+			tgg = mjd2ht(dat_ummulqura, NM(dat_ummulqura), d);
 			if (UNLIKELY(!tgg.y)) {
 				goto nul;
 			}
 			break;
 		case SCALE_HIJRI_DIYANET:
-			tgg = mjd2fm(dat_diyanet, NM(dat_diyanet), d);
+			tgg = mjd2ht(dat_diyanet, NM(dat_diyanet), d);
 			if (UNLIKELY(!tgg.y)) {
 				goto nul;
 			}
