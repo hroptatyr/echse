@@ -1,0 +1,25 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ sed 's/HIJRI.IA/HIJRI.UMMULQURA/' "${srcdir}/sample_40.ics" | echse unroll --format '%b\t%s'
+1420-12-30	seeing if intercalary
+1421-12-30	seeing if intercalary
+1422-12-30	seeing if intercalary
+1423-12-30	seeing if intercalary
+1424-12-29	seeing if intercalary
+1425-12-29	seeing if intercalary
+1426-12-30	seeing if intercalary
+1427-12-29	seeing if intercalary
+1428-12-30	seeing if intercalary
+1429-12-30	seeing if intercalary
+1430-12-30	seeing if intercalary
+1431-12-30	seeing if intercalary
+1432-12-29	seeing if intercalary
+1433-12-29	seeing if intercalary
+1434-12-29	seeing if intercalary
+1435-12-30	seeing if intercalary
+1436-12-30	seeing if intercalary
+1437-12-30	seeing if intercalary
+1438-12-29	seeing if intercalary
+1439-12-30	seeing if intercalary
+1440-12-29	seeing if intercalary
+$
