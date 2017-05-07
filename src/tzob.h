@@ -1,6 +1,6 @@
 /*** tzob.h -- timezone interning system
  *
- * Copyright (C) 2014-2015 Sebastian Freundt
+ * Copyright (C) 2014-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -45,7 +45,7 @@ typedef uint_fast32_t echs_tzob_t;
  * echs_instants are 64bit values with some bits unused to facilitate
  * aligned access, we now put the bits of tzob_t onto echs_instant
  * rendering it useless for ordinary echs_instant operations */
-#define ECHS_DMASK	0xc000f0c0U
+#define ECHS_DMASK	0x0000f0c0U
 
 /**
  * Return interned representaton of zone ZN (of length NZN). */

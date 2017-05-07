@@ -191,31 +191,29 @@ dt_strp(const char *str, char **on, size_t len)
 		goto nul;
 	}
 	/* read the year */
-	switch (*sp++) {
-		/* allow 19yy and 20yy */
-	case '1':
-		if ((uint8_t)(*sp ^ '0') == 9U) {
-			tmp = 1900U;
-			goto yr;
-		}
-		goto nul;
-	case '2':
-		if ((uint8_t)(*sp ^ '0') == 0U) {
-			tmp = 2000U;
-			goto yr;
-		}
-		goto nul;
-	yr:
-		if ((uint8_t)(*++sp ^ '0') < 10U) {
-			tmp += 10U * (*sp ^ '0');
-			if ((uint8_t)(*++sp ^ '0') < 10U) {
-				tmp += *sp++ ^ '0';
-				break;
+	tmp = 0U;
+	if ((uint8_t)(*sp ^ '0') < 10U) {
+		tmp *= 10U;
+		tmp += (uint8_t)(*sp++ ^ '0');
+		if ((uint8_t)(*sp ^ '0') < 10U) {
+			tmp *= 10U;
+			tmp += (uint8_t)(*sp++ ^ '0');
+			if ((uint8_t)(*sp ^ '0') < 10U) {
+				tmp *= 10U;
+				tmp += (uint8_t)(*sp++ ^ '0');
+				if ((uint8_t)(*sp ^ '0') < 10U) {
+					tmp *= 10U;
+					tmp += (uint8_t)(*sp++ ^ '0');
+				} else {
+					goto nul;
+				}
+			} else {
+				goto nul;
 			}
+		} else {
+			goto nul;
 		}
-		goto nul;
-	default:
-		/* rubbish */
+	} else {
 		goto nul;
 	}
 	/* year can be set now */

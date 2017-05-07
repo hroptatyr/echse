@@ -322,9 +322,11 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 	/* just get it out now */
 	echs_prnt_ical_init();
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
-		if (echs_instant_lt_p(e.from, p->from)) {
+		echs_instant_t ebeg = echs_instant_detach_scale(e.from);
+
+		if (echs_instant_lt_p(ebeg, p->from)) {
 			continue;
-		} else if (echs_instant_lt_p(p->till, e.from)) {
+		} else if (echs_instant_lt_p(p->till, ebeg)) {
 			break;
 		}
 		/* otherwise print */
@@ -463,6 +465,8 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
+		/* prepare for printing */
+		e.from = echs_instant_detach_scale(e.from);
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -619,28 +623,12 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg, NULL, 0U);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.from = echs_nul_instant();
-		p.from.y = 2000;
-		p.from.m = 1;
-		p.from.d = 1;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->till_arg) {
 		p.till = dt_strp(argi->till_arg, NULL, 0U);
 	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
 		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.till = echs_nul_instant();
-		p.till.y = 2037;
-		p.till.m = 12;
-		p.till.d = 31;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->filter_arg) {

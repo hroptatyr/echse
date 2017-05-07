@@ -1,0 +1,30 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format '%b\t%s' "${srcdir}/sample_39.ics"
+2000-02-09	Monthly Hijri
+2000-03-09	Monthly Hijri
+2000-04-08	Monthly Hijri
+2000-05-07	Monthly Hijri
+2000-06-05	Monthly Hijri
+2000-07-05	Monthly Hijri
+2000-08-03	Monthly Hijri
+2000-09-01	Monthly Hijri
+2000-09-30	Monthly Hijri
+2000-10-30	Monthly Hijri
+2000-11-29	Monthly Hijri
+2000-12-29	Monthly Hijri
+2001-01-28	Monthly Hijri
+2001-02-26	Monthly Hijri
+2001-03-28	Monthly Hijri
+2001-04-27	Monthly Hijri
+2001-05-26	Monthly Hijri
+2001-06-24	Monthly Hijri
+2001-07-24	Monthly Hijri
+2001-08-22	Monthly Hijri
+2006-10-23	Recurring Hijri
+2014-07-28	Recurring Hijri
+2015-12-11	HIJRI 1437-02-29
+2017-06-25	HIJRI 1438-10-01
+2022-05-02	Recurring Hijri
+2030-02-04	Recurring Hijri
+$

@@ -1,6 +1,6 @@
 #!/usr/bin/clitoris  ## -*- shell-script -*-
 
-$ echse unroll "${srcdir}/sample_27.ics"
+$ echse unroll "${srcdir}/sample_27.ics" --from 2000-01-01
 2000-09-22	Just about a hundred days left
 2001-09-22	Just about a hundred days left
 2002-09-22	Just about a hundred days left
