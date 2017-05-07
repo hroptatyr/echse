@@ -466,8 +466,6 @@ md_match_p(struct md_s md, bituint31_t m, bitint31_t d)
 
 
 /* recurrence helpers */
-static const echs_scale_t tgtsca = SCALE_GREGORIAN;
-
 static void
 fill_yly_ywd(
 	bitint383_t *restrict cand, unsigned int y,
@@ -1039,10 +1037,6 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				}
 				/* attach scale and convert back to greg */
 				x = echs_instant_attach_scale(x, srcsca);
-				x = echs_instant_rescale(x, tgtsca);
-				if (UNLIKELY(echs_nul_instant_p(x))) {
-					continue;
-				}
 
 				tries = 64U;
 				tgt[res++] = x;
@@ -1178,7 +1172,6 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				}
 				/* attach scale and convert back to greg */
 				x = echs_instant_attach_scale(x, srcsca);
-				x = echs_instant_rescale(x, tgtsca);
 
 				tries = 64U;
 				tgt[res++] = x;
@@ -1326,7 +1319,6 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				}
 				/* attach scale and convert back to greg */
 				x = echs_instant_attach_scale(x, srcsca);
-				x = echs_instant_rescale(x, tgtsca);
 
 				tgt[res++] = x;
 			}
@@ -1477,7 +1469,6 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			}
 			/* attach scale and convert back to greg */
 			x = echs_instant_attach_scale(x, srcsca);
-			x = echs_instant_rescale(x, tgtsca);
 
 			tgt[res++] = x;
 		}

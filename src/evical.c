@@ -117,6 +117,7 @@ struct ical_vevent_s {
 	echs_idiff_t dur;
 
 	echs_state_t sts;
+	echs_scale_t cal;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -1139,6 +1140,10 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
+	case FLD_SCALE:
+		ve->cal = snarf_scale(vp);
+		break;
+
 	default:
 		break;
 	}
@@ -1355,6 +1360,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					memset(&p->ve, 0, sizeof(p->ve));
 					/* copy global task properties */
 					p->ve.t = p->globve.t;
+					/* copy global scale */
+					p->ve.cal = p->globve.cal;
 					/* and set state to vevent */
 					p->st = ST_VTOD;
 					break;
@@ -1432,6 +1439,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 				/* bang run_as */
 				p->ve.t.run_as = p->globve.t.run_as;
 			}
+			/* copy global scale */
+			p->ve.cal = p->globve.cal;
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -2125,6 +2134,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
+	echs_scale_t cal;
 	echs_tzob_t z;
 	int eof;
 
@@ -2137,6 +2147,8 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	}
 
 	/* let the work begin */
+	cal = echs_instant_scale(e.from);
+	e.from = echs_instant_rescale(e.from, SCALE_GREGORIAN);
 	z = echs_instant_tzob(e.from);
 	e.from = echs_instant_to_utc(e.from);
 	eof = echs_instant_tzof(e.from, z);
@@ -2144,6 +2156,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
 		e.from = instant_soup(e.from, d[0U], z, eof);
+		e.from = echs_instant_rescale(e.from, cal);
 		res->ev[0U] = e;
 	} else {
 		/* blimey, use the bottom bit of res->ev to sort the
@@ -2163,7 +2176,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 		echs_instant_sort(rd, nd);
 		/* now spread out the instants as echs events */
 		for (size_t i = 0U; i < nd; i++) {
-			e.from = rd[i];
+			e.from = echs_instant_rescale(rd[i], cal);
 			res->ev[i] = e;
 		}
 	}
@@ -2192,6 +2205,8 @@ struct evrrul_s {
 	echs_event_t e;
 	/* proto-zone */
 	echs_tzob_t zon;
+	/* proto-calscale */
+	echs_scale_t cal;
 	/* proto-offset */
 	int pof;
 
@@ -2240,6 +2255,8 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
+	this->cal = echs_instant_scale(e.from);
+	e.from = echs_instant_rescale(e.from, SCALE_GREGORIAN);
 	this->zon = zon = echs_instant_tzob(e.from);
 	this->e = e = echs_event_to_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
@@ -2359,6 +2376,10 @@ refill(struct evrrul_s *restrict strm)
 
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
+	}
+	/* convert to target scale */
+	for (size_t i = 0U; i < strm->ncch; i++) {
+		strm->cch[i] = echs_instant_rescale(strm->cch[i], strm->cal);
 	}
 	/* utcify them all */
 	for (size_t i = 0U; i < strm->ncch; i++) {
@@ -2564,7 +2585,7 @@ make_task(struct ical_vevent_s *ve)
 		/* free all the bits and bobs that
 		 * might have been added */
 		echs_event_t e = {
-			.from = echs_instant_rescale(ve->from, SCALE_GREGORIAN),
+			.from = echs_instant_rescale(ve->from, ve->cal),
 			.dur = ve->dur,
 			.oid = ve->t.oid,
 			.sts = ve->sts,
@@ -2585,7 +2606,7 @@ make_task(struct ical_vevent_s *ve)
 	} else {
 		/* it's an rrule */
 		echs_event_t e = {
-			.from = ve->from,
+			.from = echs_instant_rescale(ve->from, ve->cal),
 			.dur = ve->dur,
 			.oid = ve->t.oid,
 			.sts = ve->sts,
