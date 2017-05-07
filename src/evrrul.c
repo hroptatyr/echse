@@ -906,12 +906,6 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
-	/* check ranges before filling */
-	if (UNLIKELY(y < echs_scale_min[srcsca] ||
-		     y > echs_scale_max[srcsca])) {
-		goto fin;
-	}
-
 	/* check if we're ymd only */
 	ymdp = !bi63_has_bits_p(rr->wk) &&
 		!bi447_has_bits_p(&rr->dow) &&
@@ -1087,10 +1081,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		return rrul_fill_yly(tgt, nti, rr);
 	}
 
-	/* check ranges before filling */
-	if (UNLIKELY(y < echs_scale_min[srcsca] ||
-		     y > echs_scale_max[srcsca] ||
-		     !m || m > 12U)) {
+	if (UNLIKELY(!m || m > 12U)) {
 		goto fin;
 	}
 
@@ -1223,9 +1214,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* check ranges before filling */
-	if (UNLIKELY(y < echs_scale_min[srcsca] ||
-		     y > echs_scale_max[srcsca] ||
-		     !m || m > 12U || !d || d > 31U)) {
+	if (UNLIKELY(!m || m > 12U || !d || d > 31U)) {
 		goto fin;
 	}
 
@@ -1376,9 +1365,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	/* check ranges before filling */
-	if (UNLIKELY(y < echs_scale_min[srcsca] ||
-		     y > echs_scale_max[srcsca] ||
-		     !m || m > 12U || !d || d > 31U)) {
+	if (UNLIKELY(!m || m > 12U || !d || d > 31U)) {
 		goto fin;
 	}
 

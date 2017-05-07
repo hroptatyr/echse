@@ -273,18 +273,6 @@ __wday_hij(
 }
 
 
-unsigned int echs_scale_min[] = {
-	[SCALE_GREGORIAN] = 1600U,
-	[SCALE_HIJRI_UMMULQURA] = 1355U,
-	[SCALE_HIJRI_DIYANET] = 1318U,
-};
-
-unsigned int echs_scale_max[] = {
-	[SCALE_GREGORIAN] = 4095U,
-	[SCALE_HIJRI_UMMULQURA] = 1500U,
-	[SCALE_HIJRI_DIYANET] = 1444U,
-};
-
 __attribute__((pure, const)) unsigned int
 echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m)
 {

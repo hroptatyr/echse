@@ -88,14 +88,6 @@ scale_demux(uint32_t x)
 
 
 /**
- * Minimum years. */
-extern unsigned int echs_scale_min[];
-
-/**
- * Maximum years. */
-extern unsigned int echs_scale_max[];
-
-/**
  * Convert instant I to calendar scale S. */
 extern echs_instant_t echs_instant_rescale(echs_instant_t i, echs_scale_t s);
 
