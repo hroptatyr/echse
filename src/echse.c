@@ -619,28 +619,12 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg, NULL, 0U);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.from = echs_nul_instant();
-		p.from.y = 2000;
-		p.from.m = 1;
-		p.from.d = 1;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->till_arg) {
 		p.till = dt_strp(argi->till_arg, NULL, 0U);
 	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
 		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.till = echs_nul_instant();
-		p.till.y = 2037;
-		p.till.m = 12;
-		p.till.d = 31;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->filter_arg) {
