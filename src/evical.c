@@ -341,6 +341,44 @@ snarf_mdir(const char *spec)
 	return MDIR_NONE;
 }
 
+static echs_scale_t
+snarf_scale(const char *spec)
+{
+	echs_scale_t r = SCALE_GREGORIAN;
+
+	switch (*spec) {
+	default:
+	case 'G':
+		break;
+	case 'H':
+		r = SCALE_HIJRI_UMMULQURA;
+		if (UNLIKELY(spec[5U] == '.')) {
+			/* one of the Hijris */
+			switch (spec[6U]) {
+			default:
+			case 'U'/*MMULQURA*/:
+				break;
+			case 'D'/*IYANET*/:
+				r = SCALE_HIJRI_DIYANET;
+				break;
+			case 'I': {
+				/* Gent's types */
+				const char *kp = spec + 7U;
+				r = SCALE_HIJRI_IA;
+				r += (echs_scale_t)((*kp == 'V' || *kp++ == 'I') * 2U);
+				r += (echs_scale_t)((*kp == 'V' || *kp++ == 'I') * 2U);
+				r += (echs_scale_t)((*kp == 'C'));
+				r += (echs_scale_t)((*kp == 'V') ? 2U : 0U);
+				r += (echs_scale_t)(*++kp == 'C');
+				break;
+			}
+			}
+		}
+		break;
+	}
+	return r;
+}
+
 static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
@@ -404,26 +442,7 @@ snarf_rrule(const char *s, size_t z)
 			break;
 
 		case KEY_SCALE:
-			/* just recognise HIJRI and GREGORIAN for now */
-			switch (*++kv) {
-			default:
-			case 'G':
-				rr.scale = SCALE_GREGORIAN;
-				break;
-			case 'H':
-				rr.scale = SCALE_HIJRI_UMMULQURA;
-				if (UNLIKELY(kv + 6U < ep && kv[5U] == '.')) {
-					/* one of the Hijris */
-					switch (kv[6U]) {
-					default:
-						break;
-					case 'D':
-						rr.scale = SCALE_HIJRI_DIYANET;
-						break;
-					}
-				}
-				break;
-			}
+			rr.scale = snarf_scale(++kv);
 			break;
 
 		case BY_WDAY:
@@ -654,30 +673,7 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 		} else if (!strncmp(eof, scal, strlenof(scal))) {
 			/* very nice */
 			const char *const zn = eof + strlenof(scal);
-			echs_scale_t s = SCALE_GREGORIAN;
-
-			switch (*zn) {
-			default:
-			case 'G':
-				/* gregorian */
-				break;
-			case 'H':
-				if (UNLIKELY(zn + 6U >= ep)) {
-					s = SCALE_HIJRI_UMMULQURA;
-				} else {
-					/* one of the Hijris */
-					switch (zn[6U]) {
-					default:
-					case 'U':
-						s = SCALE_HIJRI_UMMULQURA;
-						break;
-					case 'D':
-						s = SCALE_HIJRI_DIYANET;
-						break;
-					}
-				}
-				break;
-			}
+			echs_scale_t s = snarf_scale(zn);
 
 			res = echs_instant_attach_scale(res, s);
 		}
@@ -713,29 +709,7 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 		} else if (!strncmp(eof, scal, strlenof(scal))) {
 			/* very nice */
 			const char *const zn = eof + strlenof(scal);
-
-			switch (*zn) {
-			default:
-			case 'G':
-				/* gregorian */
-				break;
-			case 'H':
-				if (UNLIKELY(zn + 6U >= ep)) {
-					s = SCALE_HIJRI_UMMULQURA;
-				} else {
-					/* one of the Hijris */
-					switch (zn[6U]) {
-					default:
-					case 'U':
-						s = SCALE_HIJRI_UMMULQURA;
-						break;
-					case 'D':
-						s = SCALE_HIJRI_DIYANET;
-						break;
-					}
-				}
-				break;
-			}
+			s = snarf_scale(zn);
 		}
 
 		/* get ready for the next round */
