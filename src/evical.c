@@ -1749,10 +1749,49 @@ send_stset(int whither, echs_stset_t sts)
 }
 
 static void
+send_scale(echs_scale_t sca)
+{
+	switch (sca) {
+	case SCALE_HIJRI_IA:
+		fdwrite(";SCALE=HIJRI.IA", strlenof(";SCALE=HIJRI.IA"));
+		break;
+	case SCALE_HIJRI_IC:
+		fdwrite(";SCALE=HIJRI.IC", strlenof(";SCALE=HIJRI.IC"));
+		break;
+	case SCALE_HIJRI_IIA:
+		fdwrite(";SCALE=HIJRI.IIA", strlenof(";SCALE=HIJRI.IIA"));
+		break;
+	case SCALE_HIJRI_IIC:
+		fdwrite(";SCALE=HIJRI.IIC", strlenof(";SCALE=HIJRI.IIC"));
+		break;
+	case SCALE_HIJRI_IIIA:
+		fdwrite(";SCALE=HIJRI.IIIA", strlenof(";SCALE=HIJRI.IIIA"));
+		break;
+	case SCALE_HIJRI_IIIC:
+		fdwrite(";SCALE=HIJRI.IIIC", strlenof(";SCALE=HIJRI.IIIC"));
+		break;
+	case SCALE_HIJRI_IVA:
+		fdwrite(";SCALE=HIJRI.IVA", strlenof(";SCALE=HIJRI.IVA"));
+		break;
+	case SCALE_HIJRI_IVC:
+		fdwrite(";SCALE=HIJRI.IVC", strlenof(";SCALE=HIJRI.IVC"));
+		break;
+	case SCALE_HIJRI_UMMULQURA:
+		fdwrite(";SCALE=HIJRI.UMMULQURA", strlenof(";SCALE=HIJRI.UMMULQURA"));
+		break;
+	case SCALE_HIJRI_DIYANET:
+		fdwrite(";SCALE=HIJRI.DIYANET", strlenof(";SCALE=HIJRI.DIYANET"));
+		break;
+	}
+	return;
+}
+
+static void
 send_ev(int whither, echs_event_t e, echs_tzob_t z)
 {
 	char stmp[32U] = {':'};
 	size_t ztmp = 1U;
+	echs_scale_t sca;
 	const char *zn;
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
@@ -1766,7 +1805,14 @@ send_ev(int whither, echs_event_t e, echs_tzob_t z)
 	fdwrite("DTSTART", strlenof("DTSTART"));
 	if (echs_instant_all_day_p(e.from)) {
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
-	} else if (z && (zn = echs_zone(z))) {
+	}
+	if ((sca = echs_instant_scale(e.from))) {
+		send_scale(sca);
+		/* scale can bog off now */
+		e.from = echs_instant_detach_scale(e.from);
+	}
+
+	if (z && (zn = echs_zone(z))) {
 		size_t zz = strlen(zn);
 
 		fdwrite(";TZID=", strlenof(";TZID="));
@@ -1830,6 +1876,9 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 
 	if (rr->inter > 1U) {
 		fdprintf(";INTERVAL=%u", rr->inter);
+	}
+	if (rr->scale) {
+		send_scale(rr->scale);
 	}
 	with (unsigned int m) {
 		bitint_iter_t i = 0UL;

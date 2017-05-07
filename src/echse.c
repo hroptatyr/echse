@@ -322,9 +322,11 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 	/* just get it out now */
 	echs_prnt_ical_init();
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
-		if (echs_instant_lt_p(e.from, p->from)) {
+		echs_instant_t ebeg = echs_instant_detach_scale(e.from);
+
+		if (echs_instant_lt_p(ebeg, p->from)) {
 			continue;
-		} else if (echs_instant_lt_p(p->till, e.from)) {
+		} else if (echs_instant_lt_p(p->till, ebeg)) {
 			break;
 		}
 		/* otherwise print */
