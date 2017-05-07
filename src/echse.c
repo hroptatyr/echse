@@ -463,6 +463,8 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
+		/* prepare for printing */
+		e.from = echs_instant_detach_scale(e.from);
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
