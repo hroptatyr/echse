@@ -43,8 +43,18 @@
  * All the calendars we support. */
 typedef enum {
 	SCALE_GREGORIAN = 0,
-	SCALE_HIJRI_UMMULQURA = 1,
-	SCALE_HIJRI_DIYANET = 2,
+	/* calculated hijris */
+	SCALE_HIJRI_IA = 1,
+	SCALE_HIJRI_IC = 2,
+	SCALE_HIJRI_IIA = 3,
+	SCALE_HIJRI_IIC = 4,
+	SCALE_HIJRI_IIIA = 5,
+	SCALE_HIJRI_IIIC = 6,
+	SCALE_HIJRI_IVA = 7,
+	SCALE_HIJRI_IVC = 8,
+	/* data based hijris */
+	SCALE_HIJRI_UMMULQURA = 9,
+	SCALE_HIJRI_DIYANET = 10,
 } echs_scale_t;
 
 typedef enum {

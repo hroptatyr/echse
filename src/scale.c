@@ -59,6 +59,18 @@ struct ymd_s {
 	unsigned int d;
 };
 
+typedef enum {
+	TYP_I,
+	TYP_II,
+	TYP_III,
+	TYP_IV,
+} hij_typ_t;
+
+typedef enum {
+	EPO_ASTRO,
+	EPO_CIVIL,
+} hij_epo_t;
+
 /* for table based hijri calendars */
 /* monthly transitions for calendars with fixed number of months in year */
 #define SM(x)	(x[0U])
@@ -69,7 +81,24 @@ struct ymd_s {
 /* determine number of months in the MT array */
 #define NM(x)	(sizeof(x) / sizeof(unsigned int) - 2U)
 
+#define SCAL2TYP(x)	(hij_typ_t)((x) / 2U)
+#define SCAL2EPO(x)	(hij_epo_t)(((x) + 1U) % 2U)
+
 
+/* shifts based on type */
+static const unsigned int tsh[] = {
+	[TYP_I] = 401U,
+	[TYP_II] = 301U,
+	[TYP_III] = 1U,
+	[TYP_IV] = -199U,
+};
+
+/* epochs in julian days */
+static const unsigned int epo[] = {
+	[EPO_CIVIL] = 1948084U,
+	[EPO_ASTRO] = 1948085U,
+};
+
 static inline __attribute__((const, pure)) mjd_t
 ht2mjd(const unsigned int *cal, size_t nm, struct ymd_s h)
 {
@@ -79,6 +108,19 @@ ht2mjd(const unsigned int *cal, size_t nm, struct ymd_s h)
 		return 0U;
 	}
 	return MT(cal)[i] + (h.d - 1U);
+}
+
+static inline __attribute__((const, pure)) mjd_t
+hij2mjd(hij_typ_t t, hij_epo_t e, struct ymd_s h)
+{
+	static const unsigned int m[] = {
+		0U, 0U, 30U, 59U, 89U, 118U, 148U, 177U, 207U, 236U, 266U, 295U, 325U
+	};
+	const unsigned int doy = m[h.m] + h.d;
+	const unsigned int cyc = h.y / 30U;
+	const unsigned int k = h.y % 30U;
+	const unsigned int z1 = cyc * 10631U + (k * 1063100U + tsh[t]) / 3000U + doy;
+	return z1 + epo[e] - 2400000U;
 }
 
 static inline __attribute__((const, pure)) mjd_t
@@ -135,8 +177,24 @@ nil:
 	return (struct ymd_s){};
 }
 
+static inline __attribute__((const, pure)) struct ymd_s
+mjd2hij(hij_typ_t t, hij_epo_t e, mjd_t j)
+{
+/* integer only version of Gent's converter */
+	const unsigned int z = j + 2400000U - epo[e];
+	const unsigned int cyc = z / 10631U;
+	const unsigned int z1 = z % 10631U;
+	const unsigned int k = (3000U * z1 - tsh[t]) / 1063100U - !z1;
+	const unsigned int z2 = z1 - (((int)k * 1063100 + tsh[t]) / 3000) + !z1;
+	/* output */
+	const unsigned int y = 30U * cyc + k;
+	const unsigned int m = (10000U * z2 + 285001U) / 295000U;
+	const unsigned int d = z2 - (295001 * m - 290000U) / 10000U;
+	return (struct ymd_s){y, m, d};
+}
+
 static __attribute__((pure, const)) unsigned int
-__ndim_hij(const unsigned int *cal, size_t nm, unsigned int y, unsigned int m)
+__ndim_ht(const unsigned int *cal, size_t nm, unsigned int y, unsigned int m)
 {
 /* return the number of days in (hijri) month M in (hijri) year Y. */
 	const unsigned int i = (y - 1U) * 12U + (m - 1U) - SM(cal);
@@ -162,6 +220,27 @@ __ndim_greg(unsigned int y, unsigned int m)
 	return res;
 }
 
+static __attribute__((const, pure)) inline bool
+__hij_inty_p(hij_typ_t t, hij_epo_t UNUSED(e), unsigned int y)
+{
+/* do a trial conversion to mjd and back, see whether we end up with Dhu 30
+ * type I:   2, 5, 7, 10, 13, 15, 18, 21, 24, 26 & 29 as intercalary years
+ * type II:  2, 5, 7, 10, 13, 16, 18, 21, 24, 26 & 29 as intercalary years
+ * type III: 2, 5, 8, 10, 13, 16, 19, 21, 24, 27 & 29 as intercalary years
+ * type IV:  2, 5, 8, 11, 13, 16, 19, 21, 24, 27 & 30 as intercalary years */
+	const unsigned int k = y % 30U;
+	const unsigned int z1 = ((k * 1063100U + tsh[t]) / 3000U + 355U) % 10631U;
+	const unsigned int kr = (3000U * z1 - tsh[t]) / 1063100U - !z1;
+	return z1 - (((int)kr * 1063100 + tsh[t]) / 3000) + !z1 != 1;
+}
+
+static __attribute__((const, pure)) inline unsigned int
+__ndim_hij(hij_typ_t t, hij_epo_t e, unsigned int y, unsigned int m)
+{
+/* return the number of days in month M in year Y. */
+	return 29 + (m % 2U) + (m == 12U && __hij_inty_p(t, e, y));
+}
+
 static __attribute__((const, pure)) echs_wday_t
 __wday_greg(unsigned int y, unsigned int m, unsigned int d)
 {
@@ -176,11 +255,20 @@ __wday_greg(unsigned int y, unsigned int m, unsigned int d)
 }
 
 static __attribute__((const, pure)) echs_wday_t
-__wday_hij(
+__wday_ht(
 	const unsigned int *cal, size_t nm,
 	unsigned int y, unsigned int m, unsigned int d)
 {
 	const mjd_t j = ht2mjd(cal, nm, (struct ymd_s){y, m, d});
+	return (echs_wday_t)(((j + 1U) % 7U) + 1U);
+}
+
+static __attribute__((const, pure)) echs_wday_t
+__wday_hij(
+	hij_typ_t t, hij_epo_t e,
+	unsigned int y, unsigned int m, unsigned int d)
+{
+	const mjd_t j = hij2mjd(t, e, (struct ymd_s){y, m, d});
 	return (echs_wday_t)(((j + 1U) % 7U) + 1U);
 }
 
@@ -204,10 +292,19 @@ echs_scale_ndim(echs_scale_t s, unsigned int y, unsigned int m)
 	switch (s) {
 	case SCALE_GREGORIAN:
 		return __ndim_greg(y, m);
+	case SCALE_HIJRI_IA:
+	case SCALE_HIJRI_IC:
+	case SCALE_HIJRI_IIA:
+	case SCALE_HIJRI_IIC:
+	case SCALE_HIJRI_IIIA:
+	case SCALE_HIJRI_IIIC:
+	case SCALE_HIJRI_IVA:
+	case SCALE_HIJRI_IVC:
+		return __ndim_hij(SCAL2TYP(s), SCAL2EPO(s), y, m);
 	case SCALE_HIJRI_UMMULQURA:
-		return __ndim_hij(dat_ummulqura, NM(dat_ummulqura), y, m);
+		return __ndim_ht(dat_ummulqura, NM(dat_ummulqura), y, m);
 	case SCALE_HIJRI_DIYANET:
-		return __ndim_hij(dat_diyanet, NM(dat_diyanet), y, m);
+		return __ndim_ht(dat_diyanet, NM(dat_diyanet), y, m);
 	default:
 		break;
 	}
@@ -220,10 +317,19 @@ echs_scale_wday(echs_scale_t s, unsigned int y, unsigned int m, unsigned int d)
 	switch (s) {
 	case SCALE_GREGORIAN:
 		return __wday_greg(y, m, d);
+	case SCALE_HIJRI_IA:
+	case SCALE_HIJRI_IC:
+	case SCALE_HIJRI_IIA:
+	case SCALE_HIJRI_IIC:
+	case SCALE_HIJRI_IIIA:
+	case SCALE_HIJRI_IIIC:
+	case SCALE_HIJRI_IVA:
+	case SCALE_HIJRI_IVC:
+		return __wday_hij(SCAL2TYP(s), SCAL2EPO(s), y, m, d);
 	case SCALE_HIJRI_UMMULQURA:
-		return __wday_hij(dat_ummulqura, NM(dat_ummulqura), y, m, d);
+		return __wday_ht(dat_ummulqura, NM(dat_ummulqura), y, m, d);
 	case SCALE_HIJRI_DIYANET:
-		return __wday_hij(dat_diyanet, NM(dat_diyanet), y, m, d);
+		return __wday_ht(dat_diyanet, NM(dat_diyanet), y, m, d);
 	}
 	return MIR;
 }
@@ -235,6 +341,7 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 	const echs_tzob_t z = echs_instant_tzob(i);
 	echs_instant_t tmp =
 		echs_instant_detach_scale(echs_instant_detach_tzob(i));
+	const struct ymd_s ymp = {tmp.y, tmp.m, tmp.d};
 
 	if (src != tgt) {
 		mjd_t d;
@@ -242,17 +349,23 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 
 		switch (src) {
 		case SCALE_GREGORIAN:
-			d = g2mjd((struct ymd_s){tmp.y, tmp.m, tmp.d});;
+			d = g2mjd(ymp);
+			break;
+		case SCALE_HIJRI_IA:
+		case SCALE_HIJRI_IC:
+		case SCALE_HIJRI_IIA:
+		case SCALE_HIJRI_IIC:
+		case SCALE_HIJRI_IIIA:
+		case SCALE_HIJRI_IIIC:
+		case SCALE_HIJRI_IVA:
+		case SCALE_HIJRI_IVC:
+			d = hij2mjd(SCAL2TYP(src), SCAL2EPO(src), ymp);
 			break;
 		case SCALE_HIJRI_UMMULQURA:
-			d = ht2mjd(
-				dat_ummulqura, NM(dat_ummulqura),
-				(struct ymd_s){tmp.y, tmp.m, tmp.d});
+			d = ht2mjd(dat_ummulqura, NM(dat_ummulqura), ymp);
 			break;
 		case SCALE_HIJRI_DIYANET:
-			d = ht2mjd(
-				dat_diyanet, NM(dat_diyanet),
-				(struct ymd_s){tmp.y, tmp.m, tmp.d});
+			d = ht2mjd(dat_diyanet, NM(dat_diyanet), ymp);
 			break;
 		default:
 			goto nul;
@@ -261,6 +374,19 @@ echs_instant_rescale(echs_instant_t i, echs_scale_t tgt)
 		switch (tgt) {
 		case SCALE_GREGORIAN:
 			tgg = mjd2g(d);
+			if (UNLIKELY(!tgg.y)) {
+				goto nul;
+			}
+			break;
+		case SCALE_HIJRI_IA:
+		case SCALE_HIJRI_IC:
+		case SCALE_HIJRI_IIA:
+		case SCALE_HIJRI_IIC:
+		case SCALE_HIJRI_IIIA:
+		case SCALE_HIJRI_IIIC:
+		case SCALE_HIJRI_IVA:
+		case SCALE_HIJRI_IVC:
+			tgg = mjd2hij(SCAL2TYP(tgt), SCAL2EPO(tgt), d);
 			if (UNLIKELY(!tgg.y)) {
 				goto nul;
 			}
