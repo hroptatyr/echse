@@ -289,7 +289,7 @@ conn:
 }
 
 static int
-get_esock(bool systemp)
+get_esock(int systemp)
 {
 /* return a candidate for the echsd socket, system-wide or user local */
 	int s;
@@ -1099,7 +1099,7 @@ more:
 
 	/* let's try the local echsd and then the system-wide one */
 	with (int s) {
-		if (UNLIKELY((s = get_esock(false)) < 0)) {
+		if (UNLIKELY((s = get_esock(0)) < 0)) {
 			nfail++;
 			break;
 		}
@@ -1117,7 +1117,7 @@ more:
 
 	/* global queue */
 	with (int s) {
-		if (UNLIKELY((s = get_esock(true)) < 0)) {
+		if (UNLIKELY((s = get_esock(1)) < 0)) {
 			nfail++;
 			break;
 		}
@@ -1178,7 +1178,7 @@ cmd_add(const struct yuck_cmd_add_s argi[static 1U])
 	/* let's try the local echsd and then the system-wide one */
 	if (UNLIKELY(argi->dry_run_flag)) {
 		s = STDOUT_FILENO;
-	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
+	} else if ((s = get_esock(0)) < 0 && (s = get_esock(1)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	}
@@ -1235,7 +1235,7 @@ cmd_edit(const struct yuck_cmd_edit_s argi[static 1U])
 	mode_t cur_msk = umask(0077);
 	char buf[4096U];
 	size_t bix = 0U;
-	bool realm = 0;
+	int realm = 0;
 	int tmpfd;
 	int s;
 
@@ -1353,7 +1353,7 @@ cmd_cancel(const struct yuck_cmd_cancel_s argi[static 1U])
 		return 1;
 	} else if (argi->dry_run_flag) {
 		s = STDOUT_FILENO;
-	} else if ((s = get_esock(false)) < 0 && (s = get_esock(true)) < 0) {
+	} else if ((s = get_esock(0)) < 0 && (s = get_esock(1)) < 0) {
 		errno = 0, serror("Error: cannot connect to echsd");
 		return 1;
 	}
