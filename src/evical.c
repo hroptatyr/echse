@@ -1761,6 +1761,9 @@ static void
 send_scale(echs_scale_t sca)
 {
 	switch (sca) {
+	default:
+	case SCALE_GREGORIAN:
+		break;
 	case SCALE_HIJRI_IA:
 		fdwrite(";SCALE=HIJRI.IA", strlenof(";SCALE=HIJRI.IA"));
 		break;
