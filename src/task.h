@@ -88,12 +88,18 @@ struct echs_task_s {
 	/* credentials we want this job run as */
 	cred_t run_as;
 
+	/* generic description string */
+	const char *desc;
+
 	/* the organiser and attendees of the whole shebang
 	 * the organiser in echsd terms will be the user the script
 	 * is run as, the attendees will be the people receiving
 	 * the specified output by mail */
 	const char *org;
 	struct strlst_s *att;
+
+	/* what file did it come from? */
+	const char *src;
 
 	/* input and output files */
 	const char *in;

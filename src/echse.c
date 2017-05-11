@@ -76,6 +76,16 @@ serror(const char *fmt, ...)
 	return;
 }
 
+static inline size_t
+linlen(const char *str)
+{
+	const char *ep = strchr(str, '\n');
+	if (UNLIKELY(ep != NULL)) {
+		return ep - str;
+	}
+	return strlen(str);
+}
+
 
 /* global stream map */
 static echs_evstrm_t *strms;
@@ -253,6 +263,19 @@ again:
 	return 0;
 }
 
+static int
+put_name(echs_task_t t, const char *name)
+{
+	struct echs_task_s *tmpt = deconst(t);
+
+	/* record file name, we're the SRC slot for that
+	 * which should be otherwise unused */
+	if (tmpt->src == NULL) {
+		tmpt->src = strdup(name);
+	}
+	return 0;
+}
+
 static void
 free_task_ht(void)
 {
@@ -299,9 +322,11 @@ unroll_ical(echs_evstrm_t smux, const struct unroll_param_s *p)
 	/* just get it out now */
 	echs_prnt_ical_init();
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
-		if (echs_instant_lt_p(e.from, p->from)) {
+		echs_instant_t ebeg = echs_instant_detach_scale(e.from);
+
+		if (echs_instant_lt_p(ebeg, p->from)) {
 			continue;
-		} else if (echs_instant_lt_p(p->till, e.from)) {
+		} else if (echs_instant_lt_p(p->till, ebeg)) {
 			break;
 		}
 		/* otherwise print */
@@ -342,9 +367,29 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 			case 'b':
 				i = e.from;
 				goto cpy_inst;
+			case 'd':
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->desc == NULL)) {
+					;
+				} else {
+					const size_t desz = linlen(t->desc);
+					fdwrite(t->desc, desz);
+				}
+				continue;
 			case 'e':
 				i = echs_instant_add(e.from, e.dur);
 				goto cpy_inst;
+			case 'f':
+				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
+					;
+				} else if (UNLIKELY(t->src == NULL)) {
+					;
+				} else {
+					const size_t zrc = strlen(t->src);
+					fdwrite(t->src, zrc);
+				}
+				continue;
 			case 's':
 				if (UNLIKELY((t = get_task(e.oid)) == NULL)) {
 					;
@@ -420,6 +465,8 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 	/* just get it out now */
 	fdbang(STDOUT_FILENO);
 	while (!echs_event_0_p(e = echs_evstrm_pop(smux))) {
+		/* prepare for printing */
+		e.from = echs_instant_detach_scale(e.from);
 		if (echs_instant_lt_p(p->till, e.from)) {
 			break;
 		} else if (echs_instant_lt_p(e.from, p->from)) {
@@ -439,7 +486,7 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 }
 
 static int
-_inject_fd(int fd)
+_inject_fd(int fd, const char *name)
 {
 	char buf[65536U];
 	ical_parser_t pp = NULL;
@@ -470,6 +517,8 @@ more:
 			}
 			/* and otherwise inject him */
 			put_task(ins.t->oid, ins.t);
+			/* record file name */
+			put_name(ins.t, name);
 		} while (1);
 		if (LIKELY(nrd > 0)) {
 			goto more;
@@ -574,28 +623,12 @@ cmd_unroll(const struct yuck_cmd_unroll_s argi[static 1U])
 
 	if (argi->from_arg) {
 		p.from = dt_strp(argi->from_arg, NULL, 0U);
-	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
-		p.from = (echs_instant_t){.y = 2000, .m = 1, .d = 1};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.from = echs_nul_instant();
-		p.from.y = 2000;
-		p.from.m = 1;
-		p.from.d = 1;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->till_arg) {
 		p.till = dt_strp(argi->till_arg, NULL, 0U);
 	} else {
-#if defined HAVE_ANON_STRUCTS_INIT
 		p.till = (echs_instant_t){.y = 2037, .m = 12, .d = 31};
-#else  /* !HAVE_ANON_STRUCTS_INIT */
-		p.till = echs_nul_instant();
-		p.till.y = 2037;
-		p.till.m = 12;
-		p.till.d = 31;
-#endif	/* HAVE_ANON_STRUCTS_INIT */
 	}
 
 	if (argi->filter_arg) {
@@ -619,12 +652,12 @@ echse: Error: cannot open file `%s'", fn);
 			continue;
 		}
 		/* otherwise inject */
-		_inject_fd(fd);
+		_inject_fd(fd, fn);
 		close(fd);
 	}
 	if (argi->nargs == 0UL) {
 		/* read from stdin */
-		_inject_fd(STDIN_FILENO);
+		_inject_fd(STDIN_FILENO, "<stdin>");
 	}
 	/* there might be riff raff (NULLs) in the stream array */
 	condense_strms();

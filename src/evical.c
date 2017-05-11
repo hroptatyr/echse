@@ -1,6 +1,6 @@
 /*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -65,6 +65,7 @@
 #include "fdprnt.h"
 #include "echse-genuid.h"
 #include "tzob.h"
+#include "scale.h"
 
 #if !defined assert
 # define assert(x)
@@ -116,6 +117,7 @@ struct ical_vevent_s {
 	echs_idiff_t dur;
 
 	echs_state_t sts;
+	echs_scale_t cal;
 
 	/* proto typical task */
 	struct echs_task_s t;
@@ -340,6 +342,44 @@ snarf_mdir(const char *spec)
 	return MDIR_NONE;
 }
 
+static echs_scale_t
+snarf_scale(const char *spec)
+{
+	echs_scale_t r = SCALE_GREGORIAN;
+
+	switch (*spec) {
+	default:
+	case 'G':
+		break;
+	case 'H':
+		r = SCALE_HIJRI_UMMULQURA;
+		if (UNLIKELY(spec[5U] == '.')) {
+			/* one of the Hijris */
+			switch (spec[6U]) {
+			default:
+			case 'U'/*MMULQURA*/:
+				break;
+			case 'D'/*IYANET*/:
+				r = SCALE_HIJRI_DIYANET;
+				break;
+			case 'I': {
+				/* Gent's types */
+				const char *kp = spec + 7U;
+				r = SCALE_HIJRI_IA;
+				r += (echs_scale_t)((*kp == 'V' || *kp++ == 'I') * 2U);
+				r += (echs_scale_t)((*kp == 'V' || *kp++ == 'I') * 2U);
+				r += (echs_scale_t)((*kp == 'C'));
+				r += (echs_scale_t)((*kp == 'V') ? 2U : 0U);
+				r += (echs_scale_t)(*++kp == 'C');
+				break;
+			}
+			}
+		}
+		break;
+	}
+	return r;
+}
+
 static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
@@ -400,6 +440,10 @@ snarf_rrule(const char *s, size_t z)
 
 		case KEY_UNTIL:
 			rr.until = dt_strp(++kv, NULL, 0U);
+			break;
+
+		case KEY_SCALE:
+			rr.scale = snarf_scale(++kv);
 			break;
 
 		case BY_WDAY:
@@ -603,23 +647,40 @@ snarf_dt(const char *eof, const char *vp, const char *const ep)
 	char *on = NULL;
 	echs_instant_t res = dt_strp(vp, &on, ep - vp);
 
-	if (*eof++ == ';') {
-		/* we've got a field modifier, the only modifier
-		 * we can do with (atm) is TZID so try and read that */
+	if (UNLIKELY(on == NULL)) {
+		return res;
+	}
+	while (*eof++ == ';') {
+		/* we've got a field modifier */
 		static const char tzid[] = "TZID=";
+		static const char scal[] = "SCALE=";
+		/* next EOF */
+		const char *const neo = strpbrk(eof, ":;") ?: vp - 1U;
 
-		if (on < ep && *on == 'Z') {
-			/* don't worry about the zone spec */
+		if (0) {
 			;
 		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
 			/* yep, got him */
-			const char *const zn = eof + strlenof(tzid);
-			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
-			const size_t nzn = eoz - zn;
-			echs_tzob_t z = echs_tzob(zn, nzn);
+			if (on < ep && *on == 'Z') {
+				/* don't worry about the zone spec */
+				;
+			} else {
+				const char *const zn = eof + strlenof(tzid);
+				const size_t nzn = neo - zn;
+				echs_tzob_t z = echs_tzob(zn, nzn);
 
-			res = echs_instant_attach_tzob(res, z);
+				res = echs_instant_attach_tzob(res, z);
+			}
+		} else if (!strncmp(eof, scal, strlenof(scal))) {
+			/* very nice */
+			const char *const zn = eof + strlenof(scal);
+			echs_scale_t s = snarf_scale(zn);
+
+			res = echs_instant_attach_scale(res, s);
 		}
+
+		/* set eof for next round */
+		eof = neo;
 	}
 	return res;
 }
@@ -629,20 +690,31 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 {
 	struct dtlst_s dl = {NULL};
 	echs_tzob_t z = 0U;
+	echs_scale_t s = SCALE_GREGORIAN;
 
-	if (*eof++ == ';') {
+	while (*eof++ == ';') {
 		/* we've got a field modifier, the only modifier
 		 * we can do with (atm) is TZID so try and read that */
 		static const char tzid[] = "TZID=";
+		static const char scal[] = "SCALE=";
+		const char *const neo = strpbrk(eof, ":;") ?: vp - 1U;
 
-		if (!strncmp(eof, tzid, strlenof(tzid))) {
+		if (0) {
+			;
+		} else if (!strncmp(eof, tzid, strlenof(tzid))) {
 			/* yep, got him */
 			const char *const zn = eof + strlenof(tzid);
-			const char *const eoz = strpbrk(zn, ":;") ?: vp - 1U;
-			const size_t nzn = eoz - zn;
+			const size_t nzn = neo - zn;
 
 			z = echs_tzob(zn, nzn);
+		} else if (!strncmp(eof, scal, strlenof(scal))) {
+			/* very nice */
+			const char *const zn = eof + strlenof(scal);
+			s = snarf_scale(zn);
 		}
+
+		/* get ready for the next round */
+		eof = neo;
 	}
 	for (const char *eod; vp < ep; vp = eod + 1U) {
 		echs_instant_t in;
@@ -652,13 +724,15 @@ snarf_dtlst(const char *eof, const char *vp, const char *const ep)
 			eod = ep;
 		}
 		in = dt_strp(vp, &on, eod - vp);
-		if (UNLIKELY(echs_instant_0_p(in))) {
+		if (UNLIKELY(echs_instant_0_p(in) || on == NULL)) {
 			continue;
 		}
 		/* attach zone (if any) and only if there's no zone indicator */
 		if (on >= eod || *on != 'Z') {
 			in = echs_instant_attach_tzob(in, z);
 		}
+		/* attach scale */
+		in = echs_instant_attach_scale(in, s);
 		add1_to_dtlst(&dl, in);
 	}
 	return dl;
@@ -798,6 +872,13 @@ snarf_fld(struct ical_vevent_s ve[static 1U],
 		break;
 
 	case FLD_DESC:
+		if (ve->t.desc != NULL) {
+			/* only the first description wins */
+			break;
+		}
+		if (vp < ep) {
+			ve->t.desc = strndup(vp, ep - vp);
+		}
 		break;
 
 	case FLD_LOC:
@@ -1059,6 +1140,10 @@ snarf_pro(struct ical_vevent_s ve[static 1U],
 		snarf_fld(ve, fld, eof, vp, ep);
 		break;
 
+	case FLD_SCALE:
+		ve->cal = snarf_scale(vp);
+		break;
+
 	default:
 		break;
 	}
@@ -1275,6 +1360,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 					memset(&p->ve, 0, sizeof(p->ve));
 					/* copy global task properties */
 					p->ve.t = p->globve.t;
+					/* copy global scale */
+					p->ve.cal = p->globve.cal;
 					/* and set state to vevent */
 					p->st = ST_VTOD;
 					break;
@@ -1352,6 +1439,8 @@ _ical_proc(struct ical_parser_s p[static 1U])
 				/* bang run_as */
 				p->ve.t.run_as = p->globve.t.run_as;
 			}
+			/* copy global scale */
+			p->ve.cal = p->globve.cal;
 			/* reset to unknown state */
 			p->st = ST_VCAL;
 			res = &p->ve;
@@ -1516,6 +1605,9 @@ send_task(int whither, echs_task_t t)
 	if (t->cmd) {
 		fdprintf("SUMMARY:%s\n", t->cmd);
 	}
+	if (t->desc) {
+		fdprintf("DESCRIPTION:%s\n", t->desc);
+	}
 	if (t->org) {
 		fdprintf("ORGANIZER:%s\n", t->org);
 	}
@@ -1666,10 +1758,49 @@ send_stset(int whither, echs_stset_t sts)
 }
 
 static void
+send_scale(echs_scale_t sca)
+{
+	switch (sca) {
+	case SCALE_HIJRI_IA:
+		fdwrite(";SCALE=HIJRI.IA", strlenof(";SCALE=HIJRI.IA"));
+		break;
+	case SCALE_HIJRI_IC:
+		fdwrite(";SCALE=HIJRI.IC", strlenof(";SCALE=HIJRI.IC"));
+		break;
+	case SCALE_HIJRI_IIA:
+		fdwrite(";SCALE=HIJRI.IIA", strlenof(";SCALE=HIJRI.IIA"));
+		break;
+	case SCALE_HIJRI_IIC:
+		fdwrite(";SCALE=HIJRI.IIC", strlenof(";SCALE=HIJRI.IIC"));
+		break;
+	case SCALE_HIJRI_IIIA:
+		fdwrite(";SCALE=HIJRI.IIIA", strlenof(";SCALE=HIJRI.IIIA"));
+		break;
+	case SCALE_HIJRI_IIIC:
+		fdwrite(";SCALE=HIJRI.IIIC", strlenof(";SCALE=HIJRI.IIIC"));
+		break;
+	case SCALE_HIJRI_IVA:
+		fdwrite(";SCALE=HIJRI.IVA", strlenof(";SCALE=HIJRI.IVA"));
+		break;
+	case SCALE_HIJRI_IVC:
+		fdwrite(";SCALE=HIJRI.IVC", strlenof(";SCALE=HIJRI.IVC"));
+		break;
+	case SCALE_HIJRI_UMMULQURA:
+		fdwrite(";SCALE=HIJRI.UMMULQURA", strlenof(";SCALE=HIJRI.UMMULQURA"));
+		break;
+	case SCALE_HIJRI_DIYANET:
+		fdwrite(";SCALE=HIJRI.DIYANET", strlenof(";SCALE=HIJRI.DIYANET"));
+		break;
+	}
+	return;
+}
+
+static void
 send_ev(int whither, echs_event_t e, echs_tzob_t z)
 {
 	char stmp[32U] = {':'};
 	size_t ztmp = 1U;
+	echs_scale_t sca;
 	const char *zn;
 
 	if (UNLIKELY(echs_nul_instant_p(e.from))) {
@@ -1683,7 +1814,14 @@ send_ev(int whither, echs_event_t e, echs_tzob_t z)
 	fdwrite("DTSTART", strlenof("DTSTART"));
 	if (echs_instant_all_day_p(e.from)) {
 		fdwrite(";VALUE=DATE", strlenof(";VALUE=DATE"));
-	} else if (z && (zn = echs_zone(z))) {
+	}
+	if ((sca = echs_instant_scale(e.from))) {
+		send_scale(sca);
+		/* scale can bog off now */
+		e.from = echs_instant_detach_scale(e.from);
+	}
+
+	if (z && (zn = echs_zone(z))) {
 		size_t zz = strlen(zn);
 
 		fdwrite(";TZID=", strlenof(";TZID="));
@@ -1747,6 +1885,9 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 
 	if (rr->inter > 1U) {
 		fdprintf(";INTERVAL=%u", rr->inter);
+	}
+	if (rr->scale) {
+		send_scale(rr->scale);
 	}
 	with (unsigned int m) {
 		bitint_iter_t i = 0UL;
@@ -1993,6 +2134,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 /* this will degrade into an evical_vevent stream */
 	struct evical_s *res;
 	const size_t zev = nd * sizeof(*res->ev);
+	echs_scale_t cal;
 	echs_tzob_t z;
 	int eof;
 
@@ -2005,6 +2147,8 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	}
 
 	/* let the work begin */
+	cal = echs_instant_scale(e.from);
+	e.from = echs_instant_rescale(e.from, SCALE_GREGORIAN);
 	z = echs_instant_tzob(e.from);
 	e.from = echs_instant_to_utc(e.from);
 	eof = echs_instant_tzof(e.from, z);
@@ -2012,6 +2156,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 	if (nd == 1U) {
 		/* no need to sort things, just spread the one instant */
 		e.from = instant_soup(e.from, d[0U], z, eof);
+		e.from = echs_instant_rescale(e.from, cal);
 		res->ev[0U] = e;
 	} else {
 		/* blimey, use the bottom bit of res->ev to sort the
@@ -2031,7 +2176,7 @@ __make_evrdat(echs_event_t e, const echs_instant_t *d, size_t nd)
 		echs_instant_sort(rd, nd);
 		/* now spread out the instants as echs events */
 		for (size_t i = 0U; i < nd; i++) {
-			e.from = rd[i];
+			e.from = echs_instant_rescale(rd[i], cal);
 			res->ev[i] = e;
 		}
 	}
@@ -2060,6 +2205,8 @@ struct evrrul_s {
 	echs_event_t e;
 	/* proto-zone */
 	echs_tzob_t zon;
+	/* proto-calscale */
+	echs_scale_t cal;
 	/* proto-offset */
 	int pof;
 
@@ -2108,6 +2255,8 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 	that = (void*)(this + nr);
 
 	this->class = &evrrul_cls;
+	this->cal = echs_instant_scale(e.from);
+	e.from = echs_instant_rescale(e.from, SCALE_GREGORIAN);
 	this->zon = zon = echs_instant_tzob(e.from);
 	this->e = e = echs_event_to_utc(e);
 	this->pof = echs_instant_tzof(e.from, zon);
@@ -2227,6 +2376,10 @@ refill(struct evrrul_s *restrict strm)
 
 	if (UNLIKELY(strm->ncch == 0UL)) {
 		return 0UL;
+	}
+	/* convert to target scale */
+	for (size_t i = 0U; i < strm->ncch; i++) {
+		strm->cch[i] = echs_instant_rescale(strm->cch[i], strm->cal);
 	}
 	/* utcify them all */
 	for (size_t i = 0U; i < strm->ncch; i++) {
@@ -2432,7 +2585,7 @@ make_task(struct ical_vevent_s *ve)
 		/* free all the bits and bobs that
 		 * might have been added */
 		echs_event_t e = {
-			.from = ve->from,
+			.from = echs_instant_rescale(ve->from, ve->cal),
 			.dur = ve->dur,
 			.oid = ve->t.oid,
 			.sts = ve->sts,
@@ -2453,7 +2606,7 @@ make_task(struct ical_vevent_s *ve)
 	} else {
 		/* it's an rrule */
 		echs_event_t e = {
-			.from = ve->from,
+			.from = echs_instant_rescale(ve->from, ve->cal),
 			.dur = ve->dur,
 			.oid = ve->t.oid,
 			.sts = ve->sts,

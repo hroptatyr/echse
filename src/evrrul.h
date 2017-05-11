@@ -42,19 +42,9 @@
 #include "evstrm.h"
 #include "instant.h"
 #include "bitint.h"
+#include "scale.h"
 
 typedef const struct rrulsp_s *rrulsp_t;
-
-typedef enum {
-	MIR = (0U),
-	MON = (1U),
-	TUE = (2U),
-	WED = (3U),
-	THU = (4U),
-	FRI = (5U),
-	SAT = (6U),
-	SUN = (7U),
-} echs_wday_t;
 
 typedef enum {
 	NIL = (0U),
@@ -129,6 +119,7 @@ typedef enum {
 
 struct rrulsp_s {
 	echs_freq_t freq;
+	echs_scale_t scale;
 	int count;
 	unsigned int inter;
 	echs_instant_t until;

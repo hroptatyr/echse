@@ -110,6 +110,8 @@ parts:
   day after/before easter
 + `BYADD=N[,...]`  for N in 0 to 366 or -1 to -366, denotes to add N
   days to all dates in the current set
++ `SCALE=GREGORIAN|HIJRI` to change the calendar scale for RRULES.
+  Note: The *output* calendar scale is `GREGORIAN` as per [RFC 5545][1].
 
 
 Pronunciation
