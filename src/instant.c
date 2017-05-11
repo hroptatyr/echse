@@ -95,11 +95,7 @@ __jan00(unsigned int year)
 
 #define T	echs_instant_t
 
-static inline __attribute__((const, pure)) bool
-compare(T i1, T i2)
-{
-	return echs_instant_lt_p(i1, i2);
-}
+#define compare	echs_instant_lt_p
 
 #include "wikisort.c"
 

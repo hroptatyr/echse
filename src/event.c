@@ -41,11 +41,7 @@
 
 #define T	echs_event_t
 
-static inline __attribute__((const, pure)) bool
-compare(T e1, T e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
+#define compare	echs_event_lt_p
 
 #include "wikisort.c"
 

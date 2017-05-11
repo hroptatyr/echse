@@ -85,7 +85,7 @@ fdprintf(const char *fmt, ...)
 	tp = vsnprintf(
 		fd_aux.buf + fd_aux.bi, sizeof(fd_aux.buf) - fd_aux.bi,
 		fmt, vap);
-	if (UNLIKELY((size_t)tp >= sizeof(fd_aux.buf) - fd_aux.bi)) {
+	if (UNLIKELY((size_t)tp + fd_aux.bi >= sizeof(fd_aux.buf))) {
 		/* yay, finally some write()ing */
 		fdflush();
 		/* ... try the formatting again */
@@ -96,7 +96,7 @@ fdprintf(const char *fmt, ...)
 	va_end(vap);
 
 	/* reassign and out */
-	if (UNLIKELY(tp < 0 || sizeof(fd_aux.buf) - tp < fd_aux.bi)) {
+	if (UNLIKELY(tp < 0 || sizeof(fd_aux.buf) < (size_t)tp + fd_aux.bi)) {
 		/* we're fucked */
 		return -1;
 	}

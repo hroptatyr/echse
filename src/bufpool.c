@@ -55,17 +55,29 @@ static bufpool_t nul = {""};
 bufpool_t
 bufpool(const char *str, size_t len)
 {
+	void *tmp;
 	size_t i;
 
 	/* see if it's a sensible request first */
 	if (UNLIKELY(len == 0UL)) {
 		return nul;
 	}
-	if (nobs >= zobs) {
+	if (UNLIKELY(nobs >= zobs)) {
 		/* time to resize */
-		obs = realloc(obs, (zobs += 64U) * sizeof(*obs));
+		tmp = realloc(obs, (zobs + 64U) * sizeof(*obs));
+
+		if (UNLIKELY(tmp == NULL)) {
+			/* retry next time */
+			return nul;
+		}
+		/* otherwise consider us successful */
+		zobs += 64U;
 	}
-	obs[nobs].str = malloc(len + 1U);
+	if (UNLIKELY((tmp = malloc(len + 1U)) == NULL)) {
+		/* bad luck again */
+		return nul;
+	}
+	obs[nobs].str = tmp;
 	obs[nobs].len = len;
 	memcpy(obs[nobs].str, str, len);
 	obs[nobs].str[len] = '\0';

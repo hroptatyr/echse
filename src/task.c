@@ -50,6 +50,9 @@ echs_task_clone(echs_task_t t)
 	struct echs_task_s *res = malloc(sizeof(*res));
 	const char *tmps;
 
+	if (UNLIKELY(res == NULL)) {
+		return NULL;
+	}
 	*res = *t;
 	if (t->cmd != NULL) {
 		res->cmd = strdup(t->cmd);

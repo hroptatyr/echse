@@ -1,6 +1,6 @@
 /*** echsd.c -- echse queue daemon
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -845,20 +845,26 @@ static int
 resz_task_ht(void)
 {
 	const size_t olz = ztask_ht;
+	const size_t nuz = ztask_ht * 2U;
 	const struct tmap_s *olt = task_ht;
+	struct tmap_s *nut;
 
 again:
 	/* buy the shiny new house */
-	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
-	if (UNLIKELY(task_ht == NULL)) {
+	nut = calloc(nuz, sizeof(*task_ht));
+	if (UNLIKELY(nut == NULL)) {
+		/* try again next time */
 		return -1;
 	}
+	/* consider moving into the new house */
+	task_ht = nut;
+	ztask_ht = nuz;
 	/* and now move */
 	for (size_t i = 0U; i < olz; i++) {
 		if (olt[i].oid) {
 			size_t j = put_task_slot(olt[i].oid);
 
-			if (UNLIKELY(j >= ztask_ht)) {
+			if (UNLIKELY(j >= nuz)) {
 				free(task_ht);
 				goto again;
 			}
@@ -884,10 +890,17 @@ make_task_pool(size_t n)
 	}
 	/* also add res to the list of pools (for freeing them later) */
 	if (ntpools >= ztpools) {
-		if (!(ztpools *= 2U)) {
-			ztpools = 16U;
+		const size_t nuz = (ztpools * 2U) ?: 16U;
+		void *nup = realloc(tpools, nuz * sizeof(*tpools));
+
+		if (UNLIKELY(nup == NULL)) {
+			/* shame */
+			free(res);
+			return NULL;
 		}
-		tpools = realloc(tpools, ztpools * sizeof(*tpools));
+		/* we're good to go */
+		tpools = nup;
+		ztpools = nuz;
 	}
 	tpools[ntpools]._1st = res;
 	tpools[ntpools].size = n;
@@ -898,10 +911,10 @@ make_task_pool(size_t n)
 static void
 free_task_pools(void)
 {
-	for (size_t i = 0U; i < ntpools; i++) {
-		free(tpools[i]._1st);
-	}
 	if (tpools) {
+		for (size_t i = 0U; i < ntpools; i++) {
+			free(tpools[i]._1st);
+		}
 		free(tpools);
 	}
 	tpools = NULL;
@@ -914,6 +927,19 @@ make_task(echs_toid_t oid)
 {
 /* create one task */
 	_task_t res;
+
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		const size_t iniz = 4U;
+
+		task_ht = calloc(iniz, sizeof(*task_ht));
+		if (UNLIKELY(task_ht == NULL)) {
+			/* I want to kill myself */
+			return NULL;
+		}
+		/* that went well */
+		ztask_ht = iniz;
+	}
 
 	if (UNLIKELY(!nfree_tasks)) {
 		/* put some more task objects in the task pool */
@@ -932,10 +958,6 @@ make_task(echs_toid_t oid)
 	free_tasks = free_tasks->next;
 	nfree_tasks--;
 
-	if (UNLIKELY(!ztask_ht)) {
-		/* instantiate hash table */
-		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
-	}
 again:
 	with (size_t slot = put_task_slot(oid)) {
 		if (UNLIKELY(slot >= ztask_ht)) {
@@ -1281,10 +1303,17 @@ make_chld_pool(size_t n)
 	}
 	/* also add res to the list of pools (for freeing them later) */
 	if (ncpools >= zcpools) {
-		if (!(zcpools *= 2U)) {
-			zcpools = 16U;
+		const size_t nuz = (zcpools * 2U) ?: 16U;
+		void *nup = realloc(cpools, nuz * sizeof(*cpools));
+
+		if (UNLIKELY(nup == NULL)) {
+			/* I *KNEW* IT */
+			free(res);
+			return NULL;
 		}
-		cpools = realloc(cpools, zcpools * sizeof(*cpools));
+		/* surprise */
+		cpools = nup;
+		zcpools = nuz;
 	}
 	cpools[ncpools]._1st = res;
 	cpools[ncpools].size = n;
@@ -1295,10 +1324,10 @@ make_chld_pool(size_t n)
 static void
 free_chld_pools(void)
 {
-	for (size_t i = 0U; i < ncpools; i++) {
-		free(cpools[i]._1st);
-	}
 	if (cpools) {
+		for (size_t i = 0U; i < ncpools; i++) {
+			free(cpools[i]._1st);
+		}
 		free(cpools);
 	}
 	cpools = NULL;
@@ -1518,12 +1547,11 @@ chkpnta(void)
 				void *nup;
 
 				nup = realloc(snds, nuz * sizeof(*snds));
-				if (UNLIKELY(snds == NULL)) {
+				if (UNLIKELY(nup == NULL)) {
 					/* finish up */
 					rc = -1;
 					break;
 				}
-
 				/* reassign */
 				snds = nup;
 				zsnds = nuz;
@@ -2433,7 +2461,8 @@ make_echsd(void)
 	if (res == NULL) {
 		return NULL;
 	} else if (EV_A == NULL) {
-		goto foul;
+		free(res);
+		return NULL;
 	}
 
 	/* initialise private bits */
@@ -2452,10 +2481,6 @@ make_echsd(void)
 
 	res->loop = EV_A;
 	return res;
-
-foul:
-	free(res);
-	return NULL;
 }
 
 static void

@@ -1,6 +1,6 @@
 /*** strlst.c -- list of NULL terminated strings a la env
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2017 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -111,8 +111,7 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 
 		nu_s = realloc(res->s, nu_z * sizeof(*res->s));
 		if (UNLIKELY(nu_s == NULL)) {
-			res = NULL;
-			goto fuck;
+			goto err;
 		}
 		/* adjust existing pointers */
 		with (ptrdiff_t d = nu_s - res->s) {
@@ -126,11 +125,12 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 	const size_t zl = ilog_ceil_exp(res->nl);
 	if (UNLIKELY(res->nl + 1U >= zl)) {
 		/* resize everything */
-		res = realloc(res, sizeof(*res) + 2U * zl * sizeof(*res->l));
-		if (UNLIKELY(res == NULL)) {
+		void *tmp;
+
+		tmp = realloc(res, sizeof(*res) + 2U * zl * sizeof(*res->l));
+		if (UNLIKELY(tmp == NULL)) {
 			/* completely cunted */
-			res = NULL;
-			goto fuck;
+			goto err;
 		}
 	}
 	/* now it's time for beef */
@@ -140,8 +140,13 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 	memcpy(res->s + res->i, s, n);
 	res->i += n;
 	res->s[res->i++] = '\0';
-fuck:
 	*sl = res;
+	return;
+
+err:
+	free(res->s);
+	free(res);
+	*sl = NULL;
 	return;
 }
 
