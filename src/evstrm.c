@@ -156,6 +156,9 @@ make_evmux(echs_evstrm_t s[], size_t ns)
 	}
 	/* otherwise we have to resort to merge-sorting aka muxing */
 	res = malloc(sizeof(*res) + ns * sizeof(*res->ev));
+	if (UNLIKELY(res == NULL)) {
+		return NULL;
+	}
 	res->class = &evmux_cls;
 	res->ns = ns;
 	res->s = s;
@@ -199,10 +202,17 @@ clone_evmux(echs_const_evstrm_t s)
 	}
 	with (size_t z = this->ns * sizeof(*this->ev) + sizeof(*this)) {
 		res = malloc(z);
+		if (UNLIKELY(res == NULL)) {
+			return NULL;
+		}
 		memcpy(res, this, z);
 	}
 	/* clone all streams */
 	res->s = malloc(this->ns * sizeof(*this->s));
+	if (UNLIKELY(res->s == NULL)) {
+		free(res);
+		return NULL;
+	}
 	for (size_t i = 0U; i < this->ns; i++) {
 		echs_evstrm_t stmp;
 
@@ -230,15 +240,28 @@ echs_evstrm_mux(echs_evstrm_t s, ...)
 	}
 	/* otherwise we've got at least 1 argument */
 	strm = malloc((allocz = 16U) + sizeof(*strm));
+	if (UNLIKELY(strm == NULL)) {
+		return NULL;
+	}
 	va_start(ap, s);
 	for (; s != NULL; s = va_arg(ap, echs_evstrm_t)) {
 		if (nstrm >= allocz) {
-			strm = realloc(strm, (allocz *= 2) * sizeof(*strm));
+			void *x = realloc(strm, (allocz *= 2) * sizeof(*strm));
+			if (UNLIKELY(x == NULL)) {
+				goto free;
+			}
+			strm = x;
 		}
 		strm[nstrm++] = clone_echs_evstrm(s);
 	}
 	va_end(ap);
 	return make_evmux(strm, nstrm);
+free:
+	for (size_t i = 0U; i < nstrm; i++) {
+		free(strm[i]);
+	}
+	free(strm);
+	return NULL;
 }
 
 echs_evstrm_t
@@ -254,15 +277,28 @@ echs_evstrm_mux_clon(echs_evstrm_t s, ...)
 	}
 	/* otherwise we've got at least 1 argument */
 	strm = malloc((allocz = 16U) + sizeof(*strm));
+	if (UNLIKELY(strm == NULL)) {
+		return NULL;
+	}
 	va_start(ap, s);
 	for (; s != NULL; s = va_arg(ap, echs_evstrm_t)) {
 		if (nstrm >= allocz) {
-			strm = realloc(strm, (allocz *= 2) * sizeof(*strm));
+			void *x = realloc(strm, (allocz *= 2) * sizeof(*strm));
+			if (UNLIKELY(x == NULL)) {
+				goto free;
+			}
+			strm = x;
 		}
 		strm[nstrm++] = s;
 	}
 	va_end(ap);
 	return make_evmux(strm, nstrm);
+free:
+	for (size_t i = 0U; i < nstrm; i++) {
+		free(strm[i]);
+	}
+	free(strm);
+	return NULL;
 }
 
 echs_evstrm_t
@@ -294,7 +330,9 @@ echs_evstrm_vmux(const echs_evstrm_t s[], size_t n)
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
 	strm = malloc(nstrm * sizeof(*strm));
-	if (LIKELY(nstrm == n)) {
+	if (UNLIKELY(strm == NULL)) {
+		return NULL;
+	} else if (LIKELY(nstrm == n)) {
 		memcpy(strm, s, n * sizeof(*s));
 	} else {
 		for (size_t i = strm1, j = 0U; i < n; i++) {
@@ -335,6 +373,9 @@ echs_evstrm_vmux_clon(const echs_evstrm_t s[], size_t n)
 	/* otherwise make a copy of S and then pass it to
 	 * our make_evstrm(), it's the right signature already */
 	strm = malloc(nstrm * sizeof(*strm));
+	if (UNLIKELY(strm == NULL)) {
+		return NULL;
+	}
 	for (size_t i = strm1, j = 0U; i < n; i++) {
 		if (UNLIKELY(s[i] == NULL)) {
 			;
