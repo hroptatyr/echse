@@ -81,8 +81,8 @@ typedef enum {
 /* determine number of months in the MT array */
 #define NM(x)	(sizeof(x) / sizeof(unsigned int) - 2U)
 
-#define SCAL2TYP(x)	(hij_typ_t)((x) / 2U)
-#define SCAL2EPO(x)	(hij_epo_t)(((x) + 1U) % 2U)
+#define SCAL2TYP(x)	(hij_typ_t)(((x) - 1U) / 2U)
+#define SCAL2EPO(x)	(hij_epo_t)(((x) - 1U) % 2U)
 
 
 /* shifts based on type */
