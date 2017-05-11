@@ -164,14 +164,23 @@ struct cal_addr_s {
 #define CHECK_RESIZE(o, id, iniz, nitems)				\
 	if (UNLIKELY(!(o)->z##id)) {					\
 		/* leave the first one out */				\
-		(o)->id = malloc(((o)->z##id = iniz) * sizeof(*(o)->id)); \
+		void *tmp = malloc(iniz * sizeof(*(o)->id));		\
+		if (UNLIKELY(tmp == NULL)) {				\
+			return;						\
+		}							\
+		(o)->id = tmp;						\
+		(o)->z##id = iniz;					\
 		memset((o)->id, 0, sizeof(*(o)->id));			\
 	}								\
 	if (UNLIKELY((o)->n##id + nitems > (o)->z##id)) {		\
 		do {							\
-			(o)->id = realloc(				\
-				(o)->id,				\
-				((o)->z##id *= 2U) * sizeof(*(o)->id)); \
+			const size_t nuz = (o)->z##id * 2U;		\
+			void *tmp = realloc((o)->id, nuz * sizeof(*(o)->id)); \
+			if (UNLIKELY(tmp == NULL)) {			\
+				return;					\
+			}						\
+			(o)->id = tmp;					\
+			(o)->z##id = nuz;				\
 		} while ((o)->n##id + nitems > (o)->z##id);		\
 	}
 
