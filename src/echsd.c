@@ -911,10 +911,10 @@ make_task_pool(size_t n)
 static void
 free_task_pools(void)
 {
-	for (size_t i = 0U; i < ntpools; i++) {
-		free(tpools[i]._1st);
-	}
 	if (tpools) {
+		for (size_t i = 0U; i < ntpools; i++) {
+			free(tpools[i]._1st);
+		}
 		free(tpools);
 	}
 	tpools = NULL;
@@ -1324,10 +1324,10 @@ make_chld_pool(size_t n)
 static void
 free_chld_pools(void)
 {
-	for (size_t i = 0U; i < ncpools; i++) {
-		free(cpools[i]._1st);
-	}
 	if (cpools) {
+		for (size_t i = 0U; i < ncpools; i++) {
+			free(cpools[i]._1st);
+		}
 		free(cpools);
 	}
 	cpools = NULL;
