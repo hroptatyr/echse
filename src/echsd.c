@@ -811,22 +811,19 @@ static size_t ztpools;
 static struct tmap_s *task_ht;
 static size_t ztask_ht;
 
-static size_t
+static ssize_t
 put_task_slot(echs_toid_t oid)
 {
 /* find slot for OID for putting */
-	for (size_t i = 16U/*retries*/, slot = oid & (ztask_ht - 1U); i; i--) {
-		if (LIKELY(!task_ht[slot].oid)) {
-			return slot;
-		} else if (task_ht[slot].oid != oid) {
-			/* collision, retry */
-		        ;
-		} else {
-			/* huh? that's very inconsistent */
-			abort();
-		}
+	size_t slot = oid & (ztask_ht - 1ULL);
+
+	if (LIKELY(!task_ht[slot].oid)) {
+		return slot;
+	} else if (task_ht[slot].oid == oid) {
+		/* huh? that's very inconsistent */
+		return slot;
 	}
-	return (size_t)-1ULL;
+	return -1;
 }
 
 static size_t
@@ -862,9 +859,9 @@ again:
 	/* and now move */
 	for (size_t i = 0U; i < olz; i++) {
 		if (olt[i].oid) {
-			size_t j = put_task_slot(olt[i].oid);
+			ssize_t j = put_task_slot(olt[i].oid);
 
-			if (UNLIKELY(j >= nuz)) {
+			if (UNLIKELY(j < 0)) {
 				free(task_ht);
 				goto again;
 			}
@@ -943,15 +940,15 @@ make_task(echs_toid_t oid)
 
 	if (UNLIKELY(!nfree_tasks)) {
 		/* put some more task objects in the task pool */
-		free_tasks = make_task_pool(
-			nfree_tasks = zfree_tasks ?: ECHS_TASK_POOL_INIZ);
+		const size_t adz = zfree_tasks ?: ECHS_TASK_POOL_INIZ;
+
+		free_tasks = make_task_pool(adz);
 		if (UNLIKELY(free_tasks == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_tasks *= 2U))) {
-			zfree_tasks = ECHS_TASK_POOL_INIZ;
-		}
+		nfree_tasks = adz;
+		zfree_tasks = zfree_tasks ? adz * 2U : ECHS_TASK_POOL_INIZ;
 	}
 	/* pop off the free list */
 	res = free_tasks;
@@ -959,8 +956,8 @@ make_task(echs_toid_t oid)
 	nfree_tasks--;
 
 again:
-	with (size_t slot = put_task_slot(oid)) {
-		if (UNLIKELY(slot >= ztask_ht)) {
+	with (ssize_t slot = put_task_slot(oid)) {
+		if (UNLIKELY(slot < 0)) {
 			/* resize */
 			resz_task_ht();
 			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
@@ -1343,15 +1340,15 @@ make_chld(void)
 
 	if (UNLIKELY(!nfree_chlds)) {
 		/* put some more ev_child objects into the pool */
-		free_chlds = make_chld_pool(
-			nfree_chlds = zfree_chlds ?: ECHS_CHLD_POOL_INIZ);
+		const size_t adz = zfree_chlds ?: ECHS_CHLD_POOL_INIZ;
+
+		free_chlds = make_chld_pool(adz);
 		if (UNLIKELY(free_chlds == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_chlds *= 2U))) {
-			zfree_chlds = ECHS_CHLD_POOL_INIZ;
-		}
+		nfree_chlds = adz;
+		zfree_chlds = zfree_chlds ? adz * 2U : ECHS_CHLD_POOL_INIZ;
 	}
 	/* pop off the free list */
 	res = free_chlds;
