@@ -943,15 +943,15 @@ make_task(echs_toid_t oid)
 
 	if (UNLIKELY(!nfree_tasks)) {
 		/* put some more task objects in the task pool */
-		free_tasks = make_task_pool(
-			nfree_tasks = zfree_tasks ?: ECHS_TASK_POOL_INIZ);
+		const size_t adz = zfree_tasks ?: ECHS_TASK_POOL_INIZ;
+
+		free_tasks = make_task_pool(adz);
 		if (UNLIKELY(free_tasks == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_tasks *= 2U))) {
-			zfree_tasks = ECHS_TASK_POOL_INIZ;
-		}
+		nfree_tasks = adz;
+		zfree_tasks = zfree_tasks ? adz * 2U : ECHS_TASK_POOL_INIZ;
 	}
 	/* pop off the free list */
 	res = free_tasks;
@@ -1343,15 +1343,15 @@ make_chld(void)
 
 	if (UNLIKELY(!nfree_chlds)) {
 		/* put some more ev_child objects into the pool */
-		free_chlds = make_chld_pool(
-			nfree_chlds = zfree_chlds ?: ECHS_CHLD_POOL_INIZ);
+		const size_t adz = zfree_chlds ?: ECHS_CHLD_POOL_INIZ;
+
+		free_chlds = make_chld_pool(adz);
 		if (UNLIKELY(free_chlds == NULL)) {
 			/* grrrr */
 			return NULL;
 		}
-		if (UNLIKELY(!(zfree_chlds *= 2U))) {
-			zfree_chlds = ECHS_CHLD_POOL_INIZ;
-		}
+		nfree_chlds = adz;
+		zfree_chlds = zfree_chlds ? adz * 2U : ECHS_CHLD_POOL_INIZ;
 	}
 	/* pop off the free list */
 	res = free_chlds;
