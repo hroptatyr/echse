@@ -811,19 +811,63 @@ static size_t ztpools;
 static struct tmap_s *task_ht;
 static size_t ztask_ht;
 
+static int
+ini_task_ht(void)
+{
+	if (UNLIKELY(!ztask_ht)) {
+		/* instantiate hash table */
+		const size_t iniz = 16U;
+
+		task_ht = calloc(iniz, sizeof(*task_ht));
+		if (UNLIKELY(task_ht == NULL)) {
+			/* I want to kill myself */
+			return -1;
+		}
+		/* that went well */
+		ztask_ht = iniz;
+	}
+	return 0;
+}
+
 static ssize_t
 put_task_slot(echs_toid_t oid)
 {
-/* find slot for OID for putting */
+/* find slot for OID for putting
+ * if collision recommend new size for task_ht */
 	size_t slot = oid & (ztask_ht - 1ULL);
+	const echs_toid_t toid = task_ht[slot].oid;
 
-	if (LIKELY(!task_ht[slot].oid)) {
+	if (LIKELY(!toid)) {
 		return slot;
-	} else if (task_ht[slot].oid == oid) {
+	} else if (UNLIKELY(toid == oid)) {
 		/* huh? that's very inconsistent */
 		return slot;
 	}
-	return -1;
+	/* calc new size */
+	with (size_t nuz = 1ULL << (__builtin_ctzll(toid ^ oid) + 1U)) {
+		struct tmap_s *nut = calloc(nuz, sizeof(*task_ht));
+
+		assert(nuz > ztask_ht);
+		if (UNLIKELY(nut == NULL)) {
+			/* ah well */
+			return -1;
+		}
+		for (size_t i = 0U; i < ztask_ht; i++) {
+			/* we can't get any additional collisions */
+			if (task_ht[i].oid) {
+				const size_t si = task_ht[i].oid & (nuz - 1ULL);
+				nut[si] = task_ht[i];
+			}
+		}
+		/* reass */
+		free(task_ht);
+		task_ht = nut;
+		ztask_ht = nuz;
+		ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
+		slot = oid & (ztask_ht - 1ULL);
+		assert(!task_ht[slot].oid);
+	}
+	return slot;
 }
 
 static size_t
@@ -836,39 +880,6 @@ get_task_slot(echs_toid_t oid)
 		}
 	}
 	return (size_t)-1ULL;
-}
-
-static int
-resz_task_ht(void)
-{
-	const size_t olz = ztask_ht;
-	const size_t nuz = ztask_ht * 2U;
-	const struct tmap_s *olt = task_ht;
-	struct tmap_s *nut;
-
-again:
-	/* buy the shiny new house */
-	nut = calloc(nuz, sizeof(*task_ht));
-	if (UNLIKELY(nut == NULL)) {
-		/* try again next time */
-		return -1;
-	}
-	/* consider moving into the new house */
-	task_ht = nut;
-	ztask_ht = nuz;
-	/* and now move */
-	for (size_t i = 0U; i < olz; i++) {
-		if (olt[i].oid) {
-			ssize_t j = put_task_slot(olt[i].oid);
-
-			if (UNLIKELY(j < 0)) {
-				free(task_ht);
-				goto again;
-			}
-			task_ht[j] = olt[i];
-		}
-	}
-	return 0;
 }
 
 static _task_t
@@ -923,19 +934,12 @@ static _task_t
 make_task(echs_toid_t oid)
 {
 /* create one task */
+	ssize_t slot = put_task_slot(oid);
 	_task_t res;
 
-	if (UNLIKELY(!ztask_ht)) {
-		/* instantiate hash table */
-		const size_t iniz = 4U;
-
-		task_ht = calloc(iniz, sizeof(*task_ht));
-		if (UNLIKELY(task_ht == NULL)) {
-			/* I want to kill myself */
-			return NULL;
-		}
-		/* that went well */
-		ztask_ht = iniz;
+	if (UNLIKELY(slot < 0)) {
+		ECHS_ERR_LOG("cannot find slot for task %lx", oid);
+		return NULL;
 	}
 
 	if (UNLIKELY(!nfree_tasks)) {
@@ -950,21 +954,13 @@ make_task(echs_toid_t oid)
 		nfree_tasks = adz;
 		zfree_tasks = zfree_tasks ? adz * 2U : ECHS_TASK_POOL_INIZ;
 	}
+
 	/* pop off the free list */
 	res = free_tasks;
 	free_tasks = free_tasks->next;
 	nfree_tasks--;
 
-again:
-	with (ssize_t slot = put_task_slot(oid)) {
-		if (UNLIKELY(slot < 0)) {
-			/* resize */
-			resz_task_ht();
-			ECHS_NOTI_LOG("resized table of tasks to %zu", ztask_ht);
-			goto again;
-		}
-		task_ht[slot] = (struct tmap_s){oid, res};
-	}
+	task_ht[slot] = (struct tmap_s){oid, res};
 	memset(res, 0, sizeof(*res));
 	return res;
 }
@@ -2456,10 +2452,14 @@ make_echsd(void)
 	EV_P = ev_default_loop(EVFLAG_AUTO);
 
 	if (res == NULL) {
+	nul:
 		return NULL;
 	} else if (EV_A == NULL) {
+	fre:
 		free(res);
-		return NULL;
+		goto nul;
+	} else if (ini_task_ht() < 0) {
+		goto fre;
 	}
 
 	/* initialise private bits */
