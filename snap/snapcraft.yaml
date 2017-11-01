@@ -1,0 +1,30 @@
+name: echse
+version: '0.1.99-GIT'
+summary: A cron daemon on RFC 5545 (ical) files.
+description: |
+    In a nutshell: a cron daemon on RFC 5545 calendar files
+    (aka iCalendar aka ics) with execution resolution up to one
+    second, per-task configuration of everything, and which can
+    be run in daemon mode by any user.
+grade: stable
+confinement: strict
+
+apps:
+    echsd:
+        command: sbin/echsd
+    echsq:
+        command: bin/echsq
+    echsx:
+        command: bin/echsx
+    echse:
+        command: bin/echse
+
+parts:
+    echse:
+        plugin: autotools
+        source: https://github.com/hroptatyr/echse.git
+        build-packages:
+          - libltdl-dev
+          - libev-dev
+          - pkg-config
+          - gperf
