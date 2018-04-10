@@ -1,6 +1,6 @@
 /*** echsx.c -- echse queue daemon
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -299,7 +299,7 @@ mail_hdrs(int tgtfd, echsx_task_t t)
 	if_with (struct strlst_s *att = t->t->att, att) {
 		char *const *atp;
 
-		if (!(atp = att->l)) {
+		if (!*(atp = att->l)) {
 			break;
 		}
 		/* otherwise compose To header */

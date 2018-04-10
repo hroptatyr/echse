@@ -1,6 +1,6 @@
 /*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2017 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -164,14 +164,23 @@ struct cal_addr_s {
 #define CHECK_RESIZE(o, id, iniz, nitems)				\
 	if (UNLIKELY(!(o)->z##id)) {					\
 		/* leave the first one out */				\
-		(o)->id = malloc(((o)->z##id = iniz) * sizeof(*(o)->id)); \
+		void *tmp = malloc(iniz * sizeof(*(o)->id));		\
+		if (UNLIKELY(tmp == NULL)) {				\
+			return;						\
+		}							\
+		(o)->id = tmp;						\
+		(o)->z##id = iniz;					\
 		memset((o)->id, 0, sizeof(*(o)->id));			\
 	}								\
 	if (UNLIKELY((o)->n##id + nitems > (o)->z##id)) {		\
 		do {							\
-			(o)->id = realloc(				\
-				(o)->id,				\
-				((o)->z##id *= 2U) * sizeof(*(o)->id)); \
+			const size_t nuz = (o)->z##id * 2U;		\
+			void *tmp = realloc((o)->id, nuz * sizeof(*(o)->id)); \
+			if (UNLIKELY(tmp == NULL)) {			\
+				return;					\
+			}						\
+			(o)->id = tmp;					\
+			(o)->z##id = nuz;				\
 		} while ((o)->n##id + nitems > (o)->z##id);		\
 	}
 
@@ -1761,6 +1770,9 @@ static void
 send_scale(echs_scale_t sca)
 {
 	switch (sca) {
+	default:
+	case SCALE_GREGORIAN:
+		break;
 	case SCALE_HIJRI_IA:
 		fdwrite(";SCALE=HIJRI.IA", strlenof(";SCALE=HIJRI.IA"));
 		break;

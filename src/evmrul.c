@@ -1,6 +1,6 @@
 /*** evmrul.c -- mover rules
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -297,6 +297,9 @@ clone_evmrul(echs_const_evstrm_t s)
 	const struct evmrul_s *this = (const struct evmrul_s*)s;
 	struct evmrul_s *clon = malloc(sizeof(*this));
 
+	if (UNLIKELY(clon == NULL)) {
+		return NULL;
+	}
 	*clon = *this;
 	clon->movers = clone_echs_evstrm(this->movers);
 	if (LIKELY(this->states != NULL)) {
@@ -336,6 +339,9 @@ make_evmrul(const mrulsp_t *mr, echs_evstrm_t mov, echs_evstrm_t aux)
 	}
 	/* otherwise ... */
 	res = malloc(sizeof(*res));
+	if (UNLIKELY(res == NULL)) {
+		goto err;
+	}
 	switch (mr->mdir) {
 	case MDIR_PAST:
 	case MDIR_PASTTHENFUTURE:
@@ -347,6 +353,7 @@ make_evmrul(const mrulsp_t *mr, echs_evstrm_t mov, echs_evstrm_t aux)
 		break;
 	default:
 		free(res);
+	err:
 		return NULL;
 	}
 	res->movers = mov;

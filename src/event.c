@@ -1,6 +1,6 @@
 /*** event.c -- some echs_event_t functionality
  *
- * Copyright (C) 2013-2014 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -41,11 +41,7 @@
 
 #define T	echs_event_t
 
-static inline __attribute__((const, pure)) bool
-compare(T e1, T e2)
-{
-	return echs_instant_lt_p(e1.from, e2.from);
-}
+#define compare	echs_event_lt_p
 
 #include "wikisort.c"
 

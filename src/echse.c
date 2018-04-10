@@ -1,6 +1,6 @@
 /*** echse.c -- testing echse concept
  *
- * Copyright (C) 2013-2015 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -97,10 +97,13 @@ add_strm(echs_evstrm_t s)
 {
 	if (UNLIKELY(nstrms >= zstrms)) {
 		const size_t nuz = (zstrms * 2U) ?: 64U;
-		strms = realloc(strms, (zstrms = nuz) * sizeof(*strms));
-		if (UNLIKELY(strms == NULL)) {
+		void *nus = realloc(strms, nuz * sizeof(*strms));
+		if (UNLIKELY(nus == NULL)) {
 			return -1;
 		}
+		/* otherwise jump for joy */
+		strms = nus;
+		zstrms = nuz;
 	}
 	strms[nstrms++] = s;
 	return 0;
@@ -199,20 +202,26 @@ static int
 resz_task_ht(void)
 {
 	const size_t olz = ztask_ht;
+	const size_t nuz = ztask_ht * 2U;
 	const struct tmap_s *olt = task_ht;
+	struct tmap_s *nut;
 
 again:
 	/* buy the shiny new house */
-	task_ht = calloc((ztask_ht *= 2U), sizeof(*task_ht));
-	if (UNLIKELY(task_ht == NULL)) {
+	nut = calloc(nuz, sizeof(*task_ht));
+	if (UNLIKELY(nut == NULL)) {
+		/* try again next time */
 		return -1;
 	}
+	/* consider moving into the new house */
+	task_ht = nut;
+	ztask_ht = nuz;
 	/* and now move */
 	for (size_t i = 0U; i < olz; i++) {
 		if (olt[i].oid) {
 			size_t j = put_task_slot(olt[i].oid);
 
-			if (UNLIKELY(j >= ztask_ht)) {
+			if (UNLIKELY(j >= nuz)) {
 				free(task_ht);
 				goto again;
 			}
@@ -245,7 +254,15 @@ put_task(echs_toid_t oid, echs_task_t t)
 {
 	if (UNLIKELY(!ztask_ht)) {
 		/* instantiate hash table */
-		task_ht = calloc(ztask_ht = 4U, sizeof(*task_ht));
+		const size_t iniz = 4U;
+
+		task_ht = calloc(iniz, sizeof(*task_ht));
+		if (UNLIKELY(task_ht == NULL)) {
+			/* you better be joking */
+			return -1;
+		}
+		/* ok, I'll let you through this once */
+		ztask_ht = iniz;
 	}
 again:
 	with (size_t slot = put_task_slot(oid)) {

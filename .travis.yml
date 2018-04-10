@@ -29,6 +29,17 @@ branches:
     - master
     - next
     - coverity-scan
+    - /^v\d+\..*/
+
+deploy:
+  provider: releases
+  api_key:
+    secure: "j+ngIiQI9HXFswf/rzOsPUaIDEDYoc3TJqTTkwqlM6/MHe/nRoYIM8G8kDqpCISSI8NCHZCjC9AZqFlpGpoGYKV4PZuNMLY1ejp1QPzcCABvj4LgTtP2pQFYOBk3Vl/FZNSjJUtB6tf/Wour2PoK8F8fxZqOYKdlRIEqFLi3g3c="
+  file_glob: true
+  file: echse-*.tar.xz
+  skip_cleanup: true
+  on:
+    tags: true
 
 notifications:
   email:

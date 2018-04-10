@@ -1,6 +1,6 @@
 /*** tzob.c -- timezone interning system
  *
- * Copyright (C) 2014-2017 Sebastian Freundt
+ * Copyright (C) 2014-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -82,7 +82,13 @@ recalloc(void *buf, size_t nmemb_ol, size_t nmemb_nu, size_t membz)
 {
 	nmemb_ol *= membz;
 	nmemb_nu *= membz;
-	buf = realloc(buf, nmemb_nu);
+	with (void *tmp = realloc(buf, nmemb_nu)) {
+		if (UNLIKELY(tmp == NULL)) {
+			free(buf);
+			return NULL;
+		}
+		buf = tmp;
+	}
 	memset((uint8_t*)buf + nmemb_ol, 0, nmemb_nu - nmemb_ol);
 	return buf;
 }
@@ -323,8 +329,12 @@ echs_tzob(const char *str, size_t len)
 
 	/* just try what we've got */
 	if (UNLIKELY(!zstk)) {
+		sstk = calloc(SSTK_STACK, sizeof(*sstk));
+		if (UNLIKELY(sstk == NULL)) {
+			/* better luck next time */
+			return 0U;
+		}
 		zstk = SSTK_STACK;
-		sstk = calloc(zstk, sizeof(*sstk));
 	}
 
 	/* here's the initial probe then */
@@ -350,12 +360,10 @@ echs_tzob(const char *str, size_t len)
 
 		if (UNLIKELY(i >= zstk)) {
 			sstk = recalloc(sstk, zstk, i << 2U, sizeof(*sstk));
-			zstk = i << 2U;
-
 			if (UNLIKELY(sstk == NULL)) {
-				zstk = 0UL, nstk = 0UL;
 				break;
 			}
+			zstk = i << 2U;
 		}
 
 		/* here we probe within the top entries of the stack */

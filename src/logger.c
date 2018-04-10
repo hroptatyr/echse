@@ -1,6 +1,6 @@
 /*** logger.c -- logging facility
  *
- * Copyright (C) 2011-2012 Sebastian Freundt
+ * Copyright (C) 2011-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
