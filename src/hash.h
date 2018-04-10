@@ -1,6 +1,6 @@
 /*** hash.h -- hashing strings
  *
- * Copyright (C) 2014-2015 Sebastian Freundt
+ * Copyright (C) 2014-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

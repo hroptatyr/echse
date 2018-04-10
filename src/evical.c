@@ -1,6 +1,6 @@
 /*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2017 Sebastian Freundt
+ * Copyright (C) 2013-2018 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
