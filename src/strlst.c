@@ -132,6 +132,8 @@ strlst_addn(struct strlst_s *sl[static 1U], const char *s, size_t n)
 			/* completely cunted */
 			goto err;
 		}
+		/* consider us successful */
+		res = tmp;
 	}
 	/* now it's time for beef */
 	res->l[res->nl++] = res->s + res->i;
