@@ -71,6 +71,7 @@ bufpool(const char *str, size_t len)
 			return nul;
 		}
 		/* otherwise consider us successful */
+		obs = tmp;
 		zobs += 64U;
 	}
 	if (UNLIKELY((tmp = malloc(len + 1U)) == NULL)) {
