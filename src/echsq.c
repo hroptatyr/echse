@@ -403,19 +403,20 @@ add_fd(int tgt_fd, int src_fd)
 {
 	char buf[32768U];
 	ical_parser_t pp = NULL;
-	size_t nrd;
+	ssize_t nrd;
 
 more:
-	switch ((nrd = read(src_fd, buf, sizeof(buf)))) {
-		echs_instruc_t ins;
-
-	default:
+	nrd = read(src_fd, buf, sizeof(buf));
+	if (nrd > 0) {
 		if (echs_evical_push(&pp, buf, nrd) < 0) {
 			/* pushing more brings nothing */
-			break;
+			goto done;
 		}
-		/*@fallthrough@*/
-	case 0:
+		/* fallthrough */
+	}
+	if (nrd >= 0) {
+		echs_instruc_t ins;
+
 		do {
 			ins = echs_evical_pull(&pp);
 
@@ -435,8 +436,10 @@ more:
 		if (LIKELY(nrd > 0)) {
 			goto more;
 		}
-		/*@fallthrough@*/
-	case -1:
+		/* fallthrough */
+	}
+	/* catchall */
+	with (echs_instruc_t ins) {
 		/* last ever pull this morning */
 		ins = echs_evical_last_pull(&pp);
 
@@ -451,8 +454,8 @@ more:
 		}
 
 		poll1(tgt_fd, 0);
-		break;
 	}
+done:
 	return;
 }
 
