@@ -295,6 +295,7 @@ echs_evstrm_mux_clon(echs_evstrm_t s, ...)
 	va_end(ap);
 	return make_evmux(strm, nstrm);
 free:
+	va_end(ap);
 	for (size_t i = 0U; i < nstrm; i++) {
 		free(strm[i]);
 	}
