@@ -204,5 +204,7 @@ NOTESTS += mrul_02.clit
 NOTESTS += mrul_03.clit
 NOTESTS += mrul_04.clit
 
+TESTS += unroll_01.clit
+
 
 ## Makefile.am ends here

@@ -58,8 +58,12 @@ extern void echs_prnt_ical_fini(void);
 extern void echs_prnt_ical_event(echs_task_t t, echs_event_t);
 
 /**
- * For filters and command-line stuff. */
+ * For filters and command-line RRULE unrolling */
 extern struct rrulsp_s echs_read_rrul(const char *str, size_t len);
+
+/**
+ * For command line RRULE unrolling */
+extern echs_evstrm_t echs_make_evstrm_rrul(echs_instant_t from, struct rrulsp_s r[static 1U], size_t nr);
 
 /**
  * Helper for echsq(1) et al */

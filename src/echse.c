@@ -503,6 +503,15 @@ unroll_frmt(echs_evstrm_t smux, const struct unroll_param_s *p, const char *fmt)
 }
 
 static int
+_inject_rrul(echs_instant_t from, const char *str)
+{
+	struct rrulsp_s r = echs_read_rrul(str, strlen(str));
+	echs_evstrm_t s = echs_make_evstrm_rrul(from, &r, 1UL);
+	add_strm(s);
+	return 0;
+}
+
+static int
 _inject_fd(int fd, const char *name)
 {
 	char buf[65536U];
@@ -672,7 +681,10 @@ echse: Error: cannot open file `%s'", fn);
 		_inject_fd(fd, fn);
 		close(fd);
 	}
-	if (argi->nargs == 0UL) {
+	for (size_t i = 0UL; i < argi->rrule_nargs; i++) {
+		_inject_rrul(p.from, argi->rrule_args[i]);
+	}
+	if (argi->nargs == 0UL && argi->rrule_nargs == 0UL) {
 		/* read from stdin */
 		_inject_fd(STDIN_FILENO, "<stdin>");
 	}
