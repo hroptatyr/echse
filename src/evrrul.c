@@ -1112,8 +1112,10 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	for (res = 0UL, tries = 64U; res < nti && --tries;
 	     ({
 		     if ((m += rr->inter) > 12U) {
+			     m--;
 			     y += m / 12U;
 			     m %= 12U;
+			     m++;
 		     }
 	     })) {
 		bitint383_t cand = {0U};
