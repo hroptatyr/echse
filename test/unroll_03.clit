@@ -1,0 +1,8 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+## we know DTSTAMP lines differ so filter them out
+$ echse unroll --from 2000-01-01 --till 2002-12-31 -e "FREQ=YEARLY;BYMONTH=3,6,9,12;BYMONTHDAY=15,16,17;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1"
+2000-03-15	
+2001-03-15	
+2002-03-15	
+$
