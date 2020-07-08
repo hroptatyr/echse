@@ -1070,9 +1070,6 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		if (UNLIKELY((nti = rr->count) == 0UL)) {
 			goto fin;
 		}
-	} else if (UNLIKELY(bui31_has_bits_p(rr->mon))) {
-		/* upgrade to YEARLY */
-		return rrul_fill_yly(tgt, nti, rr);
 	}
 
 	if (UNLIKELY(!m || m > 12U)) {
