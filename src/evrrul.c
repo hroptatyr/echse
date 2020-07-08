@@ -1108,15 +1108,39 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	/* get m on track */
+	if (UNLIKELY(bui31_has_bits_p(rr->mon))) {
+		bitint_iter_t bm = 0UL;
+
+		/* check that some of the months are congruent m modulo inter */
+		while (bui31_next(&bm, rr->mon) &&
+		       ((m + 12U) - (bm - 1U)) % rr->inter);
+		if (UNLIKELY(!bm)) {
+			goto fin;
+		}
+		/* now skip to the first instance */
+		do {
+			if ((m += rr->inter) > 12U) {
+				m--;
+				y += m / 12U;
+				m %= 12U;
+				m++;
+			}
+		} while (!bui31_has_bit_p(rr->mon, m));
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries;
 	     ({
-		     if ((m += rr->inter) > 12U) {
-			     m--;
-			     y += m / 12U;
-			     m %= 12U;
-			     m++;
-		     }
+		     do {
+			     if ((m += rr->inter) > 12U) {
+				     m--;
+				     y += m / 12U;
+				     m %= 12U;
+				     m++;
+			     }
+		     } while (bui31_has_bits_p(rr->mon) &&
+			      !bui31_has_bit_p(rr->mon, m));
 	     })) {
 		bitint383_t cand = {0U};
 		int yd;
