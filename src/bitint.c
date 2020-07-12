@@ -94,6 +94,7 @@ bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi)
 	int res;
 
 	if (!(*bi->pos & 0b1U)) {
+		/* native */
 		if (UNLIKELY(*iter >= *bi->pos >> 1U)) {
 			goto term;
 		}
@@ -159,6 +160,30 @@ bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi)
 	term:
 		*iter = 0U;
 		return 0;
+	}
+	return res;
+}
+
+int
+bi383_max0(const bitint383_t *bi)
+{
+	int res = 0;
+
+	if (!(*bi->pos & 0b1U)) {
+		/* native */
+		size_t n ;
+		for (n = *bi->pos >> 1U; n > 0 && bi->neg[--n] < 0;);
+		res = bi->neg[n];
+		res = res > 0 ? res : 0;
+	} else {
+		/* positives */
+		size_t i;
+
+		for (i = countof(bi->pos); i > 0 && !bi->pos[--i];);
+		with (uint32_t tmp = bi->pos[i]) {
+			res = __builtin_clz(tmp) + (!!tmp);
+		}
+		res = (i + 1U) * POS_BITZ - res;
 	}
 	return res;
 }
