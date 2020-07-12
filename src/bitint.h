@@ -78,6 +78,10 @@ extern void ass_bi383(bitint383_t *restrict bi, int x);
 extern int bi383_next(bitint_iter_t *restrict iter, const bitint383_t *bi);
 
 /**
+ * Return max(BI, 0). */
+extern int bi383_max0(const bitint383_t *bi);
+
+/**
  * Assign X to bitset/integer BI. */
 extern void ass_bi447(bitint447_t *restrict bi, int x);
 

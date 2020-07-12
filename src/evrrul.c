@@ -954,6 +954,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
+	with (int tmp = bi383_max0(&rr->add)) {
+		y -= tmp-- > 0;
+	}
+
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
 		bitint383_t cand[3U] = {0U};
@@ -1112,6 +1116,13 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 				wd_mask |= 0b1U;
 			}
 		}
+	}
+
+	with (int tmp = bi383_max0(&rr->add)) {
+		m -= tmp-- > 0;
+		m -= tmp / 30;
+		y -= m <= 0;
+		m += m > 0 ? 0 : 12;
 	}
 
 	/* get m on track */
