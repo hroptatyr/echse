@@ -935,7 +935,7 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 
 			nu_d += v / 5 * 7;
 			nu_d += v % 5;
-			if ((w = (7 + w + (v % 5)) % 7 ?: SUN) >= SAT) {
+			if ((w = (echs_wday_t)((7 + w + (v % 5)) % 7 ?: SUN)) >= SAT) {
 				if (!(sh & 0b1U)) {
 					/* move to MON */
 					nu_d += 8 - w;
