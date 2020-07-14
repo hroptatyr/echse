@@ -885,13 +885,12 @@ static void
 shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 {
 	bitint383_t res[3U] = {0U};
-	int v;
 
 	if (LIKELY(!sh)) {
 		return;
 	}
 
-	v = echs_shift_value(sh);
+	const int v = echs_shift_value(sh);
 	if (!echs_shift_bday_p(sh)) {
 		int c;
 
@@ -932,18 +931,28 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 			int nu_m = md.m;
 			unsigned int nu_y = y;
 			echs_wday_t w = ymd_get_wday(nu_y, nu_m, nu_d);
+			int nu_v = v;
 
-			nu_d += v / 5 * 7;
-			nu_d += v % 5;
-			if ((w = (echs_wday_t)((7 + w + (v % 5)) % 7 ?: SUN)) >= SAT) {
+			if (w >= SAT) {
 				if (!echs_shift_neg_p(sh)) {
 					/* move to MON */
 					nu_d += 8 - w;
+					w = MON;
+					nu_v -= v != 0;
 				} else {
 					/* move to FRI */
 					nu_d -= w - 5;
+					w = FRI;
+					nu_v += v != 0;
 				}
 			}
+			/* 384 == 4 mod 5  384 == 6 mod 7 */
+			unsigned int u5 = (w + 384 + nu_v) % 5U;
+			unsigned int u7 = (w + 384 + nu_v) % 7U;
+			/* u5 is the day we want to be on, Mon=0
+			 * u7 is the day we land on, Mon=0 */
+			nu_d += nu_v / 5 * 7 + nu_v % 5;
+			nu_d += u5 - u7;
 
 		reassessB:
 			if (UNLIKELY(nu_d <= 0)) {
