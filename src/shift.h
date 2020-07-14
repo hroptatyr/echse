@@ -59,6 +59,15 @@ echs_shift_bday_p(echs_shift_t sh)
 	return !!(sh & 0b10U);
 }
 
+/**
+ * Assign X to bitset/integer BI. */
+static inline bool
+echs_shift_neg_p(echs_shift_t sh)
+{
+/* second-LSB indicates business days */
+	return !!(sh & 0b1U);
+}
+
 static inline int
 echs_shift_value(echs_shift_t sh)
 {

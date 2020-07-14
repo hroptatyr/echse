@@ -936,7 +936,7 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 			nu_d += v / 5 * 7;
 			nu_d += v % 5;
 			if ((w = (echs_wday_t)((7 + w + (v % 5)) % 7 ?: SUN)) >= SAT) {
-				if (!(sh & 0b1U)) {
+				if (!echs_shift_neg_p(sh)) {
 					/* move to MON */
 					nu_d += 8 - w;
 				} else {
@@ -1043,8 +1043,12 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
-	with (int tmp = bi383_max0(&rr->add)) {
-		y -= tmp-- > 0;
+	if (!rr->shift) {
+		int tmp = bi383_max0(&rr->add);
+		y -= tmp > 0;
+	} else {
+		y -= echs_shift_value(rr->shift) > 0 ||
+			echs_shift_bday_p(rr->shift) && !echs_shift_neg_p(rr->shift);
 	}
 
 	/* fill up the array the hard way */
@@ -1211,11 +1215,21 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
-	with (int tmp = bi383_max0(&rr->add)) {
+	with (int tmp) {
+		if (!rr->shift) {
+			tmp = bi383_max0(&rr->add);
+		} else {
+			tmp = echs_shift_value(rr->shift);
+			if (echs_shift_bday_p(rr->shift)) {
+				tmp = tmp * 7 / 5;
+			}
+		}
+
 		m -= tmp-- > 0;
 		m -= tmp / 30;
 		y -= m <= 0;
 		m += m > 0 ? 0 : 12;
+		m = m > 0 ? m : 1;
 	}
 
 	/* get m on track */
