@@ -405,8 +405,8 @@ snarf_shift(const char *spec)
 		break;
 	}
 	with (long int tmp = strtol(spec, &on, 10)) {
-		if (UNLIKELY(on == NULL || tmp < 0)) {
-			break;
+		if (UNLIKELY(on == NULL || tmp < 0 || tmp > 366)) {
+			return 0;
 		}
 		r |= tmp << 2;
 		spec = on;
@@ -415,6 +415,9 @@ snarf_shift(const char *spec)
 	case 'b':
 	case 'B':
 		r |= 2U;
+		if (UNLIKELY(r >> 2U > 260U)) {
+			return 0;
+		}
 		break;
 	}
 	/* only allow -0B, not -0 */
