@@ -1161,7 +1161,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	const echs_instant_t protr = echs_instant_rescale(*tgt, srcsca);
 	const echs_instant_t proto = echs_instant_detach_scale(protr);
 	unsigned int y = proto.y;
-	unsigned int m = proto.m;
+	int m = proto.m;
 	/* unrolled day bi31, we use 2 * 31 because by monthdays can
 	 * also be denoted negatively, thus 1, -1, 2, -2, ..., 31, -31 is
 	 * the biggest possible BYMONTHDAY value */
@@ -1179,7 +1179,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
-	if (UNLIKELY(!m || m > 12U)) {
+	if (UNLIKELY(!m || m > 12)) {
 		goto fin;
 	}
 
@@ -1244,10 +1244,10 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 		/* now skip to the first instance */
 		do {
-			if ((m += rr->inter) > 12U) {
+			if ((m += rr->inter) > 12) {
 				m--;
-				y += m / 12U;
-				m %= 12U;
+				y += m / 12;
+				m %= 12;
 				m++;
 			}
 		} while (!bui31_has_bit_p(rr->mon, m));
@@ -1257,10 +1257,10 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	for (res = 0UL, tries = 64U; res < nti && --tries;
 	     ({
 		     do {
-			     if ((m += rr->inter) > 12U) {
+			     if ((m += rr->inter) > 12) {
 				     m--;
-				     y += m / 12U;
-				     m %= 12U;
+				     y += m / 12;
+				     m %= 12;
 				     m++;
 			     }
 		     } while (bui31_has_bits_p(rr->mon) &&
