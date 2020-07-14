@@ -66,6 +66,7 @@
 #include "echse-genuid.h"
 #include "tzob.h"
 #include "scale.h"
+#include "shift.h"
 
 #if !defined assert
 # define assert(x)
@@ -389,6 +390,38 @@ snarf_scale(const char *spec)
 	return r;
 }
 
+static echs_shift_t
+snarf_shift(const char *spec)
+{
+	echs_shift_t r = 0U;
+	char *on = NULL;
+
+	switch (*spec) {
+	case '-':
+		r |= 1U;
+	case '+':
+		spec++;
+	default:
+		break;
+	}
+	with (long int tmp = strtol(spec, &on, 10)) {
+		if (UNLIKELY(on == NULL || tmp < 0)) {
+			break;
+		}
+		r |= tmp << 2;
+		spec = on;
+	}
+	switch (*spec) {
+	case 'b':
+	case 'B':
+		r |= 2U;
+		break;
+	}
+	/* only allow -0B, not -0 */
+	r -= r == 1U;
+	return r;
+}
+
 static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
@@ -453,6 +486,10 @@ snarf_rrule(const char *s, size_t z)
 
 		case KEY_SCALE:
 			rr.scale = snarf_scale(++kv);
+			break;
+
+		case KEY_SHIFT:
+			rr.shift = snarf_shift(++kv);
 			break;
 
 		case BY_WDAY:
@@ -2004,6 +2041,13 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 		fdprintf(";BYPOS=%d", p);
 		while (p = bi383_next(&i, &rr->pos), i) {
 			fdprintf(",%d", p);
+		}
+	}
+
+	if (rr->shift) {
+		fdprintf(";SHIFT=%c%u", rr->shift & 0b1U ? '-' : '+', rr->shift >> 2U);
+		if (rr->shift & 0b10U) {
+			fdputc('B');
 		}
 	}
 

@@ -862,7 +862,7 @@ add_poss(bitint383_t cand[static 3U], const unsigned int y, const bitint383_t *p
 				if (UNLIKELY(--nu_m <= 0)) {
 					nu_m += 12, nu_y--;
 				}
-				nu_d += __get_ndom(y, nu_m);
+				nu_d += __get_ndom(nu_y, nu_m);
 				goto reassess;
 			} else if (UNLIKELY(nu_d > (int)__get_ndom(nu_y, nu_m))) {
 				/* fixup too, grrr */
@@ -881,6 +881,95 @@ add_poss(bitint383_t cand[static 3U], const unsigned int y, const bitint383_t *p
 	return;
 }
 
+static void
+shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
+{
+	bitint383_t res[3U] = {0U};
+	int v;
+
+	if (LIKELY(!sh)) {
+		return;
+	}
+
+	v = echs_shift_value(sh);
+	if (!echs_shift_bday_p(sh)) {
+		int c;
+
+		/* go through candidates and shift */
+		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
+			const struct md_s md = unpack_cand(c);
+			int nu_d = md.d + v;
+			int nu_m = md.m;
+			unsigned int nu_y = y;
+
+		reassess:
+			if (UNLIKELY(nu_d <= 0)) {
+				/* fixup, innit */
+				if (UNLIKELY(--nu_m <= 0)) {
+					nu_m += 12, nu_y--;
+				}
+				nu_d += __get_ndom(nu_y, nu_m);
+				goto reassess;
+			} else if (UNLIKELY(nu_d > (int)__get_ndom(nu_y, nu_m))) {
+				/* fixup too, grrr */
+				nu_d -= __get_ndom(nu_y, nu_m);
+				if (UNLIKELY(++nu_m > 12)) {
+					nu_m -= 12, nu_y++;
+				}
+				goto reassess;
+			}
+			/* assign now */
+			ass_bi383(&res[(nu_y != y) << (nu_y > y)], pack_cand(nu_m, nu_d));
+		}
+	} else {
+		/* business day shifts */
+		int c;
+
+		/* go through candidates and shift */
+		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
+			const struct md_s md = unpack_cand(c);
+			int nu_d = md.d;
+			int nu_m = md.m;
+			unsigned int nu_y = y;
+			echs_wday_t w = ymd_get_wday(nu_y, nu_m, nu_d);
+
+			nu_d += v / 5 * 7;
+			nu_d += v % 5;
+			if ((w = (7 + w + (v % 5)) % 7 ?: SUN) >= SAT) {
+				if (!(sh & 0b1U)) {
+					/* move to MON */
+					nu_d += 8 - w;
+				} else {
+					/* move to FRI */
+					nu_d -= w - 5;
+				}
+			}
+
+		reassessB:
+			if (UNLIKELY(nu_d <= 0)) {
+				/* fixup, innit */
+				if (UNLIKELY(--nu_m <= 0)) {
+					nu_m += 12, nu_y--;
+				}
+				nu_d += __get_ndom(nu_y, nu_m);
+				goto reassessB;
+			} else if (UNLIKELY(nu_d > (int)__get_ndom(nu_y, nu_m))) {
+				/* fixup too, grrr */
+				nu_d -= __get_ndom(nu_y, nu_m);
+				if (UNLIKELY(++nu_m > 12)) {
+					nu_m -= 12, nu_y++;
+				}
+				goto reassessB;
+			}
+			/* assign now */
+			ass_bi383(&res[(nu_y != y) << (nu_y > y)], pack_cand(nu_m, nu_d));
+		}
+	}
+	memcpy(cand, res, sizeof(res));
+	return;
+}
+
+
 size_t
 rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 {
@@ -1020,6 +1109,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* add/subtract days */
 		add_poss(cand, y, &rr->add);
+		/* do the shifts */
+		shift(cand, y, rr->shift);
 
 		/* now check the bitset */
 		for (int iy = -1; iy <= 1; iy++) {
@@ -1187,6 +1278,8 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 
 		/* add/subtract days */
 		add_poss(cand, y, &rr->add);
+		/* do the shifts */
+		shift(cand, y, rr->shift);
 
 		/* now check the bitset */
 		for (int iy = -1; iy <= 1; iy++) {
