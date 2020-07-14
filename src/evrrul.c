@@ -1107,8 +1107,10 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* limit by setpos */
 		clr_poss(cand, &rr->pos);
 
-		/* add/subtract days */
-		add_poss(cand, y, &rr->add);
+		if (!rr->shift) {
+			/* add/subtract days */
+			add_poss(cand, y, &rr->add);
+		}
 		/* do the shifts */
 		shift(cand, y, rr->shift);
 
@@ -1276,8 +1278,10 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* limit by setpos */
 		clr_poss(cand, &rr->pos);
 
-		/* add/subtract days */
-		add_poss(cand, y, &rr->add);
+		if (!rr->shift) {
+			/* add/subtract days */
+			add_poss(cand, y, &rr->add);
+		}
 		/* do the shifts */
 		shift(cand, y, rr->shift);
 
