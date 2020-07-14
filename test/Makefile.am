@@ -185,6 +185,7 @@ TESTS += rrul_45.clit
 TESTS += rrul_46.clit
 TESTS += rrul_47.clit
 TESTS += rrul_48.clit
+TESTS += rrul_49.clit
 
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit
@@ -210,5 +211,7 @@ TESTS += unroll_03.clit
 TESTS += unroll_04.clit
 TESTS += unroll_05.clit
 TESTS += unroll_06.clit
+TESTS += unroll_07.clit
+TESTS += unroll_08.clit
 
 ## Makefile.am ends here
