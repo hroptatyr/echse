@@ -108,8 +108,9 @@ parts:
 
 + `BYEASTER=N[,...]`  for N in 0 to 366 or -1 to -366, denotes the N-th
   day after/before easter
-+ `BYADD=N[,...]`  for N in 0 to 366 or -1 to -366, denotes to add N
-  days to all dates in the current set
++ `SHIFT=N[B]`  for N in 0 to 366 or -1 to -366, denotes to add N
+  ([B]usiness) days to all dates in the current set, -0B is allowed and
+  means to go back to Friday if the date is on Saturday or Sunday 
 + `SCALE=GREGORIAN|HIJRI` to change the calendar scale for RRULES.
   Note: The *output* calendar scale is `GREGORIAN` as per [RFC 5545][1].
 

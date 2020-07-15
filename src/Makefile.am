@@ -48,6 +48,7 @@ libechse_la_SOURCES += evmrul.c evmrul.h
 libechse_la_SOURCES += evfilt.c evfilt.h
 libechse_la_SOURCES += tzob.c tzob.h
 libechse_la_SOURCES += scale.c scale.h
+libechse_la_SOURCES += shift.c shift.h
 libechse_la_SOURCES += tzraw.c tzraw.h
 libechse_la_SOURCES += boobs.h
 libechse_la_SOURCES += bitint.c bitint.h
@@ -132,10 +133,11 @@ endif  HAVE_LIBEV
 
 
 ## version rules
-version.c: version.c.in $(top_builddir)/.version
+version.c: $(srcdir)/version.c.in $(top_builddir)/.version
 	$(AM_V_GEN) PATH="$(top_builddir)/build-aux:$${PATH}" \
 		yuck$(EXEEXT) scmver --ignore-noscm --force -o $@ \
-			--use-reference --reference $(top_builddir)/.version $<
+			--use-reference --reference $(top_builddir)/.version \
+			$(srcdir)/version.c.in
 
 ## gperf rule
 SUFFIXES += .erf

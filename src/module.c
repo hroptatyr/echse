@@ -1,6 +1,6 @@
 /*** module.c -- module stuff
  *
- * Copyright (C) 2005-2018 Sebastian Freundt
+ * Copyright (C) 2005-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

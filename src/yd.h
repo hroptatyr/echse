@@ -1,6 +1,6 @@
 /*** yd.h -- helpers for year-doy representation
  *
- * Copyright (C) 2010-2018 Sebastian Freundt
+ * Copyright (C) 2010-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

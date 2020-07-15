@@ -1,6 +1,6 @@
 /*** fdprnt.h -- dprintf() et al but better
  *
- * Copyright (C) 2014-2018 Sebastian Freundt
+ * Copyright (C) 2014-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

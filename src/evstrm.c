@@ -1,6 +1,6 @@
 /*** evstrm.c -- streams of events
  *
- * Copyright (C) 2013-2018 Sebastian Freundt
+ * Copyright (C) 2013-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *

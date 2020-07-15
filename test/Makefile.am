@@ -113,6 +113,8 @@ EXTRA_DIST += sample_14.ics
 EXTRA_DIST += sample_15.ics
 EXTRA_DIST += sample_16.ics
 EXTRA_DIST += sample_17.ics
+EXTRA_DIST += sample_17b.ics
+EXTRA_DIST += sample_17c.ics
 EXTRA_DIST += sample_18.ics
 EXTRA_DIST += sample_19.ics
 EXTRA_DIST += sample_20.ics
@@ -185,6 +187,8 @@ TESTS += rrul_45.clit
 TESTS += rrul_46.clit
 TESTS += rrul_47.clit
 TESTS += rrul_48.clit
+TESTS += rrul_49.clit
+TESTS += rrul_50.clit
 
 TESTS += genuid_01.clit
 TESTS += genuid_02.clit
@@ -204,5 +208,15 @@ NOTESTS += mrul_02.clit
 NOTESTS += mrul_03.clit
 NOTESTS += mrul_04.clit
 
+TESTS += unroll_01.clit
+TESTS += unroll_02.clit
+TESTS += unroll_03.clit
+TESTS += unroll_04.clit
+TESTS += unroll_05.clit
+TESTS += unroll_06.clit
+TESTS += unroll_07.clit
+TESTS += unroll_08.clit
+TESTS += unroll_09.clit
+TESTS += unroll_10.clit
 
 ## Makefile.am ends here

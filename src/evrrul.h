@@ -1,6 +1,6 @@
 /*** evrrul.h -- recurrence rules
  *
- * Copyright (C) 2013-2018 Sebastian Freundt
+ * Copyright (C) 2013-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -43,6 +43,7 @@
 #include "instant.h"
 #include "bitint.h"
 #include "scale.h"
+#include "shift.h"
 
 typedef const struct rrulsp_s *rrulsp_t;
 
@@ -123,6 +124,7 @@ struct rrulsp_s {
 	int count;
 	unsigned int inter;
 	echs_instant_t until;
+	echs_shift_t shift;
 
 	bitint31_t dom;
 	bitint383_t doy;

@@ -1,0 +1,5 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+## create inf-loop, unsatisfiable condition
+$ echse unroll --from 2000-01-01 --till 2002-12-31 -e "FREQ=MONTHLY;INTERVAL=3;BYMONTH=3,6,9,12;BYMONTHDAY=15,16,17;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1"
+$

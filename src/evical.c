@@ -1,6 +1,6 @@
 /*** evical.c -- rfc5545/5546 to echs_task_t/echs_evstrm_t mapper
  *
- * Copyright (C) 2013-2018 Sebastian Freundt
+ * Copyright (C) 2013-2020 Sebastian Freundt
  *
  * Author:  Sebastian Freundt <freundt@ga-group.nl>
  *
@@ -66,6 +66,7 @@
 #include "echse-genuid.h"
 #include "tzob.h"
 #include "scale.h"
+#include "shift.h"
 
 #if !defined assert
 # define assert(x)
@@ -389,6 +390,60 @@ snarf_scale(const char *spec)
 	return r;
 }
 
+static echs_shift_t
+snarf_shift(const char *spec)
+{
+	echs_shift_t r = 0U;
+	char *on = NULL;
+
+	switch (*spec) {
+	case '-':
+		r |= 0b1U;
+	case '+':
+		spec++;
+	default:
+		break;
+	}
+	with (long int tmp = strtol(spec, &on, 10)) {
+		if (UNLIKELY(on == NULL || tmp < 0 || tmp > 366)) {
+			return 0;
+		}
+		r |= tmp << 3U;
+		spec = on;
+	}
+	switch (*spec) {
+	case 'b':
+	case 'B':
+		r |= 0b10U;
+		if (UNLIKELY(r >> 3U > 260U)) {
+			return 0;
+		}
+		/* check shift semantics, + means go to Monday, - means go to Friday */
+		switch (*++spec) {
+		case '\0':
+		case ';':
+			break;
+		case '+':
+			r |= !(r & 0b1U) << 2U;
+			break;
+		case '-':
+			r |= (r & 0b1U) << 2U;
+			break;
+		default:
+			return 0;
+		}
+		break;
+	case '\0':
+	case ';':
+		break;
+	default:
+		return 0;
+	}
+	/* only allow -0B, not -0 */
+	r -= r == 1U;
+	return r;
+}
+
 static struct rrulsp_s
 snarf_rrule(const char *s, size_t z)
 {
@@ -453,6 +508,10 @@ snarf_rrule(const char *s, size_t z)
 
 		case KEY_SCALE:
 			rr.scale = snarf_scale(++kv);
+			break;
+
+		case KEY_SHIFT:
+			rr.shift = snarf_shift(++kv);
 			break;
 
 		case BY_WDAY:
@@ -2007,6 +2066,16 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 		}
 	}
 
+	if (rr->shift) {
+		fdprintf(";SHIFT=%c%u", echs_shift_neg_p(rr->shift) ? '-' : '+', echs_shift_absval(rr->shift));
+		if (echs_shift_bday_p(rr->shift)) {
+			fdputc('B');
+			if (echs_shift_inv_p(rr->shift)) {
+				fdputc(echs_shift_neg_p(rr->shift) ? '-' : '+');
+			}
+		}
+	}
+
 	if (rr->count >= 0) {
 		fdprintf(";COUNT=%zu", rr->count + ccnt);
 	}
@@ -2537,6 +2606,25 @@ struct rrulsp_s
 echs_read_rrul(const char *s, size_t z)
 {
 	return snarf_rrule(s, z);
+}
+
+echs_evstrm_t
+echs_make_evstrm_rrul(echs_instant_t from, struct rrulsp_s r[static 1U], size_t nr)
+{
+	struct echs_task_s *res;
+	/* it's an rrule */
+	echs_event_t e = {
+		.from = from,
+		.dur = 0,
+		.oid = 0,
+		.sts = 0,
+	};
+
+	if (UNLIKELY((res = malloc(sizeof(*res))) == NULL)) {
+		return NULL;
+	}
+
+	return __make_evrrul(e, r, nr);
 }
 
 static echs_task_t
