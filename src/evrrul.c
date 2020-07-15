@@ -939,12 +939,12 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 					/* move to MON */
 					nu_d += 8 - w;
 					w = MON;
-					nu_v -= v != 0;
+					nu_v -= v != 0 && !echs_shift_inv_p(sh);
 				} else {
 					/* move to FRI */
 					nu_d -= w - 5;
 					w = FRI;
-					nu_v += v != 0;
+					nu_v += v != 0 && !echs_shift_inv_p(sh);
 				}
 			}
 			/* 384 == 4 mod 5  384 == 6 mod 7 */
