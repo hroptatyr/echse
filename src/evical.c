@@ -398,7 +398,7 @@ snarf_shift(const char *spec)
 
 	switch (*spec) {
 	case '-':
-		r |= 1U;
+		r |= 0b1U;
 	case '+':
 		spec++;
 	default:
@@ -408,17 +408,36 @@ snarf_shift(const char *spec)
 		if (UNLIKELY(on == NULL || tmp < 0 || tmp > 366)) {
 			return 0;
 		}
-		r |= tmp << 2;
+		r |= tmp << 3U;
 		spec = on;
 	}
 	switch (*spec) {
 	case 'b':
 	case 'B':
-		r |= 2U;
-		if (UNLIKELY(r >> 2U > 260U)) {
+		r |= 0b10U;
+		if (UNLIKELY(r >> 3U > 260U)) {
+			return 0;
+		}
+		/* check shift semantics, + means go to Monday, - means go to Friday */
+		switch (*++spec) {
+		case '\0':
+		case ';':
+			break;
+		case '+':
+			r |= !(r & 0b1U) << 2U;
+			break;
+		case '-':
+			r |= (r & 0b1U) << 2U;
+			break;
+		default:
 			return 0;
 		}
 		break;
+	case '\0':
+	case ';':
+		break;
+	default:
+		return 0;
 	}
 	/* only allow -0B, not -0 */
 	r -= r == 1U;
@@ -2048,9 +2067,12 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 	}
 
 	if (rr->shift) {
-		fdprintf(";SHIFT=%c%u", rr->shift & 0b1U ? '-' : '+', rr->shift >> 2U);
-		if (rr->shift & 0b10U) {
+		fdprintf(";SHIFT=%c%u", echs_shift_neg_p(rr->shift) ? '-' : '+', echs_shift_absval(rr->shift));
+		if (echs_shift_bday_p(rr->shift)) {
 			fdputc('B');
+			if (echs_shift_inv_p(rr->shift)) {
+				fdputc(echs_shift_neg_p(rr->shift) ? '-' : '+');
+			}
 		}
 	}
 

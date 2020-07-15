@@ -64,15 +64,28 @@ echs_shift_bday_p(echs_shift_t sh)
 static inline bool
 echs_shift_neg_p(echs_shift_t sh)
 {
-/* second-LSB indicates business days */
+/* LSB indicates sign */
 	return !!(sh & 0b1U);
+}
+
+static inline bool
+echs_shift_inv_p(echs_shift_t sh)
+{
+/* 3rd-LSB indicates shift semantics */
+	return !!(sh & 0b100U);
 }
 
 static inline int
 echs_shift_value(echs_shift_t sh)
 {
-	int x = (sh >> 2U);
+	int x = (sh >> 3U);
 	return !(sh & 0b1U) ? x : -x;
+}
+
+static inline unsigned int
+echs_shift_absval(echs_shift_t sh)
+{
+	return (sh >> 3U);
 }
 
 #endif	/* INCLUDED_shift_h_ */
