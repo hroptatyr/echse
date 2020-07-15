@@ -399,6 +399,7 @@ snarf_shift(const char *spec)
 	switch (*spec) {
 	case '-':
 		r |= 0b1U;
+		/*@fallthrough@*/
 	case '+':
 		spec++;
 	default:
