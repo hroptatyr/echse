@@ -11,18 +11,18 @@ main(int argc, char *argv[])
 	bituint63_t x = {0U};
 
 	x = ass_bui63(x, 36U);
-	printf("%llx\n", x);
+	printf("%lx\n", x);
 
 	x = ass_bui63(x, 40U);
-	printf("%llx\n", x);
+	printf("%lx\n", x);
 
 	x = ass_bui63(x, 4U);
-	printf("%llx\n", x);
+	printf("%lx\n", x);
 
 	x = ass_bui63(x, 0U);
-	printf("%llx\n", x);
+	printf("%lx\n", x);
 	x = ass_bui63(x, 1U);
-	printf("%llx\n", x);
+	printf("%lx\n", x);
 	return 0;
 }
 
