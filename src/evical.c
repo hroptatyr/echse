@@ -2612,18 +2612,12 @@ echs_read_rrul(const char *s, size_t z)
 echs_evstrm_t
 echs_make_evstrm_rrul(echs_instant_t from, struct rrulsp_s r[static 1U], size_t nr)
 {
-	struct echs_task_s *res;
-	/* it's an rrule */
 	echs_event_t e = {
 		.from = from,
 		.dur = 0,
 		.oid = 0,
 		.sts = 0,
 	};
-
-	if (UNLIKELY((res = malloc(sizeof(*res))) == NULL)) {
-		return NULL;
-	}
 
 	return __make_evrrul(e, r, nr);
 }
