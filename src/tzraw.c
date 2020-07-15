@@ -492,7 +492,7 @@ zif_copy(zif_t z)
 }
 
 static void
-__close(const struct zif_s z[static 1U], bool free)
+__close(const struct zif_s z[static 1U])
 {
 	if (z->fd > STDIN_FILENO) {
 		close(z->fd);
@@ -501,7 +501,7 @@ __close(const struct zif_s z[static 1U], bool free)
 	if (z->hdr == MAP_FAILED) {
 		/* not sure what to do */
 		;
-	} else if ((z + 1) != (void*)z->hdr || !free) {
+	} else if ((z + 1) != (void*)z->hdr) {
 		/* z->hdr is mmapped, z is not */
 		munmap((void*)z->hdr, z->mpsz);
 	} else {
@@ -517,7 +517,7 @@ zif_close(zif_t z)
 		/* nothing to do */
 		return;
 	}
-	__close((const void*)z, true);
+	__close((const void*)z);
 	return;
 }
 
@@ -544,7 +544,7 @@ zif_open(const char *file)
 	 * assign the coord zone type if any and convert to host byte-order */
 	tmp->cz = cz;
 	res = __copy(tmp);
-	__close(tmp, false);
+	__close(tmp);
 	return res;
 }
 
