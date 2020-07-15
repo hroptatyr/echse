@@ -1,0 +1,28 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --format "%b\t%s" "${srcdir}/sample_17c.ics"
+2018-01-16	normal
+2018-01-16	inverted
+2018-02-16	normal
+2018-02-16	inverted
+2018-03-16	normal
+2018-03-16	inverted
+2018-04-16	normal
+2018-04-17	inverted
+2018-05-16	normal
+2018-05-16	inverted
+2018-06-18	normal
+2018-06-18	inverted
+2018-07-16	normal
+2018-07-17	inverted
+2018-08-16	normal
+2018-08-16	inverted
+2018-09-17	normal
+2018-09-18	inverted
+2018-10-16	normal
+2018-10-16	inverted
+2018-11-16	normal
+2018-11-16	inverted
+2018-12-17	normal
+2018-12-18	inverted
+$
