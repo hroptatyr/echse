@@ -1,5 +1,5 @@
 name: echse
-version: '0.1.99-GIT'
+version: '0.2.1
 summary: A cron daemon on RFC 5545 (ical) files.
 description: |
     In a nutshell: a cron daemon on RFC 5545 calendar files
