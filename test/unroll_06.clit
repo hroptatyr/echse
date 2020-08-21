@@ -1,0 +1,9 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+## double shift
+$ echse unroll --from 2012-01-01 --till 2013-12-31 -e "FREQ=YEARLY;BYMONTH=5,10;BYMONTHDAY=1;SHIFT=-16,0B"
+2012-04-16	
+2012-09-17	
+2013-04-15	
+2013-09-16	
+$
