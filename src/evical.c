@@ -608,22 +608,12 @@ snarf_rrule(const char *s, size_t z)
 
 			/* extensions */
 		case BY_EASTER:
-		case BY_ADD:
 			/* these ones take +/- values */
 			do {
 				on = NULL;
 				tmp = strtol(++kv, &on, 10);
-				switch (c->key) {
-				case BY_EASTER:
-					if (LIKELY(tmp <= 366 && tmp >= -366)) {
-						ass_bi383(&rr.easter, tmp);
-					}
-					break;
-				case BY_ADD:
-					if (LIKELY(tmp <= 366 && tmp >= -366)) {
-						ass_bi383(&rr.add, tmp);
-					}
-					break;
+				if (LIKELY(tmp <= 366 && tmp >= -366)) {
+					ass_bi383(&rr.easter, tmp);
 				}
 			} while (on && *(kv = on) == ',');
 			break;
@@ -2038,19 +2028,6 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 		while (cd = unpack_cd(bi447_next(&i, &rr->dow)), i) {
 			fdputc(',');
 			send_cd(whither, cd);
-		}
-	}
-
-	with (int a) {
-		bitint_iter_t i = 0UL;
-
-		if (!bi383_has_bits_p(&rr->add)) {
-			break;
-		}
-		a = bi383_next(&i, &rr->add);
-		fdprintf(";BYADD=%d", a);
-		while (a = bi383_next(&i, &rr->add), i) {
-			fdprintf(",%d", a);
 		}
 	}
 
