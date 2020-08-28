@@ -830,74 +830,22 @@ clr_poss(bitint383_t *restrict cand, const bitint383_t *poss)
 }
 
 static void
-add_poss(bitint383_t cand[static 3U], const unsigned int y, const bitint383_t *p)
-{
-	bitint383_t res[3U] = {0U};
-	int add;
-
-	if (!bi383_has_bits_p(p)) {
-		/* nothing to add */
-		return;
-	}
-	/* go through summands ... */
-	for (bitint_iter_t posi = 0UL; (add = bi383_next(&posi, p), posi);) {
-		int c;
-
-		if (UNLIKELY(add == 0)) {
-			/* ah, copying requested then */
-			*res = *cand;
-			continue;
-		}
-
-		/* and here, go through candidates and add summand ADD */
-		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
-			const struct md_s md = unpack_cand(c);
-			int nu_d = md.d + add;
-			int nu_m = md.m;
-			unsigned int nu_y = y;
-
-		reassess:
-			if (UNLIKELY(nu_d <= 0)) {
-				/* fixup, innit */
-				if (UNLIKELY(--nu_m <= 0)) {
-					nu_m += 12, nu_y--;
-				}
-				nu_d += __get_ndom(nu_y, nu_m);
-				goto reassess;
-			} else if (UNLIKELY(nu_d > (int)__get_ndom(nu_y, nu_m))) {
-				/* fixup too, grrr */
-				nu_d -= __get_ndom(nu_y, nu_m);
-				if (UNLIKELY(++nu_m > 12)) {
-					nu_m -= 12, nu_y++;
-				}
-				goto reassess;
-			}
-			/* otherwise, we can assign directly */
-			ass_bi383(&res[(nu_y != y) << (nu_y > y)], pack_cand(nu_m, nu_d));
-		}
-	}
-	/* copy res over */
-	memcpy(cand, res, sizeof(res));
-	return;
-}
-
-static void
 shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 {
-	bitint383_t res[3U] = {0U};
 
 	if (LIKELY(!sh)) {
 		return;
 	}
 
-	const int v = echs_shift_value(sh);
-	if (!echs_shift_bday_p(sh)) {
+	if (echs_shift_dvalue(sh)) {
+		const int d = echs_shift_dvalue(sh);
+		bitint383_t res[3U] = {0U};
 		int c;
 
 		/* go through candidates and shift */
 		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
 			const struct md_s md = unpack_cand(c);
-			int nu_d = md.d + v;
+			int nu_d = md.d + d;
 			int nu_m = md.m;
 			unsigned int nu_y = y;
 
@@ -920,9 +868,25 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 			/* assign now */
 			ass_bi383(&res[(nu_y != y) << (nu_y > y)], pack_cand(nu_m, nu_d));
 		}
-	} else {
+		memcpy(cand, res, sizeof(res));
+	}
+	if (echs_shift_bday_p(sh)) {
 		/* business day shifts */
+		const int b = echs_shift_bvalue(sh);
+		bitint383_t res[3U] = {0U};
 		int c;
+
+		if (UNLIKELY(echs_shift_dvalue(sh))) {
+			/* merge all the off-year candidates from above */
+			for (size_t i = 0U; i < countof(res->pos); i++) {
+				cand[0U].pos[i] ^= cand[1U].pos[i];
+				cand[0U].neg[i] ^= cand[1U].neg[i];
+			}
+			for (size_t i = 0U; i < countof(res->pos); i++) {
+				cand[0U].pos[i] ^= cand[2U].pos[i];
+				cand[0U].neg[i] ^= cand[2U].neg[i];
+			}
+		}
 
 		/* go through candidates and shift */
 		for (bitint_iter_t ci = 0UL; (c = bi383_next(&ci, cand), ci);) {
@@ -932,30 +896,30 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 			unsigned int nu_y = y;
 			echs_wday_t w = ymd_get_wday(nu_y, nu_m, nu_d);
 			unsigned int u5, u7;
-			int nu_v = v;
+			int nu_b = b;
 
 			if (w >= SAT) {
 				if (!echs_shift_neg_p(sh)) {
 					/* move to MON */
 					nu_d += 8 - w;
 					w = MON;
-					nu_v -= v != 0 && !echs_shift_inv_p(sh);
+					nu_b -= b && !echs_shift_inv_p(sh);
 				} else {
 					/* move to FRI */
-					nu_d -= w - 5;
+					nu_b -= w - 5;
 					w = FRI;
-					nu_v += v != 0 && !echs_shift_inv_p(sh);
+					nu_b += b && !echs_shift_inv_p(sh);
 				}
 			}
 			/* 384 == 4 mod 5  384 == 6 mod 7 */
-			u5 = (w + 384 + nu_v) % 5U;
-			nu_v = nu_v / 5 * 7 + nu_v % 5;
-			u7 = (w + 384 + nu_v) % 7U;
+			u5 = (w + 384 + nu_b) % 5U;
+			nu_b = nu_b / 5 * 7 + nu_b % 5;
+			u7 = (w + 384 + nu_b) % 7U;
 			/* u5 is the day we want to be on, Mon=0
 			 * u7 is the day we land on, Mon=0 */
-			nu_d += nu_v;
+			nu_d += nu_b;
 			nu_d += u5 - u7;
-			nu_d += nu_v > 0 && u5 < u7 ? 7 : 0;
+			nu_d += nu_b > 0 && u5 < u7 ? 7 : 0;
 
 		reassessB:
 			if (UNLIKELY(nu_d <= 0)) {
@@ -976,8 +940,8 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 			/* assign now */
 			ass_bi383(&res[(nu_y != y) << (nu_y > y)], pack_cand(nu_m, nu_d));
 		}
+		memcpy(cand, res, sizeof(res));
 	}
-	memcpy(cand, res, sizeof(res));
 	return;
 }
 
@@ -1055,13 +1019,8 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		}
 	}
 
-	if (!rr->shift) {
-		int tmp = bi383_max0(&rr->add);
-		y -= tmp > 0;
-	} else {
-		y -= echs_shift_value(rr->shift) > 0 ||
-			echs_shift_bday_p(rr->shift) && !echs_shift_neg_p(rr->shift);
-	}
+	y -= echs_shift_dvalue(rr->shift) > 0 ||
+		echs_shift_bday_p(rr->shift) && !echs_shift_neg_p(rr->shift);
 
 	/* fill up the array the hard way */
 	for (res = 0UL, tries = 64U; res < nti && --tries; y += rr->inter) {
@@ -1123,10 +1082,6 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* limit by setpos */
 		clr_poss(cand, &rr->pos);
 
-		if (!rr->shift) {
-			/* add/subtract days */
-			add_poss(cand, y, &rr->add);
-		}
 		/* do the shifts */
 		shift(cand, y, rr->shift);
 
@@ -1228,14 +1183,8 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 	}
 
 	with (int tmp) {
-		if (!rr->shift) {
-			tmp = bi383_max0(&rr->add);
-		} else {
-			tmp = echs_shift_value(rr->shift);
-			if (echs_shift_bday_p(rr->shift)) {
-				tmp = tmp * 7 / 5;
-			}
-		}
+		tmp = echs_shift_dvalue(rr->shift) +
+			echs_shift_bvalue(rr->shift) * 7 / 5;
 
 		m -= tmp-- > 0;
 		m -= tmp / 30;
@@ -1304,10 +1253,6 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* limit by setpos */
 		clr_poss(cand, &rr->pos);
 
-		if (!rr->shift) {
-			/* add/subtract days */
-			add_poss(cand, y, &rr->add);
-		}
 		/* do the shifts */
 		shift(cand, y, rr->shift);
 
