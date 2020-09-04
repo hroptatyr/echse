@@ -1204,14 +1204,14 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			goto fin;
 		}
 		/* now skip to the first instance */
-		do {
+		while (!bui31_has_bit_p(rr->mon, m)) {
 			if ((m += rr->inter) > 12) {
 				m--;
 				y += m / 12;
 				m %= 12;
 				m++;
 			}
-		} while (!bui31_has_bit_p(rr->mon, m));
+		}
 	}
 
 	/* fill up the array the hard way */
