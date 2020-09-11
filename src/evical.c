@@ -2289,7 +2289,7 @@ struct evrrul_s {
 	size_t rdi;
 	/* unrolled cache */
 	size_t ncch;
-	echs_instant_t cch[64U];
+	echs_instant_t cch[GRP_CCH_OFF + GRP_CCH_OFF];
 };
 
 static echs_event_t next_evrrul(echs_evstrm_t, bool popp);
@@ -2390,7 +2390,7 @@ refill(struct evrrul_s *restrict strm)
 	}
 
 	/* fill up with the proto instant */
-	for (size_t j = 0U; j < countof(strm->cch); j++) {
+	for (size_t j = 0U; j < GRP_CCH_OFF; j++) {
 		strm->cch[j] = strm->e.from;
 	}
 
@@ -2402,30 +2402,30 @@ refill(struct evrrul_s *restrict strm)
 
 	case FREQ_YEARLY:
 		/* easiest */
-		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_yly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_MONTHLY:
 		/* second easiest */
-		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_mly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_WEEKLY:
-		strm->ncch = rrul_fill_wly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_wly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_DAILY:
-		strm->ncch = rrul_fill_dly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_dly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_HOURLY:
-		strm->ncch = rrul_fill_Hly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Hly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_MINUTELY:
-		strm->ncch = rrul_fill_Mly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Mly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_SECONDLY:
-		strm->ncch = rrul_fill_Sly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Sly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	}
 
-	if (strm->ncch >= countof(strm->cch)) {
+	if (strm->ncch >= GRP_CCH_OFF) {
 		/* keep one for the next refill */
 		strm->e.from = strm->cch[--strm->ncch];
 	} else {
@@ -2481,6 +2481,7 @@ next_evrrul(echs_evstrm_t s, bool popp)
 	/* construct the result */
 	res = this->e;
 	res.from = this->cch[this->rdi];
+	res.grp = this->cch[this->rdi + GRP_CCH_OFF];
 	if (popp) {
 		this->rdi++;
 	}

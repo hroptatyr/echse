@@ -37,6 +37,9 @@ Print the resulting stream.
                         - %f expands to the filename currently processed
                         - %s expands to the summary
                         - %u expands to the uid
+                        - %g expands to the group, which for yearly
+                             events is the year, for monthly events
+                             the month and year, etc.
                         SPEC can also be "ical" in which case the
                         output will be RFC 5545 compliant.
                         The default format string is "%b\t%s"

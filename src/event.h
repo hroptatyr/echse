@@ -48,6 +48,7 @@ typedef struct echs_event_s echs_event_t;
 
 struct echs_event_s {
 	echs_instant_t from;
+	echs_instant_t grp;
 	echs_idiff_t dur;
 	echs_oid_t oid;
 	echs_stset_t sts;

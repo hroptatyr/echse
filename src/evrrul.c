@@ -1112,6 +1112,7 @@ rrul_fill_yly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					x = echs_instant_attach_scale(x, srcsca);
 
 					tries = 64U;
+					tgt[res + GRP_CCH_OFF] = (echs_instant_t){.y = y};
 					tgt[res++] = x;
 				}
 			}
@@ -1283,6 +1284,7 @@ rrul_fill_mly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 					x = echs_instant_attach_scale(x, srcsca);
 
 					tries = 64U;
+					tgt[res + GRP_CCH_OFF] = (echs_instant_t){.y = y, .m = m};
 					tgt[res++] = x;
 				}
 			}
@@ -1580,6 +1582,7 @@ rrul_fill_dly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 			/* attach scale and convert back to greg */
 			x = echs_instant_attach_scale(x, srcsca);
 
+			tgt[res + GRP_CCH_OFF] = x;
 			tgt[res++] = x;
 		}
 	}
