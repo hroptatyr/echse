@@ -906,7 +906,7 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 					nu_b -= b && !echs_shift_inv_p(sh);
 				} else {
 					/* move to FRI */
-					nu_b -= w - 5;
+					nu_d -= w - 5;
 					w = FRI;
 					nu_b += b && !echs_shift_inv_p(sh);
 				}
