@@ -218,5 +218,6 @@ TESTS += unroll_09.clit
 TESTS += unroll_10.clit
 TESTS += unroll_11.clit
 TESTS += unroll_12.clit
+TESTS += unroll_13.clit
 
 ## Makefile.am ends here

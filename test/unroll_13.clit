@@ -1,0 +1,13 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+## use inverted shift semantics
+$ echse unroll --from 2019-01-01 --till 2020-12-31 -e 'FREQ=MONTHLY;BYMONTH=3,5,9,12;BYMONTHDAY=10;SHIFT=-4B'
+2019-03-05	
+2019-05-06	
+2019-09-04	
+2019-12-04	
+2020-03-04	
+2020-05-05	
+2020-09-04	
+2020-12-04	
+$
