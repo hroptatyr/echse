@@ -911,7 +911,7 @@ shift(bitint383_t cand[static 3U], const unsigned int y, echs_shift_t sh)
 					nu_b += b && !echs_shift_inv_p(sh);
 				}
 			}
-			/* 384 == 4 mod 5  384 == 6 mod 7 */
+			/* 384 == -1 == 4 mod 5  384 == -1 == 6 mod 7 */
 			u5 = (w + 384 + nu_b) % 5U;
 			nu_b = nu_b / 5 * 7 + nu_b % 5;
 			u7 = (w + 384 + nu_b) % 7U;
