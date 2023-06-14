@@ -1173,7 +1173,7 @@ run_task(_task_t t)
 		return -1;
 	}
 
-	if (!(t->nsim < (unsigned int)t->t->max_simul - 1U)) {
+	if (!(t->nsim < (unsigned int)t->t->max_simul)) {
 		args[2U] = "-nd";
 	}
 
