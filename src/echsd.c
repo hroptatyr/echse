@@ -2244,6 +2244,7 @@ task_cb(EV_P_ ev_periodic *w, int UNUSED(revents))
 	} else {
 		/* ooooh, we can't run, call run task with the warning
 		 * flag and use fire and forget */
+		ECHS_NOTI_LOG("unsupervised run %u/%u", t->nsim, t->t->max_simul);
 		(void)run_task(t);
 	}
 
