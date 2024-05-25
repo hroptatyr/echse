@@ -2315,7 +2315,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 
 	if (UNLIKELY(nr == 0U)) {
 		return NULL;
-	} else if (UNLIKELY((this = calloc(nr, duo)) == NULL)) {
+	} else if (UNLIKELY((this = calloc(nr + 1U, duo)) == NULL)) {
 		return NULL;
 	}
 	/* initialise THAT array */
