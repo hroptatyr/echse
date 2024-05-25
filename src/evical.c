@@ -2031,6 +2031,43 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 		}
 	}
 
+	with (unsigned int h) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->H)) {
+			break;
+		}
+		h = bui31_next(&i, rr->H);
+		fdprintf(";BYHOUR=%u", h);
+		while (h = bui31_next(&i, rr->H), i) {
+			fdprintf(",%u", h);
+		}
+	}
+	with (unsigned int m) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->M)) {
+			break;
+		}
+		m = bui31_next(&i, rr->M);
+		fdprintf(";BYMINUTE=%u", m);
+		while (m = bui31_next(&i, rr->M), i) {
+			fdprintf(",%u", m);
+		}
+	}
+	with (unsigned int s) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui63_has_bits_p(rr->S)) {
+			break;
+		}
+		s = bui31_next(&i, rr->S);
+		fdprintf(";BYSECOND=%u", s);
+		while (s = bui31_next(&i, rr->S), i) {
+			fdprintf(",%u", s);
+		}
+	}
+
 	with (int p) {
 		bitint_iter_t i = 0UL;
 
