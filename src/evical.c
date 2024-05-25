@@ -2593,10 +2593,10 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	send_ical_hdr(STDOUT_FILENO, t->vtod_typ);
+	send_ical_hdr(STDOUT_FILENO, t->vtod_typ > VTOD_TYP_UNK);
 	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
-	send_ical_ftr(STDOUT_FILENO, t->vtod_typ);
+	send_ical_ftr(STDOUT_FILENO, t->vtod_typ > VTOD_TYP_UNK);
 	return;
 }
 
