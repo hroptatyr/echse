@@ -418,6 +418,39 @@ dt_strf_ical(char *restrict buf, size_t bsz, echs_instant_t inst)
 #undef bz
 }
 
+size_t
+dt_strfg(char *restrict buf, size_t bsz, echs_instant_t inst)
+{
+	char *restrict bp = buf;
+#define bz	(bsz - (bp - buf))
+
+	if (LIKELY(inst.y > 0U)) {
+		bp += ui32tpstr(bp, bz, inst.y, 4);
+		if (LIKELY(inst.m > 0U)) {
+			*bp++ = '-';
+			bp += ui32tpstr(bp, bz, inst.m, 2);
+			if (LIKELY(inst.d > 0U)) {
+				*bp++ = '-';
+				bp += ui32tpstr(bp, bz, inst.d, 2);
+
+				if (LIKELY(!echs_instant_all_day_p(inst))) {
+					*bp++ = 'T';
+					bp += ui32tpstr(bp, bz, inst.H, 2);
+					*bp++ = ':';
+					bp += ui32tpstr(bp, bz, inst.M, 2);
+					*bp++ = ':';
+					bp += ui32tpstr(bp, bz, inst.S, 2);
+					if (LIKELY(!echs_instant_all_sec_p(inst))) {
+						*bp++ = '.';
+						bp += ui32tpstr(bp, bz, inst.ms, 3);
+					}
+				}
+			}
+		}
+	}
+	*bp = '\0';
+	return bp - buf;
+}
 
 echs_idiff_t
 idiff_strp(const char *str, char **on, size_t len)

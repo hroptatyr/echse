@@ -34,7 +34,7 @@ branches:
 deploy:
   provider: releases
   api_key:
-    secure: "j+ngIiQI9HXFswf/rzOsPUaIDEDYoc3TJqTTkwqlM6/MHe/nRoYIM8G8kDqpCISSI8NCHZCjC9AZqFlpGpoGYKV4PZuNMLY1ejp1QPzcCABvj4LgTtP2pQFYOBk3Vl/FZNSjJUtB6tf/Wour2PoK8F8fxZqOYKdlRIEqFLi3g3c="
+    secure: "MqwGx4jj4ZXiqgFvmkLNSBUS1+x8cAqnoh2WLXS8AVlEkQ4KVEjCwZW37N5iZxVF0it/XRP/OgKOuU9UdnbEuW1msgYA0VcZtwNhpOL9OKINBtN1xMd1h5ifopB7XrAL755mjxSBxb/Hj2o8F6fuoJXD43NVEVHr6eWdDtscMVU="
   file_glob: true
   file: echse-*.tar.xz
   skip_cleanup: true

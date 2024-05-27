@@ -440,6 +440,16 @@ unroll_prnt(int ofd, echs_event_t e, const char *fmt)
 					}
 				}
 				continue;
+			case 'g':
+				/* group name */
+				i = e.grp;
+				{
+					char b[32U];
+					size_t z;
+					z = dt_strfg(b, sizeof(b), i);
+					fdwrite(b, z);
+				}
+				continue;
 			case 'u':
 				if ((x = e.oid)) {
 					goto cpy_obint;

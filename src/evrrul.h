@@ -118,6 +118,8 @@ typedef enum {
 #define GET_NTH(spec)	((spec) >> 8U)
 #define GET_WDAY(spec)	((spec) & 0xfU)
 
+#define GRP_CCH_OFF	64U
+
 struct rrulsp_s {
 	echs_freq_t freq;
 	echs_scale_t scale;
@@ -141,7 +143,6 @@ struct rrulsp_s {
 
 	bitint383_t pos;
 	bitint383_t easter;
-	bitint383_t add;
 };
 
 struct cd_s {

@@ -20,7 +20,6 @@ typedef enum {
 	BY_MON,
 	BY_POS,
 	BY_EASTER,
-	BY_ADD,
 
 	/* weekdays */
 	WDAY_MIR,
@@ -68,4 +67,3 @@ BYWEEKNO, BY_WEEK
 BYMONTH, BY_MON
 BYSETPOS, BY_POS
 BYEASTER, BY_EASTER
-BYADD, BY_ADD

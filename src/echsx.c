@@ -1285,7 +1285,7 @@ cannot set user id to %u: %s", u, STRERR);
 	if (argi->no_run_flag) {
 		/* nope, apparently not */
 		static const char msg[] = "\
-The scheduled task reached its maximum number of simultaneous runs.";
+The scheduled task was started with the --no-run flag.";
 		xt.errmsg = msg;
 		xt.errmsz = strlenof(msg);
 		goto fatal;

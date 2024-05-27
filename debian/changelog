@@ -1,3 +1,9 @@
+echse (0.2.1-1ubuntu1ppa1) trusty; urgency=low
+
+  * 0.2.1 release
+
+ -- Sebastian Freundt <hroptatyr@fresse.org>  Thu, 16 Jul 2020 05:38:59 +0000
+
 echse (0.1.99-1ubuntu1ppa1) trusty; urgency=low
 
   * 0.2.0 prerealease 1

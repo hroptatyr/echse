@@ -393,56 +393,56 @@ snarf_scale(const char *spec)
 static echs_shift_t
 snarf_shift(const char *spec)
 {
-	echs_shift_t r = 0U;
+	unsigned int sem = 0;
+	int b = 0, d = 0;
 	char *on = NULL;
+	long int tmp;
 
-	switch (*spec) {
-	case '-':
-		r |= 0b1U;
-		/*@fallthrough@*/
-	case '+':
-		spec++;
-	default:
-		break;
+more:
+	tmp = strtol(spec, &on, 10);
+	if (UNLIKELY(on == NULL)) {
+		return 0;
 	}
-	with (long int tmp = strtol(spec, &on, 10)) {
-		if (UNLIKELY(on == NULL || tmp < 0 || tmp > 366)) {
-			return 0;
-		}
-		r |= tmp << 3U;
-		spec = on;
-	}
-	switch (*spec) {
+	spec = on;
+	switch (*spec++) {
 	case 'b':
 	case 'B':
-		r |= 0b10U;
-		if (UNLIKELY(r >> 3U > 260U)) {
-			return 0;
-		}
-		/* check shift semantics, + means go to Monday, - means go to Friday */
-		switch (*++spec) {
+		/* yes, it was a businessday shift */			
+		/* check shift semantics,
+		 * + means go to Monday, - means go to Friday */
+	again:
+		switch (*spec++) {
 		case '\0':
 		case ';':
+			b += tmp;
 			break;
 		case '+':
-			r |= !(r & 0b1U) << 2U;
-			break;
+			sem |= (tmp >= 0) << 1U;
+			goto again;
 		case '-':
-			r |= (r & 0b1U) << 2U;
-			break;
+			sem |= (tmp < 0) << 1U;
+			goto again;
+		case ',':
+			b += tmp;
+			goto more;
 		default:
 			return 0;
 		}
+		sem |= b < 0;
+		sem |= !b << 1U;
+		b = b >= 0 ? b : -b;
 		break;
+	case ',':
+		d += tmp;
+		goto more;
 	case '\0':
 	case ';':
+		d += tmp;
 		break;
 	default:
 		return 0;
 	}
-	/* only allow -0B, not -0 */
-	r -= r == 1U;
-	return r;
+	return (d << 16) ^ (b << 2) ^ sem;
 }
 
 static struct rrulsp_s
@@ -608,22 +608,12 @@ snarf_rrule(const char *s, size_t z)
 
 			/* extensions */
 		case BY_EASTER:
-		case BY_ADD:
 			/* these ones take +/- values */
 			do {
 				on = NULL;
 				tmp = strtol(++kv, &on, 10);
-				switch (c->key) {
-				case BY_EASTER:
-					if (LIKELY(tmp <= 366 && tmp >= -366)) {
-						ass_bi383(&rr.easter, tmp);
-					}
-					break;
-				case BY_ADD:
-					if (LIKELY(tmp <= 366 && tmp >= -366)) {
-						ass_bi383(&rr.add, tmp);
-					}
-					break;
+				if (LIKELY(tmp <= 366 && tmp >= -366)) {
+					ass_bi383(&rr.easter, tmp);
 				}
 			} while (on && *(kv = on) == ',');
 			break;
@@ -2041,16 +2031,40 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 		}
 	}
 
-	with (int a) {
+	with (unsigned int h) {
 		bitint_iter_t i = 0UL;
 
-		if (!bi383_has_bits_p(&rr->add)) {
+		if (!bui31_has_bits_p(rr->H)) {
 			break;
 		}
-		a = bi383_next(&i, &rr->add);
-		fdprintf(";BYADD=%d", a);
-		while (a = bi383_next(&i, &rr->add), i) {
-			fdprintf(",%d", a);
+		h = bui31_next(&i, rr->H);
+		fdprintf(";BYHOUR=%u", h);
+		while (h = bui31_next(&i, rr->H), i) {
+			fdprintf(",%u", h);
+		}
+	}
+	with (unsigned int m) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui31_has_bits_p(rr->M)) {
+			break;
+		}
+		m = bui31_next(&i, rr->M);
+		fdprintf(";BYMINUTE=%u", m);
+		while (m = bui31_next(&i, rr->M), i) {
+			fdprintf(",%u", m);
+		}
+	}
+	with (unsigned int s) {
+		bitint_iter_t i = 0UL;
+
+		if (!bui63_has_bits_p(rr->S)) {
+			break;
+		}
+		s = bui31_next(&i, rr->S);
+		fdprintf(";BYSECOND=%u", s);
+		while (s = bui31_next(&i, rr->S), i) {
+			fdprintf(",%u", s);
 		}
 	}
 
@@ -2068,10 +2082,18 @@ send_rrul(int whither, rrulsp_t rr, size_t ccnt)
 	}
 
 	if (rr->shift) {
-		fdprintf(";SHIFT=%c%u", echs_shift_neg_p(rr->shift) ? '-' : '+', echs_shift_absval(rr->shift));
+		fdwrite(";SHIFT=", strlenof(";SHIFT="));
+		if (echs_shift_dvalue(rr->shift)) {
+			fdprintf("%d", rr->shift >> 16);
+		}
 		if (echs_shift_bday_p(rr->shift)) {
+			if (echs_shift_dvalue(rr->shift)) {
+				fdputc(',');
+			}
+			fdputc(echs_shift_neg_p(rr->shift) ? '-' : '+');
+			fdprintf("%u", echs_shift_absval(rr->shift));
 			fdputc('B');
-			if (echs_shift_inv_p(rr->shift)) {
+			if (echs_shift_inv_p(rr->shift) && echs_shift_absval(rr->shift)) {
 				fdputc(echs_shift_neg_p(rr->shift) ? '-' : '+');
 			}
 		}
@@ -2304,7 +2326,7 @@ struct evrrul_s {
 	size_t rdi;
 	/* unrolled cache */
 	size_t ncch;
-	echs_instant_t cch[64U];
+	echs_instant_t cch[GRP_CCH_OFF + GRP_CCH_OFF];
 };
 
 static echs_event_t next_evrrul(echs_evstrm_t, bool popp);
@@ -2330,7 +2352,7 @@ __make_evrrul(echs_event_t e, rrulsp_t rr, size_t nr)
 
 	if (UNLIKELY(nr == 0U)) {
 		return NULL;
-	} else if (UNLIKELY((this = calloc(nr, duo)) == NULL)) {
+	} else if (UNLIKELY((this = calloc(nr + 1U, duo)) == NULL)) {
 		return NULL;
 	}
 	/* initialise THAT array */
@@ -2405,7 +2427,7 @@ refill(struct evrrul_s *restrict strm)
 	}
 
 	/* fill up with the proto instant */
-	for (size_t j = 0U; j < countof(strm->cch); j++) {
+	for (size_t j = 0U; j < GRP_CCH_OFF; j++) {
 		strm->cch[j] = strm->e.from;
 	}
 
@@ -2417,30 +2439,30 @@ refill(struct evrrul_s *restrict strm)
 
 	case FREQ_YEARLY:
 		/* easiest */
-		strm->ncch = rrul_fill_yly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_yly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_MONTHLY:
 		/* second easiest */
-		strm->ncch = rrul_fill_mly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_mly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_WEEKLY:
-		strm->ncch = rrul_fill_wly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_wly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_DAILY:
-		strm->ncch = rrul_fill_dly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_dly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_HOURLY:
-		strm->ncch = rrul_fill_Hly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Hly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_MINUTELY:
-		strm->ncch = rrul_fill_Mly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Mly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	case FREQ_SECONDLY:
-		strm->ncch = rrul_fill_Sly(strm->cch, countof(strm->cch), rr);
+		strm->ncch = rrul_fill_Sly(strm->cch, GRP_CCH_OFF, rr);
 		break;
 	}
 
-	if (strm->ncch >= countof(strm->cch)) {
+	if (strm->ncch >= GRP_CCH_OFF) {
 		/* keep one for the next refill */
 		strm->e.from = strm->cch[--strm->ncch];
 	} else {
@@ -2496,6 +2518,7 @@ next_evrrul(echs_evstrm_t s, bool popp)
 	/* construct the result */
 	res = this->e;
 	res.from = this->cch[this->rdi];
+	res.grp = this->cch[this->rdi + GRP_CCH_OFF];
 	if (popp) {
 		this->rdi++;
 	}
@@ -2570,10 +2593,10 @@ mrulsp_icalify(int whither, const mrulsp_t *mr)
 void
 echs_prnt_ical_event(echs_task_t t, echs_event_t ev)
 {
-	send_ical_hdr(STDOUT_FILENO, t->vtod_typ);
+	send_ical_hdr(STDOUT_FILENO, t->vtod_typ > VTOD_TYP_UNK);
 	send_ev(STDOUT_FILENO, ev, 0U);
 	send_task(STDOUT_FILENO, t);
-	send_ical_ftr(STDOUT_FILENO, t->vtod_typ);
+	send_ical_ftr(STDOUT_FILENO, t->vtod_typ > VTOD_TYP_UNK);
 	return;
 }
 
