@@ -3,7 +3,7 @@ dnl Autoconf startup.
 dnl -------------------------------------------------------------------------
 
 AC_PREREQ([2.63])
-AC_INIT([echse], [0.2.2], [https://github.com/hroptatyr/echse])
+AC_INIT([echse], [0.2.3.GIT], [https://github.com/hroptatyr/echse])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([src/config.h])
