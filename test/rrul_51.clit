@@ -1,0 +1,17 @@
+#!/usr/bin/clitoris  ## -*- shell-script -*-
+
+$ echse unroll --from 2025-09-01 --till 2026-01-31 "${srcdir}/sample_41.ics"
+2026-01-14T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-15T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-16T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-19T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-20T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-21T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-22T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-23T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-26T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-27T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-28T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-29T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+2026-01-30T01:40:00	tmux send-keys -t 0:5.0 "make daily.dlrich data/mf400-wsdl.csv" Enter
+$

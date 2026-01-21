@@ -1362,7 +1362,7 @@ rrul_fill_wly(echs_instant_t *restrict tgt, size_t nti, rrulsp_t rr)
 		/* zap to current day so increments are relative to DTSTART */
 		wd_mask >>= w;
 		/* clamp wd_mask to exactly 7 days */
-		wd_mask &= 0b111111U;
+		wd_mask &= 0b1111111U;
 		/* calculate wd increments
 		 * i.e. a bitset of increments, 4bits per increment */
 		for (unsigned int i = 0U, j = 0U;
